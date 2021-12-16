@@ -23,7 +23,7 @@ contract InterestFactoryV1 is Ownable {
 
     event MarketCreated(
         address indexed collateralToken,
-        address market,
+        address indexed market,
         uint256 id
     );
 
@@ -75,6 +75,20 @@ contract InterestFactoryV1 is Ownable {
         return _stakerMap[market];
     }
 
+    /**
+     * @dev this allows you to know the address of a clone before/after deployment for offchain purposes
+     * @param masterMarketContract the implementation contract
+     * @param salt the keccak256 hash of the data to be passed to the initialize function
+     * @return the address of the clone
+     */
+    function predictMarketAddress(address masterMarketContract, bytes32 salt)
+        external
+        view
+        returns (address)
+    {
+        return Clones.predictDeterministicAddress(masterMarketContract, salt);
+    }
+
     /**************************** ONLY OWNER FUNCTIONS ****************************/
 
     /**
@@ -96,7 +110,7 @@ contract InterestFactoryV1 is Ownable {
      * @dev It assigns a new address to receive the accrued fees from the markets.
      * @param _feeTo The new address that will receive the fees.
      *
-     * This funcion is guarded by the modifier {onlyOwner} to make sure funds are not mishandled.
+     * This function is guarded by the modifier {onlyOwner} to make sure funds are not mishandled.
      * It emits the event {FeeToUpdated} with the new address `_feeTo`.
      *
      */
@@ -125,10 +139,9 @@ contract InterestFactoryV1 is Ownable {
         require(masterMarketContract != address(0), "IFV1: not zero address");
         require(collateralToken != address(0), "IFV1: not zero address");
 
-        market = Clones.cloneDeterministic(
-            masterMarketContract,
-            keccak256(data)
-        );
+        bytes32 salt = keccak256(data);
+
+        market = Clones.cloneDeterministic(masterMarketContract, salt);
 
         InterestMarketV1Interface(market).initialize(data);
 
@@ -137,6 +150,6 @@ contract InterestFactoryV1 is Ownable {
         isMarket[market] = true;
         allMarkets.push(market);
 
-        emit MarketCreated(collateralToken, market, allMarkets.length);
+        emit MarketCreated(collateralToken, market, allMarkets.length - 1);
     }
 }
