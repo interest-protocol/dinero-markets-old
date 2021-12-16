@@ -1,6 +1,3 @@
-//SPDX-License-Identifier: Unlicense
-pragma solidity 0.8.10;
-
 /*
 
 ░█▀▀▄ ▀█▀ ░█▄─░█ ░█▀▀▀ ░█▀▀█ ░█▀▀▀█
@@ -10,6 +7,9 @@ pragma solidity 0.8.10;
 Copyright (c) 2021 Jose Cerqueira - All rights reserved
 
 */
+
+//SPDX-License-Identifier: Unlicense
+pragma solidity 0.8.10;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/draft-ERC20Permit.sol";
