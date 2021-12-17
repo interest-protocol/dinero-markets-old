@@ -20,7 +20,6 @@ import "./interfaces/IPancakePair.sol";
 
 import "./lib/HomoraMath.sol";
 
-// @dev It is important to note that only token/USD prices are supported
 contract OracleV1 is Ownable {
     /****************************  LIBRARIES ****************************/
 
@@ -97,6 +96,12 @@ contract OracleV1 is Ownable {
         return (_scaleDecimals(price, feed.decimals()) * amount) / 1 ether;
     }
 
+    /**
+     * @dev It returns the both price BNB and USD value for an amount of LP tokens based on it's pair
+     * @param pair The Pancake pair we wish to get the fair bnb value
+     * @param amount The number of LPs we wish to have the value for
+     * @return valueInBNB valueInUSD (uint256 , uint256) A pair with both the value in BNB and USD
+     */
     function getLPTokenPx(IPancakePair pair, uint256 amount)
         external
         view
@@ -160,7 +165,7 @@ contract OracleV1 is Ownable {
 
     /**
      * @param amount How many BNB one wishes to get the price for
-     * @return (uint256,uint8) A pair that has the value price and the decimal houses in the right
+     * @return uint256 A pair that has the value price and the decimal houses in the right
      *
      * This function returns the price of 1 BNB in USD
      *
