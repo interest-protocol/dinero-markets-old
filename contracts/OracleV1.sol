@@ -20,6 +20,7 @@ import "./interfaces/IPancakePair.sol";
 
 import "./lib/HomoraMath.sol";
 
+// @important This oracle only supports tokens with 18 decimal houses
 contract OracleV1 is Ownable {
     /****************************  LIBRARIES ****************************/
 
@@ -177,7 +178,7 @@ contract OracleV1 is Ownable {
         returns (uint256)
     {
         require(token != address(0), "Oracle: no address zero");
-        if (token == WBNB) return 1 ether;
+        if (token == WBNB) return amount;
 
         AggregatorV3Interface feed = getBNBBaseFeeds[token];
         (, int256 price, , , ) = feed.latestRoundData();
@@ -206,6 +207,7 @@ contract OracleV1 is Ownable {
      * @param feed The address of the chain link oracle contract.
      * @param feedType A enum representing which kind of feed to update
      *
+     * **** IMPORTANT **** nt this function only supports tokens with 18 decimals
      * This function has the modifier {onlyOwner} so an attacker cannot use a fraudalent oracle.
      * You can find the avaliable feeds here https://docs.chain.link/docs/binance-smart-chain-addresses/ .
      *
