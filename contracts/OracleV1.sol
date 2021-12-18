@@ -15,10 +15,10 @@ pragma solidity 0.8.10;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "./interfaces/AggregatorV3Interface.sol";
-import "./interfaces/IPancakePair.sol";
+import "../interfaces/AggregatorV3Interface.sol";
+import "../interfaces/IPancakePair.sol";
 
-import "./lib/HomoraMath.sol";
+import "../lib/HomoraMath.sol";
 
 contract OracleV1 is Ownable {
     /****************************  LIBRARIES ****************************/
@@ -77,6 +77,27 @@ contract OracleV1 is Ownable {
     /****************************  VIEW FUNCTIONS ****************************/
 
     /**
+     * @dev This function returns usd value of {ERC20} tokens and checks if they are a PCS LP token or not
+     * @param token The address of the {ERC20} token
+     * @param amount The number of `token` to evaluate the USD amount
+     * @return usdValue The value in usd supporting 18 decimal houses
+     */
+    function getUSDPrice(address token, uint256 amount)
+        external
+        view
+        returns (uint256 usdValue)
+    {
+        if (
+            keccak256(abi.encodePacked(IPancakePair(token).symbol())) ==
+            keccak256("Cake-LP")
+        ) {
+            (, usdValue) = getLPTokenPx(IPancakePair(token), amount);
+        } else {
+            usdValue = getTokenUSDPrice(token, amount);
+        }
+    }
+
+    /**
      * @dev This function returns the adjust price to 18 decimal houses for the caller
      * @param token The address of the token for the feed
      * @param amount How many tokens you want the price to be
@@ -84,7 +105,7 @@ contract OracleV1 is Ownable {
      *
      */
     function getTokenUSDPrice(address token, uint256 amount)
-        external
+        public
         view
         returns (uint256)
     {
@@ -103,7 +124,7 @@ contract OracleV1 is Ownable {
      * @return valueInBNB valueInUSD (uint256 , uint256) A pair with both the value in BNB and USD
      */
     function getLPTokenPx(IPancakePair pair, uint256 amount)
-        external
+        public
         view
         returns (uint256 valueInBNB, uint256 valueInUSD)
     {
