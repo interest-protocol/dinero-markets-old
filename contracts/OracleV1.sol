@@ -177,8 +177,8 @@ contract OracleV1 is Ownable {
         view
         returns (uint256)
     {
-        require(token != address(0), "Oracle: no address zero");
         if (token == WBNB) return amount;
+        require(token != address(0), "Oracle: no address zero");
 
         AggregatorV3Interface feed = getBNBBaseFeeds[token];
         (, int256 price, , , ) = feed.latestRoundData();

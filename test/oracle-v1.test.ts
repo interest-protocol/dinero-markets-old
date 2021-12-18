@@ -177,7 +177,7 @@ describe('OracleV1', () => {
       expect(await oracleV1.getUSDBaseFeeds(mockCake.address)).to.be.equal(
         mockCakeUsdFeed.address
       );
-      await oracleV1.connect(owner).setFeed(mockCake.address, dudBnBFeed, 1); // 0 means BNB feed;
+      await oracleV1.connect(owner).setFeed(mockCake.address, dudBnBFeed, 1); // 1 means BNB feed;
       expect(await oracleV1.getBNBBaseFeeds(mockCake.address)).to.be.equal(
         dudBnBFeed
       );
