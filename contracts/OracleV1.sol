@@ -15,10 +15,10 @@ pragma solidity 0.8.10;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "../interfaces/AggregatorV3Interface.sol";
-import "../interfaces/IPancakePair.sol";
+import "./interfaces/AggregatorV3Interface.sol";
+import "./interfaces/IPancakePair.sol";
 
-import "../lib/HomoraMath.sol";
+import "./lib/HomoraMath.sol";
 
 contract OracleV1 is Ownable {
     /****************************  LIBRARIES ****************************/
