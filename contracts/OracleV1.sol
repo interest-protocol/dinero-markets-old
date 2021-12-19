@@ -18,14 +18,10 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "./interfaces/AggregatorV3Interface.sol";
 import "./interfaces/IPancakePair.sol";
 
-import "./lib/HomoraMath.sol";
+import "./lib/Math.sol";
 
 // @important This oracle only supports tokens with 18 decimal houses
 contract OracleV1 is Ownable {
-    /****************************  LIBRARIES ****************************/
-
-    using HomoraMath for uint256;
-
     /****************************  ENUMS ****************************/
 
     enum FeedType {
@@ -138,6 +134,14 @@ contract OracleV1 is Ownable {
      * @dev calculates the price in BNB for 1 lp token based on the K of the pair. Wanna thank homora for it!
      * @param pair The Pancakeswap pair to find it's fair BNB value.
      * @return uint256 price of 1 lp token in BNB
+     *
+     * The formula breakdown can be found in the links below
+     * https://cmichel.io/pricing-lp-tokens/
+     * https://blog.alphafinance.io/fair-lp-token-pricing/
+     * We changed the implementation from alpha finance to remove the Q112 encoding found here:
+     * https://github.com/AlphaFinanceLab/alpha-homora-v2-contract/blob/master/contracts/oracle/UniswapV2Oracle.sol
+     * We want to thank Alpha Finance for this clever derivation for a fair LP price based on k <3
+     *
      */
     function getLPTokenBNBPrice(IPancakePair pair)
         public
@@ -149,20 +153,12 @@ contract OracleV1 is Ownable {
         uint256 totalSupply = pair.totalSupply();
         (uint256 reserve0, uint256 reserve1, ) = pair.getReserves();
 
-        uint256 sqrtK = HomoraMath.sqrt(reserve0 * (reserve1)).fdiv(
-            totalSupply
-        ); // in 2**112
+        uint256 sqrtK = Math.sqrt(reserve0 * (reserve1)) / totalSupply;
 
         uint256 price0 = getTokenBNBPrice(token0, 1 ether);
         uint256 price1 = getTokenBNBPrice(token1, 1 ether);
 
-        // fair token0 amt: sqrtK * sqrt(px1/px0)
-        // fair token1 amt: sqrtK * sqrt(px0/px1)
-        // fair lp price = 2 * sqrt(px0 * px1)
-        // split into 2 sqrts multiplication to prevent uint overflow (note the 2**112)
-        return
-            (((sqrtK * 2 * (HomoraMath.sqrt(price0))) / (2**56)) *
-                (HomoraMath.sqrt(price1))) / (2**56);
+        return (((sqrtK * 2 * (Math.sqrt(price0)))) * (Math.sqrt(price1)));
     }
 
     /**
