@@ -131,7 +131,7 @@ contract OracleV1 is Ownable {
     }
 
     /**
-     * @dev calculates the price in BNB for 1 lp token based on the K of the pair. Wanna thank homora for it!
+     * @dev calculates the price in BNB for 1 lp token based on the K of the pair. Wanna thank Alpha Finance for this <3!
      * @param pair The Pancakeswap pair to find it's fair BNB value.
      * @return uint256 price of 1 lp token in BNB
      *
@@ -140,7 +140,6 @@ contract OracleV1 is Ownable {
      * https://blog.alphafinance.io/fair-lp-token-pricing/
      * We changed the implementation from alpha finance to remove the Q112 encoding found here:
      * https://github.com/AlphaFinanceLab/alpha-homora-v2-contract/blob/master/contracts/oracle/UniswapV2Oracle.sol
-     * We want to thank Alpha Finance for this clever derivation for a fair LP price based on k <3
      *
      */
     function getLPTokenBNBPrice(IPancakePair pair)

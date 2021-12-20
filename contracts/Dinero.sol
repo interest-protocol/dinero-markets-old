@@ -19,7 +19,6 @@ contract Dinero is AccessControl, ERC20Permit, ERC20Burnable {
 
     constructor() ERC20("Dinero", "DNR") ERC20Permit("Dinero") {
         _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
-        _setupRole(MINTER_ROLE, _msgSender());
     }
 
     /**
@@ -43,6 +42,7 @@ contract Dinero is AccessControl, ERC20Permit, ERC20Burnable {
      * @param amount The number of tokens to destroy.
      *
      * Market contracts will burn `Dinero` on repayments and liquidations.
+     * This is to avoid users to have to approve before burning
      *
      */
     function forcedBurn(address account, uint256 amount)
