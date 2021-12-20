@@ -42,6 +42,11 @@ describe('Dinero', () => {
 
       expect(await dinero.balanceOf(alice.address)).to.be.equal(0);
 
+      // Admin needs to grant the `MINTER_ROLE`
+      await dinero
+        .connect(owner)
+        .grantRole(await dinero.MINTER_ROLE(), owner.address);
+
       await dinero.connect(owner).mint(alice.address, amount);
 
       expect(await dinero.balanceOf(alice.address)).to.be.equal(amount);
@@ -51,6 +56,10 @@ describe('Dinero', () => {
   describe('function: forcedBurn', async () => {
     it('reverts if an account without the BURNER_ROLE calls it', async () => {
       const amount = parseEther('10');
+
+      await dinero
+        .connect(owner)
+        .grantRole(await dinero.MINTER_ROLE(), owner.address);
 
       await dinero.connect(owner).mint(alice.address, amount);
 
@@ -62,6 +71,10 @@ describe('Dinero', () => {
     });
     it('destroys tokens', async () => {
       const amount = parseEther('10');
+
+      await dinero
+        .connect(owner)
+        .grantRole(await dinero.MINTER_ROLE(), owner.address);
 
       await dinero.connect(owner).mint(bob.address, amount);
 

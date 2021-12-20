@@ -1,8 +1,20 @@
 /*
 
-▀█▀ █▀▀▄ ▀▀█▀▀ █▀▀ █▀▀█ █▀▀ █▀▀ ▀▀█▀▀ 　 ▒█▀▀▀ █▀▀█ █▀▀ ▀▀█▀▀ █▀▀█ █▀▀█ █░░█ 　 ▒█░░▒█ ▄█░ 
-▒█░ █░░█ ░░█░░ █▀▀ █▄▄▀ █▀▀ ▀▀█ ░░█░░ 　 ▒█▀▀▀ █▄▄█ █░░ ░░█░░ █░░█ █▄▄▀ █▄▄█ 　 ░▒█▒█░ ░█░ 
-▄█▄ ▀░░▀ ░░▀░░ ▀▀▀ ▀░▀▀ ▀▀▀ ▀▀▀ ░░▀░░ 　 ▒█░░░ ▀░░▀ ▀▀▀ ░░▀░░ ▀▀▀▀ ▀░▀▀ ▄▄▄█ 　 ░░▀▄▀░ ▄█▄
+
+██╗███╗░░██╗████████╗███████╗██████╗░███████╗░██████╗████████╗
+██║████╗░██║╚══██╔══╝██╔════╝██╔══██╗██╔════╝██╔════╝╚══██╔══╝
+██║██╔██╗██║░░░██║░░░█████╗░░██████╔╝█████╗░░╚█████╗░░░░██║░░░
+██║██║╚████║░░░██║░░░██╔══╝░░██╔══██╗██╔══╝░░░╚═══██╗░░░██║░░░
+██║██║░╚███║░░░██║░░░███████╗██║░░██║███████╗██████╔╝░░░██║░░░
+╚═╝╚═╝░░╚══╝░░░╚═╝░░░╚══════╝╚═╝░░╚═╝╚══════╝╚═════╝░░░░╚═╝░░░
+
+░██████╗░░█████╗░██╗░░░██╗███████╗██████╗░███╗░░██╗░█████╗░██████╗░
+██╔════╝░██╔══██╗██║░░░██║██╔════╝██╔══██╗████╗░██║██╔══██╗██╔══██╗
+██║░░██╗░██║░░██║╚██╗░██╔╝█████╗░░██████╔╝██╔██╗██║██║░░██║██████╔╝
+██║░░╚██╗██║░░██║░╚████╔╝░██╔══╝░░██╔══██╗██║╚████║██║░░██║██╔══██╗
+╚██████╔╝╚█████╔╝░░╚██╔╝░░███████╗██║░░██║██║░╚███║╚█████╔╝██║░░██║
+░╚═════╝░░╚════╝░░░░╚═╝░░░╚══════╝╚═╝░░╚═╝╚═╝░░╚══╝░╚════╝░╚═╝░░╚═╝
+
 
 Copyright (c) 2021 Jose Cerqueira - All rights reserved
 
@@ -18,7 +30,7 @@ import "./interfaces/InterestMarketV1Interface.sol";
 
 import "./Dinero.sol";
 
-contract InterestFactoryV1 is Ownable {
+contract InterestGovernorV1 is Ownable {
     /**************************** EVENTS ****************************/
 
     event MarketCreated(
@@ -30,6 +42,10 @@ contract InterestFactoryV1 is Ownable {
     event StakerUpdated(address indexed market, address indexed staker);
 
     event FeeToUpdated(address indexed feeTo);
+
+    event CloseMarket(address indexed market);
+
+    event OpenMarket(address indexed market);
 
     /**************************** STATE ****************************/
 
@@ -151,5 +167,30 @@ contract InterestFactoryV1 is Ownable {
         allMarkets.push(market);
 
         emit MarketCreated(collateralToken, market, allMarkets.length - 1);
+    }
+
+    /**
+     * @dev This function will prevent markets to lend funds until they re-open. This is an emergency measure in case of market manipulations
+     * @param market The account that will have it's minter role removed. It will not be able to lend anymore
+     *
+     * Important to note that the markets will still be able to burn funds so users can close their positions and get back their collateral.
+     * This function can only be called by the owner to prevent tampering with the markets ability to lend
+     *
+     */
+    function closeMarket(address market) external onlyOwner {
+        DINERO.revokeRole(DINERO.MINTER_ROLE(), market);
+        emit CloseMarket(market);
+    }
+
+    /**
+     * @dev This function will re-open markets after being closed
+     * @param market The account that will be granted the minter role again to start lending
+     *
+     * This function can only be called by the owner to prevent re-opening closed markets.
+     *
+     */
+    function openMarket(address market) external onlyOwner {
+        DINERO.grantRole(DINERO.MINTER_ROLE(), market);
+        emit OpenMarket(market);
     }
 }
