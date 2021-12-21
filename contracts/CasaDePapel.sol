@@ -74,7 +74,7 @@ contract CasaDePapel is Ownable {
     Pool[] public pools;
 
     // PoolId -> User -> UserInfo
-    mapping(uint256 => mapping(address => User)) public getUserInfo;
+    mapping(uint256 => mapping(address => User)) public userInfo;
 
     // User -> Contract -> Permission
     mapping(address => mapping(address => bool)) public permission;
@@ -190,12 +190,12 @@ contract CasaDePapel is Ownable {
         // Int has to be staked via the `staking` function
         require(poolId != 0, "CP: Not allowed");
 
-        // Get global state in memory to save gas
-        Pool memory pool = pools[poolId];
-        User memory user = getUserInfo[poolId][_msgSender()];
-
         // Update all rewards before any operation for proper calculation of rewards
         updatePool(poolId);
+
+        // Get global state in memory to save gas
+        Pool memory pool = pools[poolId];
+        User memory user = userInfo[poolId][_msgSender()];
 
         uint256 pendingRewards;
 
@@ -207,16 +207,17 @@ contract CasaDePapel is Ownable {
         }
 
         if (amount > 0) {
+            // Update user deposited amount
+            user.amount += amount;
+            // Update pool total supply
+            pool.totalSupply += amount;
+
             // Get the tokens from the user first
             pool.stakingToken.safeTransferFrom(
                 _msgSender(),
                 address(this),
                 amount
             );
-            // Update user deposited amount
-            user.amount += amount;
-            // Update pool total supply
-            pool.totalSupply += amount;
         }
 
         // He has been paid all rewards up to this point
@@ -224,7 +225,7 @@ contract CasaDePapel is Ownable {
 
         // Update global state
         pools[poolId] = pool;
-        getUserInfo[poolId][_msgSender()] = user;
+        userInfo[poolId][_msgSender()] = user;
 
         if (pendingRewards > 0) {
             // Pay the user the rewards
@@ -247,15 +248,18 @@ contract CasaDePapel is Ownable {
         // Int has to be staked via the `staking` function
         require(poolId != 0, "CP: Not allowed");
 
-        // Get global state in memory to save gas
-        Pool memory pool = pools[poolId];
-        User memory user = getUserInfo[poolId][_msgSender()];
-
         // User cannot withdraw more than he staked
-        require(user.amount >= amount, "CP: not enough tokens");
+        require(
+            userInfo[poolId][_msgSender()].amount >= amount,
+            "CP: not enough tokens"
+        );
 
         // Update the rewards to properly pay the user
         updatePool(poolId);
+
+        // Get global state in memory to save gas
+        Pool memory pool = pools[poolId];
+        User memory user = userInfo[poolId][_msgSender()];
 
         // Save user rewards before any state manipulation
         uint256 pendingRewards = (user.amount *
@@ -272,7 +276,7 @@ contract CasaDePapel is Ownable {
 
         // Update global state
         pools[poolId] = pool;
-        getUserInfo[poolId][_msgSender()] = user;
+        userInfo[poolId][_msgSender()] = user;
 
         if (pendingRewards > 0) {
             INTEREST_TOKEN.mint(_msgSender(), pendingRewards);
@@ -288,7 +292,7 @@ contract CasaDePapel is Ownable {
     function emergencyWithdraw(uint256 poolId) external {
         // No need to save gas on an urgent function
         Pool storage pool = pools[poolId];
-        User storage user = getUserInfo[poolId][_msgSender()];
+        User storage user = userInfo[poolId][_msgSender()];
 
         uint256 amount = user.amount;
 
@@ -322,7 +326,7 @@ contract CasaDePapel is Ownable {
         returns (uint256)
     {
         Pool memory pool = pools[poolId];
-        User memory user = getUserInfo[poolId][_user];
+        User memory user = userInfo[poolId][_user];
 
         uint256 accruedIntPerShare = pool.accruedIntPerShare;
         uint256 numberOfTokenStaked = pool.stakingToken.balanceOf(
@@ -347,10 +351,10 @@ contract CasaDePapel is Ownable {
      * @param amount The number of {INTEREST_TOKEN} the `msg.sender` wishes to stake
      */
     function stake(uint256 amount) external {
-        Pool memory pool = pools[0];
-        User memory user = getUserInfo[0][_msgSender()];
-
         updatePool(0);
+
+        Pool memory pool = pools[0];
+        User memory user = userInfo[0][_msgSender()];
 
         uint256 pendingRewards;
 
@@ -381,7 +385,7 @@ contract CasaDePapel is Ownable {
         }
 
         pools[0] = pool;
-        getUserInfo[0][_msgSender()] = user;
+        userInfo[0][_msgSender()] = user;
 
         emit Deposit(_msgSender(), 0, amount);
     }
@@ -420,9 +424,13 @@ contract CasaDePapel is Ownable {
             require(permission[from][_msgSender()], "CP: no permission");
         }
 
-        User memory user = getUserInfo[0][from];
-        User memory beneficiary = getUserInfo[0][to];
-        require(user.amount >= amount, "CP: not enough tokens");
+        require(userInfo[0][from].amount >= amount, "CP: not enough tokens");
+
+        // Update the rewards to properly pay the user
+        updatePool(0);
+
+        User memory user = userInfo[0][from];
+        User memory beneficiary = userInfo[0][to];
 
         uint256 rewardDebt = amount * (pools[0].accruedIntPerShare / 1e12);
 
@@ -432,24 +440,28 @@ contract CasaDePapel is Ownable {
         beneficiary.rewardDebt += rewardDebt;
         beneficiary.amount += amount;
 
-        // Make sure the to address has enough `STAKED_INTEREST_TOKEN` to redeem `INTEREST_TOKEN` in the future.
+        // Make sure the `to` address has enough `STAKED_INTEREST_TOKEN` to redeem `INTEREST_TOKEN` in the future.
         require(
             STAKED_INTEREST_TOKEN.balanceOf(to) >= beneficiary.amount,
             "CP: not enough tokens"
         );
 
-        getUserInfo[0][from] = user;
-        getUserInfo[0][to] = beneficiary;
+        userInfo[0][from] = user;
+        userInfo[0][to] = beneficiary;
 
         emit Transfer(from, to, amount);
     }
 
     function leaveStaking(uint256 amount) external {
-        Pool memory pool = pools[0];
-        User memory user = getUserInfo[0][_msgSender()];
-        require(user.amount >= amount, "CP: not enough tokens");
+        require(
+            userInfo[0][_msgSender()].amount >= amount,
+            "CP: not enough tokens"
+        );
 
         updatePool(0);
+
+        Pool memory pool = pools[0];
+        User memory user = userInfo[0][_msgSender()];
 
         uint256 pendingRewards = (user.amount *
             (pool.accruedIntPerShare / 1e12)) - user.rewardDebt;
@@ -472,7 +484,7 @@ contract CasaDePapel is Ownable {
         user.rewardDebt = (user.amount * pool.accruedIntPerShare) / 1e12;
 
         pools[0] = pool;
-        getUserInfo[0][_msgSender()] = user;
+        userInfo[0][_msgSender()] = user;
 
         if (pendingRewards > 0) {
             INTEREST_TOKEN.mint(_msgSender(), pendingRewards);
