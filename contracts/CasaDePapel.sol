@@ -150,6 +150,7 @@ contract CasaDePapel is Ownable {
         }
 
         uint256 blocksElapsed = block.number - pool.lastRewardBlock;
+
         uint256 intReward = (blocksElapsed *
             interestTokenPerBlock *
             pool.allocationPoints) / totalAllocationPoints;

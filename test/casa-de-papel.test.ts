@@ -1,42 +1,24 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
-import { BigNumberish } from 'ethers';
 import { ethers } from 'hardhat';
 
-import {
-  advanceBlock,
-  advanceTime,
-  deploy,
-  multiDeploy,
-} from '../lib/test-utils';
 import {
   CasaDePapel,
   InterestToken,
   MockERC20,
   StakedInterestToken,
 } from '../typechain';
+import { deploy, makeCalculateAccruedInt, multiDeploy } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
-const { BigNumber, constants } = ethers;
+const { constants } = ethers;
 
-const INTEREST_TOKEN_PER_BLOCK = 15;
+const INTEREST_TOKEN_PER_BLOCK = parseEther('15');
 
-const B = (x: BigNumberish) => BigNumber.from(x);
+const START_BLOCK = 5;
 
-const calculateAccruedInt = (
-  accruedInterest: BigNumberish,
-  blocksElapsed: BigNumberish,
-  allocationPoints: BigNumberish,
-  totalAllocationPoints: BigNumberish,
-  totalSupply: BigNumberish
-) => {
-  const rewards = B(blocksElapsed)
-    .mul(B(INTEREST_TOKEN_PER_BLOCK).mul(B(allocationPoints)))
-    .div(totalAllocationPoints);
-
-  return B(accruedInterest).add(rewards.mul(1e12)).div(totalSupply);
-};
+const calculateAccruedInt = makeCalculateAccruedInt(INTEREST_TOKEN_PER_BLOCK);
 
 describe('Case de Papel', () => {
   let casaDePapel: CasaDePapel;
@@ -73,7 +55,7 @@ describe('Case de Papel', () => {
         sInterestToken.address,
         developer.address,
         INTEREST_TOKEN_PER_BLOCK,
-        5,
+        START_BLOCK,
       ]),
       // Give enough tokens to deposit
       lpToken.mint(alice.address, parseEther('500')),
@@ -113,6 +95,7 @@ describe('Case de Papel', () => {
     });
   });
 
+  // @important We test the full functionality of updateAll Modifier in this function. From here on now. We will only test that the devs got their tokens for the modifier portion
   describe('function: setAllocationPoints', () => {
     it('reverts if the caller is not the owner', async () => {
       await expect(
@@ -121,86 +104,102 @@ describe('Case de Papel', () => {
     });
     it('updates a pool allocation points without updating all pools', async () => {
       await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
-      const [pool0, pool1, totalAllocationPoints] = await Promise.all([
-        casaDePapel.pools(0),
-        casaDePapel.pools(1),
-        casaDePapel.totalAllocationPoints(),
-      ]);
+      const [interesTokenPool, xFarm, totalAllocationPoints] =
+        await Promise.all([
+          casaDePapel.pools(0),
+          casaDePapel.pools(1),
+          casaDePapel.totalAllocationPoints(),
+        ]);
       // Interest Pool gets 1/3 of 1500 (500) and adds it becoming it's allocation. So the total becomes 1500 + 2000
-      expect(pool0.allocationPoints).to.be.equal(500);
-      expect(pool1.allocationPoints).to.be.equal(1500);
+      expect(interesTokenPool.allocationPoints).to.be.equal(500);
+      expect(xFarm.allocationPoints).to.be.equal(1500);
       expect(totalAllocationPoints).to.be.equal(2000);
 
       await casaDePapel.connect(owner).setAllocationPoints(1, 3000, false);
 
-      const [aPool0, aPool1, aTotalAllocationPoints] = await Promise.all([
-        casaDePapel.pools(0),
-        casaDePapel.pools(1),
-        casaDePapel.totalAllocationPoints(),
-      ]);
+      const [interesTokenPool1, xFarm1, TotalAllocationPoints1] =
+        await Promise.all([
+          casaDePapel.pools(0),
+          casaDePapel.pools(1),
+          casaDePapel.totalAllocationPoints(),
+        ]);
 
       // Interest Pool gets 1/3 of 1500 (500) and adds it becoming it's allocation. So the total becomes 1500 + 2000
-      expect(aPool0.allocationPoints).to.be.equal(1000);
-      expect(aPool1.allocationPoints).to.be.equal(3000);
-      expect(aTotalAllocationPoints).to.be.equal(4000);
+      expect(interesTokenPool1.allocationPoints).to.be.equal(1000);
+      expect(xFarm1.allocationPoints).to.be.equal(3000);
+      expect(TotalAllocationPoints1).to.be.equal(4000);
     });
-    it.only('updates a pool allocation points and updates all pools data', async () => {
+    it('updates a pool allocation points and updates all pools data', async () => {
+      // Adds two pools
       await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
       await casaDePapel.connect(owner).addPool(1500, lpToken2.address, false);
-      const [pool0, pool1, pool2, totalAllocationPoints] = await Promise.all([
-        casaDePapel.pools(0),
-        casaDePapel.pools(1),
-        casaDePapel.pools(2),
-        casaDePapel.totalAllocationPoints(),
-        casaDePapel.connect(alice).deposit(1, parseEther('100')),
-        casaDePapel.connect(bob).deposit(1, parseEther('50')),
-        casaDePapel.connect(alice).deposit(2, parseEther('100')),
-        casaDePapel.connect(bob).deposit(2, parseEther('200')),
-      ]);
-      // Interest Pool gets 1/3 of 1500 (500) and adds it becoming it's allocation. So the total becomes 1500 + 2000
-      expect(pool0.allocationPoints).to.be.equal(1000);
-      expect(pool1.allocationPoints).to.be.equal(1500);
-      expect(pool2.allocationPoints).to.be.equal(1500);
-      expect(totalAllocationPoints).to.be.equal(4000);
-      expect(pool1.accruedIntPerShare).to.be.equal(0); // Start block has not happened yet
-      expect(pool2.accruedIntPerShare).to.be.equal(0); // Start block has not happened yet
 
-      await casaDePapel.connect(owner).setAllocationPoints(1, 3000, true);
-
-      const [aPool0, aPool1, aPool2, aTotalAllocationPoints] =
+      const [interestPool, xFarm, yFarm, totalAllocationPoints] =
         await Promise.all([
           casaDePapel.pools(0),
           casaDePapel.pools(1),
           casaDePapel.pools(2),
           casaDePapel.totalAllocationPoints(),
-          // 2 minutos ~ 4 blocks.
-          advanceTime(120_000, ethers),
-          advanceBlock(ethers),
+          casaDePapel.connect(alice).deposit(1, parseEther('100')),
+          casaDePapel.connect(bob).deposit(1, parseEther('50')),
+          casaDePapel.connect(alice).deposit(2, parseEther('100')),
+          casaDePapel.connect(bob).deposit(2, parseEther('200')),
+        ]);
+      // Interest Pool gets 1/3 of 1500 (500) and adds it becoming it's allocation. So the total becomes 1500 + 2000
+      expect(interestPool.allocationPoints).to.be.equal(1000);
+      expect(xFarm.allocationPoints).to.be.equal(1500);
+      expect(yFarm.allocationPoints).to.be.equal(1500);
+      expect(totalAllocationPoints).to.be.equal(4000);
+      expect(xFarm.accruedIntPerShare).to.be.equal(0); // Fetched before the deposit update
+      expect(yFarm.accruedIntPerShare).to.be.equal(0); // Fetched before the deposit update
+
+      // This is before the updateAllPools are called
+      const [xFarm1, yFarm1, totalAllocationPoints1] = await Promise.all([
+        casaDePapel.pools(1),
+        casaDePapel.pools(2),
+        casaDePapel.totalAllocationPoints(),
+      ]);
+
+      await casaDePapel.connect(owner).setAllocationPoints(1, 3000, true);
+
+      const [interestPool2, xFarm2, yFarm2, totalAllocationPoints2] =
+        await Promise.all([
+          casaDePapel.pools(0),
+          casaDePapel.pools(1),
+          casaDePapel.pools(2),
+          casaDePapel.totalAllocationPoints(),
         ]);
 
       // Interest Pool gets 1/3 of 1500 (500) and adds it becoming it's allocation. So the total becomes 1500 + 2000
-      expect(aPool0.allocationPoints).to.be.equal(1500);
-      expect(aPool1.allocationPoints).to.be.equal(3000);
-      expect(aPool2.allocationPoints).to.be.equal(1500);
-      expect(aTotalAllocationPoints).to.be.equal(6000);
-      expect(aPool1.accruedIntPerShare).to.be.equal(
+      expect(interestPool2.allocationPoints).to.be.equal(1500);
+      expect(xFarm2.allocationPoints).to.be.equal(3000);
+      expect(yFarm2.allocationPoints).to.be.equal(1500);
+      expect(totalAllocationPoints2).to.be.equal(6000);
+      expect(xFarm2.accruedIntPerShare).to.be.equal(
         calculateAccruedInt(
-          0,
-          4,
-          aPool1.allocationPoints,
-          aTotalAllocationPoints,
-          aPool1.totalSupply
+          xFarm1.accruedIntPerShare,
+          xFarm2.lastRewardBlock.sub(xFarm1.lastRewardBlock),
+          xFarm1.allocationPoints,
+          totalAllocationPoints1,
+          xFarm1.totalSupply
         )
       );
-      expect(aPool2.accruedIntPerShare).to.be.equal(
+      expect(yFarm2.accruedIntPerShare).to.be.equal(
         calculateAccruedInt(
-          0,
-          4,
-          aPool2.allocationPoints,
-          aTotalAllocationPoints,
-          aPool2.totalSupply
+          yFarm1.accruedIntPerShare,
+          yFarm2.lastRewardBlock.sub(yFarm1.lastRewardBlock),
+          yFarm1.allocationPoints,
+          totalAllocationPoints1,
+          yFarm1.totalSupply
         )
       );
+    });
+  });
+  describe('function: addPool', () => {
+    it('reverts if the caller is not the owner', async () => {
+      await expect(
+        casaDePapel.connect(alice).addPool(1000, lpToken.address, false)
+      ).to.revertedWith('Ownable: caller is not the owner');
     });
   });
 });

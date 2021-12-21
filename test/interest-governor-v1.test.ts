@@ -2,8 +2,8 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { deploy, multiDeploy } from '../lib/test-utils';
 import { Dinero, InterestGovernorV1, MockInterestMarketV1 } from '../typechain';
+import { deploy, multiDeploy } from './lib/test-utils';
 
 const { defaultAbiCoder, keccak256 } = ethers.utils;
 const { AddressZero } = ethers.constants;

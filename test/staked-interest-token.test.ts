@@ -2,8 +2,8 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { deploy } from '../lib/test-utils';
 import { StakedInterestToken } from '../typechain';
+import { deploy } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
