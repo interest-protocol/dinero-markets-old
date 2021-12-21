@@ -3,6 +3,8 @@ node_modules
 coverage
 coverage.json
 typechain
+.env.dev
+.env.prod
 
 #Hardhat files
 cache
