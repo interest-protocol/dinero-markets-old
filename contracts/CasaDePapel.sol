@@ -46,7 +46,7 @@ contract CasaDePapel is Ownable {
 
     struct User {
         uint256 amount;
-        uint256 rewardDebt;
+        uint256 rewardsPaid;
     }
 
     struct Pool {
@@ -203,8 +203,8 @@ contract CasaDePapel is Ownable {
         // Check how many rewards to mint for the user
         if (user.amount > 0) {
             pendingRewards =
-                (user.amount * (pool.accruedIntPerShare / 1e12)) -
-                user.rewardDebt;
+                ((user.amount * pool.accruedIntPerShare) / 1e12) -
+                user.rewardsPaid;
         }
 
         if (amount > 0) {
@@ -222,7 +222,7 @@ contract CasaDePapel is Ownable {
         }
 
         // He has been paid all rewards up to this point
-        user.rewardDebt = (user.amount * pool.accruedIntPerShare) / 1e12;
+        user.rewardsPaid = (user.amount * pool.accruedIntPerShare) / 1e12;
 
         // Update global state
         pools[poolId] = pool;
@@ -263,8 +263,8 @@ contract CasaDePapel is Ownable {
         User memory user = userInfo[poolId][_msgSender()];
 
         // Save user rewards before any state manipulation
-        uint256 pendingRewards = (user.amount *
-            (pool.accruedIntPerShare / 1e12)) - user.rewardDebt;
+        uint256 pendingRewards = ((user.amount * pool.accruedIntPerShare) /
+            1e12) - user.rewardsPaid;
 
         if (amount > 0) {
             user.amount -= amount;
@@ -273,7 +273,7 @@ contract CasaDePapel is Ownable {
         }
 
         // Updte the amount of reward paid to the user
-        user.rewardDebt = (user.amount * pool.accruedIntPerShare) / 1e12;
+        user.rewardsPaid = (user.amount * pool.accruedIntPerShare) / 1e12;
 
         // Update global state
         pools[poolId] = pool;
@@ -299,7 +299,7 @@ contract CasaDePapel is Ownable {
 
         // Clean user history
         user.amount = 0;
-        user.rewardDebt = 0;
+        user.rewardsPaid = 0;
 
         pool.stakingToken.safeTransfer(_msgSender(), amount);
 
@@ -344,7 +344,7 @@ contract CasaDePapel is Ownable {
                 (intReward * 1e12) /
                 numberOfTokenStaked;
         }
-        return ((user.amount * accruedIntPerShare) / 1e12) - user.rewardDebt;
+        return ((user.amount * accruedIntPerShare) / 1e12) - user.rewardsPaid;
     }
 
     /**
@@ -361,8 +361,8 @@ contract CasaDePapel is Ownable {
 
         if (user.amount > 0) {
             pendingRewards =
-                (user.amount * (pool.accruedIntPerShare / 1e12)) -
-                user.rewardDebt;
+                ((user.amount * pool.accruedIntPerShare) / 1e12) -
+                user.rewardsPaid;
         }
 
         if (amount > 0) {
@@ -379,7 +379,7 @@ contract CasaDePapel is Ownable {
             STAKED_INTEREST_TOKEN.mint(_msgSender(), amount);
         }
 
-        user.rewardDebt = user.amount * (pool.accruedIntPerShare / 1e12);
+        user.rewardsPaid = (user.amount * pool.accruedIntPerShare) / 1e12;
 
         if (pendingRewards > 0) {
             INTEREST_TOKEN.mint(_msgSender(), pendingRewards);
@@ -411,8 +411,8 @@ contract CasaDePapel is Ownable {
 
     /**
      * @dev This function is to allow composability with contracts that will accept sInt. It will allow them to call this function and make sure they can withdraw the Int in the future
-     * @param from The account which will transfer his amount and rewardDebt
-     * @param to The account which will receieve the amount and rewardDebt transferred
+     * @param from The account which will transfer his amount and rewardsPaid
+     * @param to The account which will receieve the amount and rewardsPaid transferred
      * @param amount The amount of tokens the `from` wants to send to `to`
      */
     function transfer(
@@ -433,12 +433,12 @@ contract CasaDePapel is Ownable {
         User memory user = userInfo[0][from];
         User memory beneficiary = userInfo[0][to];
 
-        uint256 rewardDebt = amount * (pools[0].accruedIntPerShare / 1e12);
+        uint256 rewardsPaid = (amount * pools[0].accruedIntPerShare) / 1e12;
 
-        user.rewardDebt -= rewardDebt;
+        user.rewardsPaid -= rewardsPaid;
         user.amount -= amount;
 
-        beneficiary.rewardDebt += rewardDebt;
+        beneficiary.rewardsPaid += rewardsPaid;
         beneficiary.amount += amount;
 
         // Make sure the `to` address has enough `STAKED_INTEREST_TOKEN` to redeem `INTEREST_TOKEN` in the future.
@@ -464,8 +464,8 @@ contract CasaDePapel is Ownable {
         Pool memory pool = pools[0];
         User memory user = userInfo[0][_msgSender()];
 
-        uint256 pendingRewards = (user.amount *
-            (pool.accruedIntPerShare / 1e12)) - user.rewardDebt;
+        uint256 pendingRewards = ((user.amount * pool.accruedIntPerShare) /
+            1e12) - user.rewardsPaid;
 
         if (amount > 0) {
             // `msg.sender` must have enough receipt tokens. As sINT totalSupply must always be equal to the `pool.totalSupply` of Int
@@ -482,7 +482,7 @@ contract CasaDePapel is Ownable {
         }
 
         // Update user reward. He has been  paid in full amount
-        user.rewardDebt = (user.amount * pool.accruedIntPerShare) / 1e12;
+        user.rewardsPaid = (user.amount * pool.accruedIntPerShare) / 1e12;
 
         pools[0] = pool;
         userInfo[0][_msgSender()] = user;

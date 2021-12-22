@@ -10,6 +10,7 @@ import {
 } from '../typechain';
 import {
   advanceBlock,
+  calculateUserPendingRewards,
   deploy,
   makeCalculateAccruedInt,
   multiDeploy,
@@ -17,7 +18,7 @@ import {
 
 const { parseEther } = ethers.utils;
 
-const { constants, provider } = ethers;
+const { constants, provider, BigNumber } = ethers;
 
 const INTEREST_TOKEN_PER_BLOCK = parseEther('15');
 
@@ -69,12 +70,16 @@ describe('Case de Papel', () => {
       lpToken2.mint(bob.address, parseEther('500')),
       interestToken.connect(owner).mint(alice.address, parseEther('500')),
       interestToken.connect(owner).mint(bob.address, parseEther('500')),
-      sInterestToken.connect(owner).mint(alice.address, parseEther('500')),
-      sInterestToken.connect(owner).mint(bob.address, parseEther('500')),
     ]);
 
     await Promise.all([
       // Approve to work with casa de papel
+      interestToken
+        .connect(alice)
+        .approve(casaDePapel.address, constants.MaxUint256),
+      interestToken
+        .connect(bob)
+        .approve(casaDePapel.address, constants.MaxUint256),
       lpToken.connect(alice).approve(casaDePapel.address, constants.MaxUint256),
       lpToken.connect(bob).approve(casaDePapel.address, constants.MaxUint256),
       lpToken2
@@ -244,7 +249,7 @@ describe('Case de Papel', () => {
         sInterestToken.address,
         developer.address,
         INTEREST_TOKEN_PER_BLOCK,
-        100, // last reward block should be this one
+        parseEther('1'), // last reward block should be this one. We need a very large number in case of test run delays
       ]);
 
       // Adding a pool to test
@@ -252,7 +257,7 @@ describe('Case de Papel', () => {
 
       const xFarm = await contract.pools(1);
 
-      expect(xFarm.lastRewardBlock).to.be.equal(100);
+      expect(xFarm.lastRewardBlock).to.be.equal(parseEther('1'));
     });
     it('adds a new pool', async () => {
       const [totalPools, totalAllocationPoints, interestPool] =
@@ -345,6 +350,96 @@ describe('Case de Papel', () => {
       // interest token per block AFTER update
       expect(await casaDePapel.interestTokenPerBlock()).to.be.equal(
         parseEther('1')
+      );
+    });
+  });
+  describe('function: leaveStaking', () => {
+    it('reverts if the user tries to withdraw more than he deposited', async () => {
+      await casaDePapel.connect(alice).stake(parseEther('1'));
+      await expect(casaDePapel.leaveStaking(parseEther('1.1'))).to.revertedWith(
+        'CP: not enough tokens'
+      );
+    });
+    it('returns only the rewards if the user chooses to', async () => {
+      await casaDePapel.connect(alice).stake(parseEther('10'));
+
+      // Spend some blocks to accrue rewards
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      const [user, pool] = await Promise.all([
+        casaDePapel.userInfo(0, alice.address),
+        casaDePapel.pools(0),
+      ]);
+
+      await expect(casaDePapel.connect(alice).leaveStaking(0))
+        .to.emit(casaDePapel, 'Withdraw')
+        .withArgs(alice.address, 0, 0);
+
+      const [user1, pool1] = await Promise.all([
+        casaDePapel.userInfo(0, alice.address),
+        casaDePapel.pools(0),
+      ]);
+
+      expect(user.rewardsPaid).to.be.equal(0);
+      expect(user1.amount).to.be.equal(parseEther('10'));
+      expect(pool.totalSupply).to.be.equal(pool1.totalSupply);
+      // Only one user so he was paid all rewards
+      expect(user1.rewardsPaid).to.be.equal(
+        // accruedIntPerShare has more decimal houses for precision
+        pool1.accruedIntPerShare.mul(pool1.totalSupply).div(1e12)
+      );
+      expect(await interestToken.balanceOf(alice.address)).to.be.equal(
+        calculateUserPendingRewards(
+          parseEther('10'),
+          pool1.accruedIntPerShare,
+          BigNumber.from(0)
+          // Need to add her initial balance of 500 minus the 10 deposited
+        ).add(parseEther('490'))
+      );
+      expect(await sInterestToken.balanceOf(alice.address)).to.be.equal(
+        parseEther('10')
+      );
+    });
+    it('returns the rewards and the amounts', async () => {
+      await casaDePapel.connect(alice).stake(parseEther('10'));
+      // Spend some blocks to accrue rewards
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      const [user, sInterestTokenBalance] = await Promise.all([
+        casaDePapel.userInfo(0, alice.address),
+        sInterestToken.balanceOf(alice.address),
+      ]);
+
+      await expect(casaDePapel.connect(alice).leaveStaking(parseEther('4')))
+        .to.emit(casaDePapel, 'Withdraw')
+        .withArgs(alice.address, 0, parseEther('4'));
+
+      const [user1, pool] = await Promise.all([
+        casaDePapel.userInfo(0, alice.address),
+        casaDePapel.pools(0),
+      ]);
+
+      expect(user.rewardsPaid).to.be.equal(0);
+      expect(sInterestTokenBalance).to.be.equal(parseEther('10'));
+      expect(await sInterestToken.balanceOf(alice.address)).to.be.equal(
+        parseEther('6')
+      );
+      expect(user1.amount).to.be.equal(parseEther('6'));
+      expect(pool.totalSupply).to.be.equal(parseEther('6'));
+      // Only one user so he was paid all rewards
+      expect(user1.rewardsPaid).to.be.equal(
+        // accruedIntPerShare has more decimal houses for precision
+        pool.accruedIntPerShare.mul(pool.totalSupply).div(1e12)
+      );
+      expect(await interestToken.balanceOf(alice.address)).to.be.equal(
+        calculateUserPendingRewards(
+          parseEther('10'),
+          pool.accruedIntPerShare,
+          BigNumber.from(0)
+          // Need to add her initial balance of 500 minus the 10 deposited
+        ).add(parseEther('494'))
       );
     });
   });

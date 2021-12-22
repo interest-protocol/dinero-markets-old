@@ -50,3 +50,9 @@ export const makeCalculateAccruedInt =
 
     return accruedInterest.add(rewards.div(totalSupply));
   };
+
+export const calculateUserPendingRewards = (
+  userAmount: BigNumber,
+  poolAccruedIntPerShare: BigNumber,
+  userRewardsPaid: BigNumber
+) => userAmount.mul(poolAccruedIntPerShare).div(1e12).sub(userRewardsPaid);
