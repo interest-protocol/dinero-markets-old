@@ -145,7 +145,7 @@ contract CasaDePapel is Ownable {
 
         // If no one is staking. Update the last time rewards were awarded (althrough its 0) and do nothing.
         if (amountOfStakedTokens == 0) {
-            pool.lastRewardBlock = block.number;
+            pools[poolId].lastRewardBlock = block.number;
             return;
         }
 

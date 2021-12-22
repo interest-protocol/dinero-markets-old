@@ -8,11 +8,16 @@ import {
   MockERC20,
   StakedInterestToken,
 } from '../typechain';
-import { deploy, makeCalculateAccruedInt, multiDeploy } from './lib/test-utils';
+import {
+  advanceBlock,
+  deploy,
+  makeCalculateAccruedInt,
+  multiDeploy,
+} from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
-const { constants } = ethers;
+const { constants, provider } = ethers;
 
 const INTEREST_TOKEN_PER_BLOCK = parseEther('15');
 
@@ -128,6 +133,8 @@ describe('Case de Papel', () => {
       expect(interesTokenPool1.allocationPoints).to.be.equal(1000);
       expect(xFarm1.allocationPoints).to.be.equal(3000);
       expect(TotalAllocationPoints1).to.be.equal(4000);
+      // Tests if the we call updateAllPools
+      expect(xFarm.lastRewardBlock).to.be.equal(xFarm1.lastRewardBlock);
     });
     it('updates a pool allocation points and updates all pools data', async () => {
       // Adds two pools
@@ -175,6 +182,13 @@ describe('Case de Papel', () => {
       expect(xFarm2.allocationPoints).to.be.equal(3000);
       expect(yFarm2.allocationPoints).to.be.equal(1500);
       expect(totalAllocationPoints2).to.be.equal(6000);
+      // Tests below here test the updateAllPools logic
+      expect(xFarm2.lastRewardBlock.toNumber()).to.be.greaterThan(
+        xFarm1.lastRewardBlock.toNumber()
+      );
+      expect(yFarm2.lastRewardBlock.toNumber()).to.be.greaterThan(
+        yFarm1.lastRewardBlock.toNumber()
+      );
       expect(xFarm2.accruedIntPerShare).to.be.equal(
         calculateAccruedInt(
           xFarm1.accruedIntPerShare,
@@ -200,6 +214,138 @@ describe('Case de Papel', () => {
       await expect(
         casaDePapel.connect(alice).addPool(1000, lpToken.address, false)
       ).to.revertedWith('Ownable: caller is not the owner');
+    });
+    it('updates all other pools if requested', async () => {
+      // Adding a pool to test
+      await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
+
+      const xFarm = await casaDePapel.pools(1);
+
+      // Add a second pool to test if the first was updated
+      await casaDePapel.connect(owner).addPool(2000, lpToken2.address, true);
+
+      // Since we asked for an update the lastRewardBlock must have been updated
+      const xFarm1 = await casaDePapel.pools(1);
+
+      expect(xFarm.lastRewardBlock.toNumber()).to.be.lessThan(
+        xFarm1.lastRewardBlock.toNumber()
+      );
+    });
+    it('reverts if you add the same pool twice', async () => {
+      await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
+      await expect(
+        casaDePapel.connect(owner).addPool(1500, lpToken.address, false)
+      ).to.revertedWith('CP: poola already added');
+    });
+    it('sets the start block as the last reward block if the pool is added before the start block', async () => {
+      // Need to redeploy casa de papel with longer start_block
+      const contract: CasaDePapel = await deploy('CasaDePapel', [
+        interestToken.address,
+        sInterestToken.address,
+        developer.address,
+        INTEREST_TOKEN_PER_BLOCK,
+        100, // last reward block should be this one
+      ]);
+
+      // Adding a pool to test
+      await contract.connect(owner).addPool(1500, lpToken.address, false);
+
+      const xFarm = await contract.pools(1);
+
+      expect(xFarm.lastRewardBlock).to.be.equal(100);
+    });
+    it('adds a new pool', async () => {
+      const [totalPools, totalAllocationPoints, interestPool] =
+        await Promise.all([
+          casaDePapel.getPoolsLength(),
+          casaDePapel.totalAllocationPoints(),
+          casaDePapel.pools(0),
+        ]);
+
+      expect(totalPools).to.be.equal(1);
+      expect(totalAllocationPoints).to.be.equal(1000);
+      expect(interestPool.allocationPoints).to.be.equal(1000);
+
+      await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
+
+      // Refresh the relevant state to ensure it was properly updated
+      const [
+        blockNumber,
+        totalPools1,
+        totalAllocationPoints1,
+        interestPool1,
+        xFarm,
+      ] = await Promise.all([
+        provider.getBlockNumber(),
+        casaDePapel.getPoolsLength(),
+        casaDePapel.totalAllocationPoints(),
+        casaDePapel.pools(0),
+        casaDePapel.pools(1),
+      ]);
+
+      expect(totalPools1).to.be.equal(2);
+      expect(totalAllocationPoints1).to.be.equal(2000);
+      expect(interestPool1.allocationPoints).to.be.equal(500);
+      expect(xFarm.allocationPoints).to.be.equal(1500);
+      expect(xFarm.lastRewardBlock).to.be.equal(blockNumber);
+      expect(xFarm.stakingToken).to.be.equal(lpToken.address);
+      expect(xFarm.accruedIntPerShare).to.be.equal(0);
+      expect(xFarm.totalSupply).to.be.equal(0);
+    });
+  });
+  describe('function: setIntPerBlock', () => {
+    it('reverts if the caller is not the owner', async () => {
+      await expect(
+        casaDePapel.connect(alice).setIntPerBlock(parseEther('1'), false)
+      ).to.revertedWith('Ownable: caller is not the owner');
+    });
+    it('updates all other pools if requested', async () => {
+      const [interestPool, interestTokenPerBlock] = await Promise.all([
+        casaDePapel.pools(0),
+        casaDePapel.interestTokenPerBlock(),
+      ]);
+
+      await advanceBlock(ethers);
+
+      await casaDePapel.connect(owner).setIntPerBlock(parseEther('1'), true);
+
+      // last reward BEFORE update
+      expect(interestPool.lastRewardBlock).to.be.equal(START_BLOCK);
+      // last reward AFTER UPDATE
+      expect(
+        (await casaDePapel.pools(0)).lastRewardBlock.toNumber()
+      ).to.be.greaterThan(START_BLOCK);
+
+      // interest token per block BEFORE update
+      expect(interestTokenPerBlock).to.be.equal(INTEREST_TOKEN_PER_BLOCK);
+      // interest token per block AFTER update
+      expect(await casaDePapel.interestTokenPerBlock()).to.be.equal(
+        parseEther('1')
+      );
+    });
+    it('updates interest token per block without updating the pools', async () => {
+      const [interestPool, interestTokenPerBlock] = await Promise.all([
+        casaDePapel.pools(0),
+        casaDePapel.interestTokenPerBlock(),
+      ]);
+
+      await advanceBlock(ethers);
+
+      await casaDePapel.connect(owner).setIntPerBlock(parseEther('1'), false);
+
+      // last reward BEFORE update
+      expect(interestPool.lastRewardBlock).to.be.equal(START_BLOCK);
+      // last reward AFTER UPDATE
+      expect(
+        (await casaDePapel.pools(0)).lastRewardBlock.toNumber()
+      ).to.be.equal(START_BLOCK);
+
+      // interest token per block BEFORE update
+      expect(interestTokenPerBlock).to.be.equal(INTEREST_TOKEN_PER_BLOCK);
+      // interest token per block AFTER update
+      expect(await casaDePapel.interestTokenPerBlock()).to.be.equal(
+        parseEther('1')
+      );
     });
   });
 });
