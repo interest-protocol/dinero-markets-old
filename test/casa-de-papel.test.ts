@@ -451,13 +451,15 @@ describe('Case de Papel', () => {
     });
     it('reverts if the user does not have enough tokens to transfer', async () => {
       await casaDePapel.connect(bob).givePermission(alice.address);
-      await casaDePapel.connect(alice).stake(parseEther('10'));
       await expect(
         casaDePapel.connect(alice).liquidate(bob.address, parseEther('1'))
       ).to.revertedWith('CP: not enough tokens');
     });
     it('reverts if the msg.sender does not have enough staked interest tokens', async () => {
-      await casaDePapel.connect(bob).givePermission(alice.address);
+      await Promise.all([
+        casaDePapel.connect(bob).givePermission(alice.address),
+        casaDePapel.connect(bob).stake(parseEther('10')),
+      ]);
 
       await expect(
         casaDePapel.connect(alice).liquidate(bob.address, parseEther('10'))

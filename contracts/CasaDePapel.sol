@@ -365,38 +365,7 @@ contract CasaDePapel is Ownable {
      */
     function liquidate(address debtor, uint256 amount) external {
         require(permission[debtor][_msgSender()], "CP: no permission");
-
-        // Liquidator must have enough staked interest tokens
-        STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
-
-        User memory user = userInfo[0][debtor];
-
-        require(user.amount >= amount, "CP: not enough tokens");
-
-        updatePool(0);
-
-        Pool memory pool = pools[0];
-
-        uint256 pendingRewards = ((user.amount * pool.accruedIntPerShare) /
-            1e12) - user.rewardsPaid;
-
-        user.amount -= amount;
-        // User being liquidated will lose all rewards to the `msg.sender`
-        user.rewardsPaid = (user.amount * pool.accruedIntPerShare) / 1e12;
-
-        if (pendingRewards > 0) {
-            // Send the rewards to the liquidator
-            InterestToken(address(pool.stakingToken)).mint(
-                _msgSender(),
-                pendingRewards
-            );
-        }
-
-        // Update Global state
-        userInfo[0][debtor] = user;
-
-        pool.stakingToken.transfer(_msgSender(), amount);
-
+        _unstake(debtor, amount);
         emit Liquidate(_msgSender(), debtor, amount);
     }
 
@@ -405,44 +374,7 @@ contract CasaDePapel is Ownable {
      * @param amount The number of {INTEREST_TOKEN} to withdraw to the `msg.sender`
      */
     function leaveStaking(uint256 amount) external {
-        require(
-            userInfo[0][_msgSender()].amount >= amount,
-            "CP: not enough tokens"
-        );
-
-        updatePool(0);
-
-        Pool memory pool = pools[0];
-        User memory user = userInfo[0][_msgSender()];
-
-        uint256 pendingRewards = ((user.amount * pool.accruedIntPerShare) /
-            1e12) - user.rewardsPaid;
-
-        if (amount > 0) {
-            // `msg.sender` must have enough receipt tokens. As sINT totalSupply must always be equal to the `pool.totalSupply` of Int
-            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
-            user.amount -= amount;
-            pool.totalSupply -= amount;
-            uint256 intBalance = pool.stakingToken.balanceOf(address(this));
-            pool.stakingToken.safeTransfer(
-                _msgSender(),
-                intBalance >= amount ? amount : intBalance
-            );
-        }
-
-        // Update user reward. He has been  paid in full amount
-        user.rewardsPaid = (user.amount * pool.accruedIntPerShare) / 1e12;
-
-        pools[0] = pool;
-        userInfo[0][_msgSender()] = user;
-
-        if (pendingRewards > 0) {
-            InterestToken(address(pool.stakingToken)).mint(
-                _msgSender(),
-                pendingRewards
-            );
-        }
-
+        _unstake(_msgSender(), amount);
         emit Withdraw(_msgSender(), 0, amount);
     }
 
@@ -533,6 +465,48 @@ contract CasaDePapel is Ownable {
             totalAllocationPoints = _totalAllocationPoints;
 
             pools[0].allocationPoints = allOtherPoolsPoints;
+        }
+    }
+
+    /**
+     * @dev This function has the core logic for unstaking to be composable by other functions
+     * @param debtor The user which will have his amount and rewards lost
+     * @param amount The number of tokens to be unstaked
+     */
+    function _unstake(address debtor, uint256 amount) private {
+        require(userInfo[0][debtor].amount >= amount, "CP: not enough tokens");
+
+        updatePool(0);
+
+        Pool memory pool = pools[0];
+        User memory user = userInfo[0][debtor];
+
+        uint256 pendingRewards = ((user.amount * pool.accruedIntPerShare) /
+            1e12) - user.rewardsPaid;
+
+        if (amount > 0) {
+            // `msg.sender` must have enough receipt tokens. As sINT totalSupply must always be equal to the `pool.totalSupply` of Int
+            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
+            user.amount -= amount;
+            pool.totalSupply -= amount;
+            uint256 intBalance = pool.stakingToken.balanceOf(address(this));
+            pool.stakingToken.safeTransfer(
+                _msgSender(),
+                intBalance >= amount ? amount : intBalance
+            );
+        }
+
+        // Update user reward. He has been  paid in full amount
+        user.rewardsPaid = (user.amount * pool.accruedIntPerShare) / 1e12;
+
+        pools[0] = pool;
+        userInfo[0][debtor] = user;
+
+        if (pendingRewards > 0) {
+            InterestToken(address(pool.stakingToken)).mint(
+                _msgSender(),
+                pendingRewards
+            );
         }
     }
 
