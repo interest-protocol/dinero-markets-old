@@ -34,11 +34,15 @@ contract CasaDePapel is Ownable {
         uint256 amount
     );
 
-    event Transfer(address indexed from, address indexed to, uint256 amount);
-
     event EmergencyWithdraw(
         address indexed user,
         uint256 indexed poolId,
+        uint256 amount
+    );
+
+    event Liquidate(
+        address indexed liquidator,
+        address indexed debtor,
         uint256 amount
     );
 
@@ -76,7 +80,7 @@ contract CasaDePapel is Ownable {
     // PoolId -> User -> UserInfo
     mapping(uint256 => mapping(address => User)) public userInfo;
 
-    // User -> Contract -> Permission
+    // From -> `msg.sender` -> Permission
     mapping(address => mapping(address => bool)) public permission;
 
     // Check if the token has a pool
@@ -108,7 +112,7 @@ contract CasaDePapel is Ownable {
         // Setup the first pool. Stake INT for INT
         pools.push(
             Pool({
-                stakingToken: interestToken,
+                stakingToken: IERC20(interestToken),
                 allocationPoints: 1000,
                 lastRewardBlock: _startBlock,
                 accruedIntPerShare: 0,
@@ -130,6 +134,24 @@ contract CasaDePapel is Ownable {
     }
 
     /**************************** MUTATIVE FUNCTIONS ****************************/
+
+    /**
+     * @dev Only give permission to a contract you trust 100% as they can liquidate your tokens and take the rewards
+     * @param account The address that will have permission to liquidate the funds and rewards from your account.
+     */
+    function givePermission(address account) external {
+        require(account != address(0), "CP: zero address");
+        permission[_msgSender()][account] = true;
+    }
+
+    /**
+     * @dev This function can be called to revoke an `account` to have access to your funds after calling `givePermission`
+     * @param account The address that will no longer have permission to liquidate.
+     */
+    function revokePermission(address account) external {
+        require(account != address(0), "CP: zero address");
+        permission[_msgSender()][account] = false;
+    }
 
     /**
      * @dev This function updates the rewards for 1 pool and the dev rewards based on the current amount tokens
@@ -287,6 +309,144 @@ contract CasaDePapel is Ownable {
     }
 
     /**
+     * @dev This function allows the `msg.sender` to deposit {INTEREST_TOKEN} and start earning rewards. It also gives a receipt token {STAKED_INTEREST_TOKEN}. The receipt token will be needed to withdraw the tokens!
+     * @param amount The number of {INTEREST_TOKEN} the `msg.sender` wishes to stake
+     */
+    function stake(uint256 amount) external {
+        updatePool(0);
+
+        Pool memory pool = pools[0];
+        User memory user = userInfo[0][_msgSender()];
+
+        uint256 pendingRewards;
+
+        if (user.amount > 0) {
+            pendingRewards =
+                ((user.amount * pool.accruedIntPerShare) / 1e12) -
+                user.rewardsPaid;
+        }
+
+        if (amount > 0) {
+            user.amount += amount;
+            pool.totalSupply += amount;
+            // Get Int from the user
+            pool.stakingToken.safeTransferFrom(
+                _msgSender(),
+                address(this),
+                amount
+            );
+
+            // Give the user the receipt token
+            STAKED_INTEREST_TOKEN.mint(_msgSender(), amount);
+        }
+
+        user.rewardsPaid = (user.amount * pool.accruedIntPerShare) / 1e12;
+
+        if (pendingRewards > 0) {
+            InterestToken(address(pool.stakingToken)).mint(
+                _msgSender(),
+                pendingRewards
+            );
+        }
+
+        pools[0] = pool;
+        userInfo[0][_msgSender()] = user;
+
+        emit Deposit(_msgSender(), 0, amount);
+    }
+
+    /**
+     * @dev This function is meant to be called by contracts that accept accept {STAKED_INTEREST_TOKEN} and requires the user to give permission beforehand. This is meant for an urgent situation in which the contract requires to swap the {STAKED_INTEREST_TOKEN} back to {INTEREST_TOKEN}
+     * @param debtor The account that will be liquidated. The one who owes the `msg.sender` {INTEREST_TOKENS}
+     * @param amount The number of tokens the `account` owes the `msg.sender`
+     *
+     * The Interest Lending Market needs this functionality to allow borrowing with {STAKED_INTEREST_TOKEN} as collateral
+     *
+     */
+    function liquidate(address debtor, uint256 amount) external {
+        require(permission[debtor][_msgSender()], "CP: no permission");
+
+        // Liquidator must have enough staked interest tokens
+        STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
+
+        User memory user = userInfo[0][debtor];
+
+        require(user.amount >= amount, "CP: not enough tokens");
+
+        updatePool(0);
+
+        Pool memory pool = pools[0];
+
+        uint256 pendingRewards = ((user.amount * pool.accruedIntPerShare) /
+            1e12) - user.rewardsPaid;
+
+        user.amount -= amount;
+        // User being liquidated will lose all rewards to the `msg.sender`
+        user.rewardsPaid = (user.amount * pool.accruedIntPerShare) / 1e12;
+
+        if (pendingRewards > 0) {
+            // Send the rewards to the liquidator
+            InterestToken(address(pool.stakingToken)).mint(
+                _msgSender(),
+                pendingRewards
+            );
+        }
+
+        // Update Global state
+        userInfo[0][debtor] = user;
+
+        pool.stakingToken.transfer(_msgSender(), amount);
+
+        emit Liquidate(_msgSender(), debtor, amount);
+    }
+
+    /**
+     * @dev This function is to remove the {INTEREST_TOKEN} from the pool
+     * @param amount The number of {INTEREST_TOKEN} to withdraw to the `msg.sender`
+     */
+    function leaveStaking(uint256 amount) external {
+        require(
+            userInfo[0][_msgSender()].amount >= amount,
+            "CP: not enough tokens"
+        );
+
+        updatePool(0);
+
+        Pool memory pool = pools[0];
+        User memory user = userInfo[0][_msgSender()];
+
+        uint256 pendingRewards = ((user.amount * pool.accruedIntPerShare) /
+            1e12) - user.rewardsPaid;
+
+        if (amount > 0) {
+            // `msg.sender` must have enough receipt tokens. As sINT totalSupply must always be equal to the `pool.totalSupply` of Int
+            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
+            user.amount -= amount;
+            pool.totalSupply -= amount;
+            uint256 intBalance = pool.stakingToken.balanceOf(address(this));
+            pool.stakingToken.safeTransfer(
+                _msgSender(),
+                intBalance >= amount ? amount : intBalance
+            );
+        }
+
+        // Update user reward. He has been  paid in full amount
+        user.rewardsPaid = (user.amount * pool.accruedIntPerShare) / 1e12;
+
+        pools[0] = pool;
+        userInfo[0][_msgSender()] = user;
+
+        if (pendingRewards > 0) {
+            InterestToken(address(pool.stakingToken)).mint(
+                _msgSender(),
+                pendingRewards
+            );
+        }
+
+        emit Withdraw(_msgSender(), 0, amount);
+    }
+
+    /**
      * @dev This function should only be called for urgent situations. It will not calculate or give rewards. It will simply send the staked tokens
      * @param poolId the pool that the user wishes to completely exit
      */
@@ -296,6 +456,10 @@ contract CasaDePapel is Ownable {
         User storage user = userInfo[poolId][_msgSender()];
 
         uint256 amount = user.amount;
+
+        if (poolId == 0) {
+            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
+        }
 
         // Clean user history
         user.amount = 0;
@@ -330,11 +494,11 @@ contract CasaDePapel is Ownable {
         User memory user = userInfo[poolId][_user];
 
         uint256 accruedIntPerShare = pool.accruedIntPerShare;
-        uint256 numberOfTokenStaked = pool.stakingToken.balanceOf(
-            address(this)
-        );
+        uint256 totalSupply = pool.totalSupply;
 
-        if (block.number > pool.lastRewardBlock && numberOfTokenStaked != 0) {
+        if (totalSupply == 0 || user.amount == 0) return 0;
+
+        if (block.number > pool.lastRewardBlock) {
             uint256 blocksElaped = block.number - pool.lastRewardBlock;
             uint256 intReward = (blocksElaped *
                 interestTokenPerBlock *
@@ -342,156 +506,9 @@ contract CasaDePapel is Ownable {
             accruedIntPerShare =
                 accruedIntPerShare +
                 (intReward * 1e12) /
-                numberOfTokenStaked;
+                totalSupply;
         }
         return ((user.amount * accruedIntPerShare) / 1e12) - user.rewardsPaid;
-    }
-
-    /**
-     * @dev This function allows the `msg.sender` to deposit {INTEREST_TOKEN} and start earning rewards. It also gives a receipt token {STAKED_INTEREST_TOKEN}. The receipt token will be needed to withdraw the tokens!
-     * @param amount The number of {INTEREST_TOKEN} the `msg.sender` wishes to stake
-     */
-    function stake(uint256 amount) external {
-        updatePool(0);
-
-        Pool memory pool = pools[0];
-        User memory user = userInfo[0][_msgSender()];
-
-        uint256 pendingRewards;
-
-        if (user.amount > 0) {
-            pendingRewards =
-                ((user.amount * pool.accruedIntPerShare) / 1e12) -
-                user.rewardsPaid;
-        }
-
-        if (amount > 0) {
-            user.amount += amount;
-            pool.totalSupply += amount;
-            // Get Int from the user
-            IERC20(INTEREST_TOKEN).safeTransferFrom(
-                _msgSender(),
-                address(this),
-                amount
-            );
-
-            // Give the user the receipt token
-            STAKED_INTEREST_TOKEN.mint(_msgSender(), amount);
-        }
-
-        user.rewardsPaid = (user.amount * pool.accruedIntPerShare) / 1e12;
-
-        if (pendingRewards > 0) {
-            INTEREST_TOKEN.mint(_msgSender(), pendingRewards);
-        }
-
-        pools[0] = pool;
-        userInfo[0][_msgSender()] = user;
-
-        emit Deposit(_msgSender(), 0, amount);
-    }
-
-    /**
-     * @dev This function needs to be called before `transfer` as it gives permission to transfer Int tokens
-     * @param account The address that will have permission to move the funds. Beware this is very powerful as it gives acces to the entire funds of pool[0].
-     */
-    function givePermission(address account) external {
-        require(account != address(0), "CP: zero address");
-        permission[_msgSender()][account] = true;
-    }
-
-    /**
-     * @dev This function can be called to revoke an `account` to have access to your funds after calling `givePermission`
-     * @param account The address that will no longer have permission to move funds from ur pool[0]
-     */
-    function revokePermission(address account) external {
-        require(account != address(0), "CP: zero address");
-        permission[_msgSender()][account] = false;
-    }
-
-    /**
-     * @dev This function is to allow composability with contracts that will accept sInt. It will allow them to call this function and make sure they can withdraw the Int in the future
-     * @param from The account which will transfer his amount and rewardsPaid
-     * @param to The account which will receieve the amount and rewardsPaid transferred
-     * @param amount The amount of tokens the `from` wants to send to `to`
-     */
-    function transfer(
-        address from,
-        address to,
-        uint256 amount
-    ) external {
-        if (_msgSender() != from) {
-            // @dev Important to first call the `givePermission` function
-            require(permission[from][_msgSender()], "CP: no permission");
-        }
-
-        require(userInfo[0][from].amount >= amount, "CP: not enough tokens");
-
-        // Update the rewards to properly pay the user
-        updatePool(0);
-
-        User memory user = userInfo[0][from];
-        User memory beneficiary = userInfo[0][to];
-
-        uint256 rewardsPaid = (amount * pools[0].accruedIntPerShare) / 1e12;
-
-        user.rewardsPaid -= rewardsPaid;
-        user.amount -= amount;
-
-        beneficiary.rewardsPaid += rewardsPaid;
-        beneficiary.amount += amount;
-
-        // Make sure the `to` address has enough `STAKED_INTEREST_TOKEN` to redeem `INTEREST_TOKEN` in the future.
-        require(
-            STAKED_INTEREST_TOKEN.balanceOf(to) >= beneficiary.amount,
-            "CP: not enough tokens"
-        );
-
-        userInfo[0][from] = user;
-        userInfo[0][to] = beneficiary;
-
-        emit Transfer(from, to, amount);
-    }
-
-    function leaveStaking(uint256 amount) external {
-        require(
-            userInfo[0][_msgSender()].amount >= amount,
-            "CP: not enough tokens"
-        );
-
-        updatePool(0);
-
-        Pool memory pool = pools[0];
-        User memory user = userInfo[0][_msgSender()];
-
-        uint256 pendingRewards = ((user.amount * pool.accruedIntPerShare) /
-            1e12) - user.rewardsPaid;
-
-        if (amount > 0) {
-            // `msg.sender` must have enough receipt tokens. As sINT totalSupply must always be equal to the `pool.totalSupply` of Int
-            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
-            user.amount -= amount;
-            pool.totalSupply -= amount;
-            uint256 intBalance = IERC20(INTEREST_TOKEN).balanceOf(
-                address(this)
-            );
-            IERC20(INTEREST_TOKEN).safeTransfer(
-                _msgSender(),
-                intBalance >= amount ? amount : intBalance
-            );
-        }
-
-        // Update user reward. He has been  paid in full amount
-        user.rewardsPaid = (user.amount * pool.accruedIntPerShare) / 1e12;
-
-        pools[0] = pool;
-        userInfo[0][_msgSender()] = user;
-
-        if (pendingRewards > 0) {
-            INTEREST_TOKEN.mint(_msgSender(), pendingRewards);
-        }
-
-        emit Withdraw(_msgSender(), 0, amount);
     }
 
     /**************************** PRIVATE FUNCTIONS ****************************/

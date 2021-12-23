@@ -443,4 +443,63 @@ describe('Case de Papel', () => {
       );
     });
   });
+  describe('function: liquidate', () => {
+    it('reverts if the from did not authorize the msg sender', async () => {
+      await expect(
+        casaDePapel.connect(alice).liquidate(bob.address, parseEther('1'))
+      ).to.revertedWith('CP: no permission');
+    });
+    it('reverts if the user does not have enough tokens to transfer', async () => {
+      await casaDePapel.connect(bob).givePermission(alice.address);
+      await casaDePapel.connect(alice).stake(parseEther('10'));
+      await expect(
+        casaDePapel.connect(alice).liquidate(bob.address, parseEther('1'))
+      ).to.revertedWith('CP: not enough tokens');
+    });
+    it('reverts if the msg.sender does not have enough staked interest tokens', async () => {
+      await casaDePapel.connect(bob).givePermission(alice.address);
+
+      await expect(
+        casaDePapel.connect(alice).liquidate(bob.address, parseEther('10'))
+      ).to.revertedWith('ERC20: burn amount exceeds balance');
+    });
+    // it.only('transfers the rewards and amount to a new user', async () => {
+    //   await Promise.all([
+    //     casaDePapel.connect(alice).stake(parseEther('10')),
+    //     sInterestToken
+    //       .connect(alice)
+    //       .transfer(developer.address, parseEther('10')),
+    //   ]);
+
+    //   const [aliceInfo, developerInfo, pool] = await Promise.all([
+    //     casaDePapel.userInfo(0, alice.address),
+    //     casaDePapel.userInfo(0, developer.address),
+    //     casaDePapel.pools(0),
+    //   ]);
+
+    //   expect(aliceInfo.rewardsPaid).to.be.equal(0);
+    //   expect(aliceInfo.amount).to.be.equal(parseEther('10'));
+    //   expect(developerInfo.rewardsPaid).to.be.equal(0);
+    //   expect(developerInfo.amount).to.be.equal(0);
+
+    //   await expect(
+    //     casaDePapel
+    //       .connect(alice)
+    //       .transfer(alice.address, developer.address, parseEther('10'))
+    //   )
+    //     .to.emit(casaDePapel, 'Transfer')
+    //     .withArgs(alice.address, developer.address, parseEther('10'));
+
+    //   const [aliceInfo1, developerInfo1, pool1] = await Promise.all([
+    //     casaDePapel.userInfo(0, alice.address),
+    //     casaDePapel.userInfo(0, developer.address),
+    //     casaDePapel.pools(0),
+    //   ]);
+
+    //   expect(aliceInfo1.rewardsPaid).to.be.equal(0);
+    //   expect(aliceInfo1.amount).to.be.equal(0);
+    //   expect(developerInfo1.rewardsPaid).to.be.equal(0);
+    //   expect(developerInfo.amount).to.be.equal(0);
+    // });
+  });
 });
