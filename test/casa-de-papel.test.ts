@@ -93,6 +93,16 @@ describe('Case de Papel', () => {
     ]);
   });
 
+  it('returns the total number of pools', async () => {
+    expect(await casaDePapel.getPoolsLength()).to.be.equal(1);
+    // Adds two pools
+    await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
+    expect(await casaDePapel.getPoolsLength()).to.be.equal(2);
+
+    await casaDePapel.connect(owner).addPool(1500, lpToken2.address, false);
+    expect(await casaDePapel.getPoolsLength()).to.be.equal(3);
+  });
+
   describe('function: setDevAccount', () => {
     it('reverts if it not called by the developer account', async () => {
       await expect(
@@ -532,6 +542,88 @@ describe('Case de Papel', () => {
           BigNumber.from(0)
         ).add(parseEther('10'))
       );
+    });
+  });
+  describe('function: emergencyWithdraw', () => {
+    it('allows a user to withdraw tokens from a pool without getting any rewards', async () => {
+      await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
+      const initialBalance = await lpToken.balanceOf(alice.address);
+      await casaDePapel.connect(alice).deposit(1, parseEther('5'));
+
+      const [userInfo, pool] = await Promise.all([
+        casaDePapel.userInfo(1, alice.address),
+        casaDePapel.pools(1),
+        casaDePapel.updateAllPools(),
+      ]);
+
+      expect(userInfo.amount).to.be.equal(parseEther('5'));
+      expect(userInfo.rewardsPaid).to.be.equal(0);
+      expect(pool.totalSupply).to.be.equal(parseEther('5'));
+      // Pool has rewards to be given but since this is an urgent withdraw they will not be given out
+      expect(pool.accruedIntPerShare.toNumber()).to.be.greaterThan(0);
+
+      await expect(casaDePapel.connect(alice).emergencyWithdraw(1))
+        .to.emit(casaDePapel, 'EmergencyWithdraw')
+        .withArgs(alice.address, 1, parseEther('5'));
+
+      const [userInfo1, pool1] = await Promise.all([
+        casaDePapel.userInfo(1, alice.address),
+        casaDePapel.pools(1),
+      ]);
+
+      expect(await lpToken.balanceOf(alice.address)).to.be.equal(
+        initialBalance
+      );
+      expect(userInfo1.amount).to.be.equal(0);
+      expect(userInfo1.rewardsPaid).to.be.equal(0);
+      expect(pool1.totalSupply).to.be.equal(0);
+    });
+    it('reverts if the user does not have staked interest token', async () => {
+      await casaDePapel.connect(alice).stake(parseEther('2'));
+      await Promise.all([
+        sInterestToken.connect(alice).burn(parseEther('1')),
+        sInterestToken
+          .connect(alice)
+          .approve(casaDePapel.address, parseEther('10')),
+      ]);
+      await expect(
+        casaDePapel.connect(alice).emergencyWithdraw(0)
+      ).to.revertedWith('ERC20: burn amount exceeds balance');
+    });
+    it('allows a user to withdraw tokens from a pool without getting any rewards', async () => {
+      const initialBalance = await interestToken.balanceOf(alice.address);
+      await casaDePapel.connect(alice).stake(parseEther('5'));
+
+      const [userInfo, pool] = await Promise.all([
+        casaDePapel.userInfo(0, alice.address),
+        casaDePapel.pools(0),
+        casaDePapel.updateAllPools(),
+        sInterestToken
+          .connect(alice)
+          .approve(casaDePapel.address, parseEther('20')),
+      ]);
+
+      expect(userInfo.amount).to.be.equal(parseEther('5'));
+      expect(userInfo.rewardsPaid).to.be.equal(0);
+      expect(pool.totalSupply).to.be.equal(parseEther('5'));
+      // Pool has rewards to be given but since this is an urgent withdraw they will not be given out
+      expect(pool.accruedIntPerShare.toNumber()).to.be.greaterThan(0);
+
+      await expect(casaDePapel.connect(alice).emergencyWithdraw(0))
+        .to.emit(casaDePapel, 'EmergencyWithdraw')
+        .withArgs(alice.address, 0, parseEther('5'));
+
+      const [userInfo1, pool1] = await Promise.all([
+        casaDePapel.userInfo(0, alice.address),
+        casaDePapel.pools(0),
+      ]);
+
+      expect(await interestToken.balanceOf(alice.address)).to.be.equal(
+        initialBalance
+      );
+      expect(userInfo1.amount).to.be.equal(0);
+      expect(userInfo1.rewardsPaid).to.be.equal(0);
+      expect(pool1.totalSupply).to.be.equal(0);
     });
   });
 });

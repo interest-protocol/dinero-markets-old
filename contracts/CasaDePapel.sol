@@ -400,6 +400,9 @@ contract CasaDePapel is Ownable {
         user.amount = 0;
         user.rewardsPaid = 0;
 
+        // Update the pool total supply
+        pool.totalSupply -= amount;
+
         pool.stakingToken.safeTransfer(_msgSender(), amount);
 
         emit EmergencyWithdraw(_msgSender(), poolId, amount);
