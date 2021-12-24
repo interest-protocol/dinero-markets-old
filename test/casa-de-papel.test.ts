@@ -410,6 +410,9 @@ describe('Case de Papel', () => {
       const [user, sInterestTokenBalance] = await Promise.all([
         casaDePapel.userInfo(0, alice.address),
         sInterestToken.balanceOf(alice.address),
+        sInterestToken
+          .connect(alice)
+          .approve(casaDePapel.address, parseEther('4')),
       ]);
 
       await expect(casaDePapel.connect(alice).unstake(parseEther('4')))
@@ -449,7 +452,7 @@ describe('Case de Papel', () => {
         casaDePapel.connect(alice).liquidate(bob.address, parseEther('1'))
       ).to.revertedWith('CP: no permission');
     });
-    it.only('reverts if the msg sender does not pass an amount greater than 0', async () => {
+    it('reverts if the msg sender does not pass an amount greater than 0', async () => {
       await expect(
         casaDePapel.connect(alice).liquidate(bob.address, 0)
       ).to.revertedWith('CP: no 0 amount');
