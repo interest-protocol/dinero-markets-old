@@ -353,10 +353,10 @@ describe('Case de Papel', () => {
       );
     });
   });
-  describe('function: leaveStaking', () => {
+  describe('function: unstake', () => {
     it('reverts if the user tries to withdraw more than he deposited', async () => {
       await casaDePapel.connect(alice).stake(parseEther('1'));
-      await expect(casaDePapel.leaveStaking(parseEther('1.1'))).to.revertedWith(
+      await expect(casaDePapel.unstake(parseEther('1.1'))).to.revertedWith(
         'CP: not enough tokens'
       );
     });
@@ -372,7 +372,7 @@ describe('Case de Papel', () => {
         casaDePapel.pools(0),
       ]);
 
-      await expect(casaDePapel.connect(alice).leaveStaking(0))
+      await expect(casaDePapel.connect(alice).unstake(0))
         .to.emit(casaDePapel, 'Withdraw')
         .withArgs(alice.address, 0, 0);
 
@@ -412,7 +412,7 @@ describe('Case de Papel', () => {
         sInterestToken.balanceOf(alice.address),
       ]);
 
-      await expect(casaDePapel.connect(alice).leaveStaking(parseEther('4')))
+      await expect(casaDePapel.connect(alice).unstake(parseEther('4')))
         .to.emit(casaDePapel, 'Withdraw')
         .withArgs(alice.address, 0, parseEther('4'));
 
@@ -448,6 +448,11 @@ describe('Case de Papel', () => {
       await expect(
         casaDePapel.connect(alice).liquidate(bob.address, parseEther('1'))
       ).to.revertedWith('CP: no permission');
+    });
+    it.only('reverts if the msg sender does not pass an amount greater than 0', async () => {
+      await expect(
+        casaDePapel.connect(alice).liquidate(bob.address, 0)
+      ).to.revertedWith('CP: no 0 amount');
     });
     it('reverts if the user does not have enough tokens to transfer', async () => {
       await casaDePapel.connect(bob).givePermission(alice.address);

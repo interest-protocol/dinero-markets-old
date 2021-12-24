@@ -47,9 +47,33 @@ contract StakedInterestToken is Ownable, ERC20Votes {
     /**
      * @dev Destroys `amount` tokens from the caller.
      *
-     * This account has the modifier {onlyOwner} to make sure only the MasterChef contract can burn tokens
+     * See {ERC20-_burn}.
      */
-    function burn(address account, uint256 amount) external onlyOwner {
+    function burn(uint256 amount) public virtual {
+        _burn(_msgSender(), amount);
+    }
+
+    /**
+     * @dev Destroys `amount` tokens from `account`, deducting from the caller's
+     * allowance.
+     *
+     * See {ERC20-_burn} and {ERC20-allowance}.
+     *
+     * Requirements:
+     *
+     * - the caller must have allowance for ``accounts``'s tokens of at least
+     * `amount`.
+     */
+    function burnFrom(address account, uint256 amount) public virtual {
+        uint256 currentAllowance = allowance(account, _msgSender());
+        // solhint-disable-next-line reason-string
+        require(
+            currentAllowance >= amount,
+            "ERC20: burn amount exceeds allowance"
+        );
+        unchecked {
+            _approve(account, _msgSender(), currentAllowance - amount);
+        }
         _burn(account, amount);
     }
 }

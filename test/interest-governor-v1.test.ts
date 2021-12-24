@@ -267,9 +267,6 @@ describe('InterestGovernorV1', () => {
       expect(
         await dinero.hasRole(await dinero.MINTER_ROLE(), market)
       ).to.be.equal(true);
-      expect(
-        await dinero.hasRole(await dinero.BURNER_ROLE(), market)
-      ).to.be.equal(true);
       const marketContract: MockInterestMarketV1 = await (
         await ethers.getContractFactory('MockInterestMarketV1')
       ).attach(market);

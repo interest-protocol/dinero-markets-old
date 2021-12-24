@@ -364,6 +364,9 @@ contract CasaDePapel is Ownable {
      *
      */
     function liquidate(address debtor, uint256 amount) external {
+        // Liquidator cannot take away the rewards without burning his {STAKED_INTEREST_TOKENS}
+        require(amount > 0, "CP: no 0 amount");
+        // `debtor` needs to allow the `msg.sender` to have access to his funds + rewards
         require(permission[debtor][_msgSender()], "CP: no permission");
         _unstake(debtor, amount);
         emit Liquidate(_msgSender(), debtor, amount);
@@ -373,7 +376,7 @@ contract CasaDePapel is Ownable {
      * @dev This function is to remove the {INTEREST_TOKEN} from the pool
      * @param amount The number of {INTEREST_TOKEN} to withdraw to the `msg.sender`
      */
-    function leaveStaking(uint256 amount) external {
+    function unstake(uint256 amount) external {
         _unstake(_msgSender(), amount);
         emit Withdraw(_msgSender(), 0, amount);
     }
@@ -390,7 +393,7 @@ contract CasaDePapel is Ownable {
         uint256 amount = user.amount;
 
         if (poolId == 0) {
-            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
+            STAKED_INTEREST_TOKEN.burnFrom(_msgSender(), amount);
         }
 
         // Clean user history
@@ -486,7 +489,7 @@ contract CasaDePapel is Ownable {
 
         if (amount > 0) {
             // `msg.sender` must have enough receipt tokens. As sINT totalSupply must always be equal to the `pool.totalSupply` of Int
-            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
+            STAKED_INTEREST_TOKEN.burnFrom(_msgSender(), amount);
             user.amount -= amount;
             pool.totalSupply -= amount;
             uint256 intBalance = pool.stakingToken.balanceOf(address(this));
