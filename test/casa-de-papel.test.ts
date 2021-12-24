@@ -37,10 +37,11 @@ describe('Case de Papel', () => {
   let developer: SignerWithAddress;
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
+  let jose: SignerWithAddress;
 
   beforeEach(async () => {
     [
-      [owner, developer, alice, bob],
+      [owner, developer, alice, bob, jose],
       [lpToken, sInterestToken, interestToken, lpToken2],
     ] = await Promise.all([
       ethers.getSigners(),
@@ -467,49 +468,70 @@ describe('Case de Papel', () => {
       await Promise.all([
         casaDePapel.connect(bob).givePermission(alice.address),
         casaDePapel.connect(bob).stake(parseEther('10')),
+        sInterestToken
+          .connect(alice)
+          .approve(casaDePapel.address, parseEther('10')),
       ]);
 
       await expect(
         casaDePapel.connect(alice).liquidate(bob.address, parseEther('10'))
       ).to.revertedWith('ERC20: burn amount exceeds balance');
     });
-    // it.only('transfers the rewards and amount to a new user', async () => {
-    //   await Promise.all([
-    //     casaDePapel.connect(alice).stake(parseEther('10')),
-    //     sInterestToken
-    //       .connect(alice)
-    //       .transfer(developer.address, parseEther('10')),
-    //   ]);
+    it('liquidates the debtor returning the rewards and Int to the msg.sender', async () => {
+      await casaDePapel.connect(alice).stake(parseEther('10'));
+      await Promise.all([
+        sInterestToken.connect(alice).transfer(jose.address, parseEther('10')),
+        sInterestToken
+          .connect(jose)
+          .approve(casaDePapel.address, parseEther('10')),
+        casaDePapel.connect(alice).givePermission(jose.address),
+      ]);
 
-    //   const [aliceInfo, developerInfo, pool] = await Promise.all([
-    //     casaDePapel.userInfo(0, alice.address),
-    //     casaDePapel.userInfo(0, developer.address),
-    //     casaDePapel.pools(0),
-    //   ]);
+      const [aliceInfo, joseInfo, pool, joseIntBalance] = await Promise.all([
+        casaDePapel.userInfo(0, alice.address),
+        casaDePapel.userInfo(0, jose.address),
+        casaDePapel.pools(0),
+        interestToken.balanceOf(jose.address),
+      ]);
 
-    //   expect(aliceInfo.rewardsPaid).to.be.equal(0);
-    //   expect(aliceInfo.amount).to.be.equal(parseEther('10'));
-    //   expect(developerInfo.rewardsPaid).to.be.equal(0);
-    //   expect(developerInfo.amount).to.be.equal(0);
+      expect(aliceInfo.rewardsPaid).to.be.equal(0);
+      expect(aliceInfo.amount).to.be.equal(parseEther('10'));
+      expect(joseInfo.rewardsPaid).to.be.equal(0);
+      expect(joseInfo.amount).to.be.equal(0);
+      expect(joseIntBalance).to.be.equal(0);
+      expect(pool.totalSupply).to.be.equal(parseEther('10'));
 
-    //   await expect(
-    //     casaDePapel
-    //       .connect(alice)
-    //       .transfer(alice.address, developer.address, parseEther('10'))
-    //   )
-    //     .to.emit(casaDePapel, 'Transfer')
-    //     .withArgs(alice.address, developer.address, parseEther('10'));
+      await expect(
+        casaDePapel.connect(jose).liquidate(alice.address, parseEther('10'))
+      )
+        .to.emit(casaDePapel, 'Liquidate')
+        .withArgs(jose.address, alice.address, parseEther('10'));
 
-    //   const [aliceInfo1, developerInfo1, pool1] = await Promise.all([
-    //     casaDePapel.userInfo(0, alice.address),
-    //     casaDePapel.userInfo(0, developer.address),
-    //     casaDePapel.pools(0),
-    //   ]);
-
-    //   expect(aliceInfo1.rewardsPaid).to.be.equal(0);
-    //   expect(aliceInfo1.amount).to.be.equal(0);
-    //   expect(developerInfo1.rewardsPaid).to.be.equal(0);
-    //   expect(developerInfo.amount).to.be.equal(0);
-    // });
+      const [aliceInfo1, joseInfo1, pool1, joseIntBalance1, joseSIntBalance] =
+        await Promise.all([
+          casaDePapel.userInfo(0, alice.address),
+          casaDePapel.userInfo(0, jose.address),
+          casaDePapel.pools(0),
+          interestToken.balanceOf(jose.address),
+          sInterestToken.balanceOf(jose.address),
+        ]);
+      expect(pool1.totalSupply).to.be.equal(0);
+      // Alice lost her rewards
+      expect(aliceInfo1.rewardsPaid).to.be.equal(0);
+      // Alice no longer has any staked tokens
+      expect(aliceInfo1.amount).to.be.equal(0);
+      expect(joseSIntBalance).to.be.equal(0);
+      // Liquidator never staked or got rewards so his profile remains unchanged
+      expect(joseInfo1.rewardsPaid).to.be.equal(0);
+      expect(joseInfo.amount).to.be.equal(0);
+      // Liquidator gets Alice staked tokens + rewards
+      expect(joseIntBalance1).to.be.equal(
+        calculateUserPendingRewards(
+          parseEther('10'),
+          pool1.accruedIntPerShare,
+          BigNumber.from(0)
+        ).add(parseEther('10'))
+      );
+    });
   });
 });

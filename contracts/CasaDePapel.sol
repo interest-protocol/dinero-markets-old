@@ -492,11 +492,7 @@ contract CasaDePapel is Ownable {
             STAKED_INTEREST_TOKEN.burnFrom(_msgSender(), amount);
             user.amount -= amount;
             pool.totalSupply -= amount;
-            uint256 intBalance = pool.stakingToken.balanceOf(address(this));
-            pool.stakingToken.safeTransfer(
-                _msgSender(),
-                intBalance >= amount ? amount : intBalance
-            );
+            pool.stakingToken.safeTransfer(_msgSender(), amount);
         }
 
         // Update user reward. He has been  paid in full amount
