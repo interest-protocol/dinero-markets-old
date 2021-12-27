@@ -211,7 +211,7 @@ contract CasaDePapel is Ownable {
      */
     function deposit(uint256 poolId, uint256 amount) external {
         // Int has to be staked via the `staking` function
-        require(poolId != 0, "CP: Not allowed");
+        require(poolId != 0, "CP: not allowed");
 
         // Update all rewards before any operation for proper calculation of rewards
         updatePool(poolId);
