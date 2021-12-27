@@ -1019,4 +1019,32 @@ describe('Case de Papel', () => {
       )
     );
   });
+  it('updates one pool', async () => {
+    const pool = await casaDePapel.pools(0);
+
+    expect(pool.lastRewardBlock).to.be.equal(START_BLOCK);
+    expect(pool.accruedIntPerShare).to.be.equal(0);
+
+    await casaDePapel.connect(alice).stake(parseEther('50'));
+
+    const pool1 = await casaDePapel.pools(0);
+    expect(pool1.lastRewardBlock.gt(pool.lastRewardBlock)).to.be.equal(true);
+    // No deposits yet
+    expect(pool1.accruedIntPerShare).to.be.equal(0);
+
+    await casaDePapel.updatePool(0);
+
+    const pool2 = await casaDePapel.pools(0);
+
+    expect(pool2.lastRewardBlock.gt(pool.lastRewardBlock)).to.be.equal(true);
+    expect(pool2.accruedIntPerShare).to.be.equal(
+      calculateAccruedInt(
+        pool1.accruedIntPerShare,
+        pool2.lastRewardBlock.sub(pool1.lastRewardBlock),
+        BigNumber.from(1000),
+        BigNumber.from(1000),
+        pool2.totalSupply
+      )
+    );
+  });
 });
