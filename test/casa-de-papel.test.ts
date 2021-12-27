@@ -657,4 +657,95 @@ describe('Case de Papel', () => {
       )
     );
   });
+  describe('function: stake', () => {
+    it('allows the user to only get the rewards by staking 0', async () => {
+      await [
+        casaDePapel.connect(bob).stake(parseEther('20')),
+        casaDePapel.connect(alice).stake(parseEther('5')),
+      ];
+
+      const [pool, user, balance] = await Promise.all([
+        casaDePapel.pools(0),
+        casaDePapel.userInfo(0, alice.address),
+        interestToken.balanceOf(alice.address),
+      ]);
+
+      expect(pool.totalSupply).to.be.equal(parseEther('25'));
+      expect(user.amount).to.be.equal(parseEther('5'));
+      expect(user.rewardsPaid).to.be.equal(
+        parseEther('5').mul(pool.accruedIntPerShare).div(1e12)
+      );
+
+      // Accrue rewards
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      await expect(casaDePapel.connect(alice).stake(0))
+        .to.emit(casaDePapel, 'Deposit')
+        .withArgs(alice.address, 0, 0);
+
+      const [pool1, user1, balance1] = await Promise.all([
+        casaDePapel.pools(0),
+        casaDePapel.userInfo(0, alice.address),
+        interestToken.balanceOf(alice.address),
+      ]);
+
+      // Balance changed because she asked for rewards only
+      expect(balance1).to.be.equal(
+        balance.add(
+          user.amount
+            .mul(pool1.accruedIntPerShare)
+            .div(1e12)
+            .sub(user.rewardsPaid)
+        )
+      );
+      // Amount has not changed
+      expect(user1.amount).to.be.equal(user.amount);
+      expect(pool1.totalSupply).to.be.equal(parseEther('25'));
+    });
+    it('allows to stake', async () => {
+      await casaDePapel.connect(alice).stake(parseEther('5'));
+
+      const [pool, user, balance, sBalance] = await Promise.all([
+        casaDePapel.pools(0),
+        casaDePapel.userInfo(0, alice.address),
+        interestToken.balanceOf(alice.address),
+        sInterestToken.balanceOf(alice.address),
+      ]);
+
+      expect(pool.totalSupply).to.be.equal(parseEther('5'));
+      expect(user.amount).to.be.equal(parseEther('5'));
+      expect(user.rewardsPaid).to.be.equal(0);
+      expect(sBalance).to.be.equal(parseEther('5'));
+
+      // Accrue rewards
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      await expect(casaDePapel.connect(alice).stake(parseEther('15')))
+        .to.emit(casaDePapel, 'Deposit')
+        .withArgs(alice.address, 0, parseEther('15'));
+
+      const [pool1, user1, balance1, sBalance1] = await Promise.all([
+        casaDePapel.pools(0),
+        casaDePapel.userInfo(0, alice.address),
+        interestToken.balanceOf(alice.address),
+        sInterestToken.balanceOf(alice.address),
+      ]);
+
+      expect(pool1.totalSupply).to.be.equal(parseEther('20'));
+      expect(user1.amount).to.be.equal(parseEther('20'));
+      expect(user1.rewardsPaid).to.be.equal(
+        parseEther('20').mul(pool1.accruedIntPerShare).div(1e12)
+      );
+      expect(balance1).to.be.equal(
+        balance
+          // + Rewards
+          .add(user.amount.mul(pool1.accruedIntPerShare).div(1e12))
+          // - Deposit
+          .sub(parseEther('15'))
+      );
+      expect(sBalance1).to.be.equal(parseEther('20'));
+    });
+  });
 });
