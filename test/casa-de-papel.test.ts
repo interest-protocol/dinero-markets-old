@@ -251,7 +251,7 @@ describe('Case de Papel', () => {
       await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
       await expect(
         casaDePapel.connect(owner).addPool(1500, lpToken.address, false)
-      ).to.revertedWith('CP: poola already added');
+      ).to.revertedWith('CP: pool already added');
     });
     it('sets the start block as the last reward block if the pool is added before the start block', async () => {
       // Need to redeploy casa de papel with longer start_block
@@ -746,6 +746,99 @@ describe('Case de Papel', () => {
           .sub(parseEther('15'))
       );
       expect(sBalance1).to.be.equal(parseEther('20'));
+    });
+  });
+  describe('function: withdraw', () => {
+    it('reverts if  you try to withdraw from pool 0', async () => {
+      await expect(casaDePapel.connect(alice).withdraw(0, 1)).to.revertedWith(
+        'CP: not allowed'
+      );
+    });
+    it('reverts if the user tries to withdraw more than what he has deposited', async () => {
+      await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
+      await casaDePapel.connect(alice).deposit(1, parseEther('2'));
+
+      await expect(
+        casaDePapel.connect(alice).withdraw(1, parseEther('2.1'))
+      ).to.revertedWith('CP: not enough tokens');
+    });
+    it('allows to only get the pending rewards', async () => {
+      await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
+      await casaDePapel.connect(alice).deposit(1, parseEther('7'));
+
+      const [pool, user, balance] = await Promise.all([
+        casaDePapel.pools(1),
+        casaDePapel.userInfo(1, alice.address),
+        interestToken.balanceOf(alice.address),
+      ]);
+
+      // Accrue rewards
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      await expect(casaDePapel.connect(alice).withdraw(1, 0))
+        .to.emit(casaDePapel, 'Withdraw')
+        .withArgs(alice.address, 1, 0);
+
+      const [pool1, user1, balance1] = await Promise.all([
+        casaDePapel.pools(1),
+        casaDePapel.userInfo(1, alice.address),
+        interestToken.balanceOf(alice.address),
+      ]);
+
+      expect(user1.amount).to.be.equal(user.amount);
+      expect(balance1).to.be.equal(
+        balance.add(user.amount.mul(pool1.accruedIntPerShare).div(1e12))
+      );
+      expect(pool1.totalSupply).to.be.equal(pool.totalSupply);
+      expect(user1.rewardsPaid).to.be.equal(
+        user1.amount.mul(pool1.accruedIntPerShare).div(1e12)
+      );
+    });
+    it('allows to withdraw deposited tokens', async () => {
+      await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
+      await Promise.all([
+        casaDePapel.connect(alice).deposit(1, parseEther('7')),
+        casaDePapel.connect(bob).deposit(1, parseEther('8')),
+      ]);
+
+      const [pool, user, balance, lpBalance] = await Promise.all([
+        casaDePapel.pools(1),
+        casaDePapel.userInfo(1, alice.address),
+        interestToken.balanceOf(alice.address),
+        lpToken.balanceOf(alice.address),
+      ]);
+
+      // Accrue rewards
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      expect(user.amount).to.be.equal(parseEther('7'));
+      expect(user.rewardsPaid).to.be.equal(0);
+      expect(pool.totalSupply).to.be.equal(parseEther('15'));
+
+      await expect(casaDePapel.connect(alice).withdraw(1, parseEther('3')))
+        .to.emit(casaDePapel, 'Withdraw')
+        .withArgs(alice.address, 1, parseEther('3'));
+
+      const [pool1, user1, balance1, lpBalance1] = await Promise.all([
+        casaDePapel.pools(1),
+        casaDePapel.userInfo(1, alice.address),
+        interestToken.balanceOf(alice.address),
+        lpToken.balanceOf(alice.address),
+      ]);
+
+      expect(user1.amount).to.be.equal(parseEther('4'));
+      expect(user1.rewardsPaid).to.be.equal(
+        user1.amount.mul(pool1.accruedIntPerShare).div(1e12)
+      );
+      expect(pool1.totalSupply).to.be.equal(parseEther('12'));
+      // Rewards are in Int Token
+      expect(balance1).to.be.equal(
+        balance.add(user.amount.mul(pool1.accruedIntPerShare).div(1e12))
+      );
+      // Withdraw is on the pool token
+      expect(lpBalance1).to.be.equal(lpBalance.add(parseEther('3')));
     });
   });
 });

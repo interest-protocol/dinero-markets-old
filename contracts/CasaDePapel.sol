@@ -269,7 +269,7 @@ contract CasaDePapel is Ownable {
      */
     function withdraw(uint256 poolId, uint256 amount) external {
         // Int has to be staked via the `staking` function
-        require(poolId != 0, "CP: Not allowed");
+        require(poolId != 0, "CP: not allowed");
 
         // User cannot withdraw more than he staked
         require(
@@ -549,7 +549,7 @@ contract CasaDePapel is Ownable {
         bool update
     ) external onlyOwner updatePools(update) {
         // Prevent the owner from adding the same token twice, which will cause a rewards problem
-        require(!hasPool[address(token)], "CP: poola already added");
+        require(!hasPool[address(token)], "CP: pool already added");
         // If the pool is added before the start block. The last rewardBlock is the startBlock
         uint256 lastRewardBlock = block.number > startBlock
             ? block.number
