@@ -1047,4 +1047,29 @@ describe('Case de Papel', () => {
       )
     );
   });
+  it('allows a user to give and revoke permission', async () => {
+    expect(
+      await casaDePapel.permission(alice.address, bob.address)
+    ).to.be.equal(false);
+
+    await expect(
+      casaDePapel.connect(alice).givePermission(constants.AddressZero)
+    ).to.revertedWith('CP: zero address');
+
+    await casaDePapel.connect(alice).givePermission(bob.address);
+
+    expect(
+      await casaDePapel.permission(alice.address, bob.address)
+    ).to.be.equal(true);
+
+    await expect(
+      casaDePapel.connect(alice).revokePermission(constants.AddressZero)
+    ).to.revertedWith('CP: zero address');
+
+    await casaDePapel.connect(alice).revokePermission(bob.address);
+
+    expect(
+      await casaDePapel.permission(alice.address, bob.address)
+    ).to.be.equal(false);
+  });
 });
