@@ -220,11 +220,11 @@ contract CasaDePapel is Ownable {
         Pool memory pool = pools[poolId];
         User memory user = userInfo[poolId][_msgSender()];
 
-        uint256 pendingRewards;
+        uint256 _pendingRewards;
 
         // Check how many rewards to mint for the user
         if (user.amount > 0) {
-            pendingRewards =
+            _pendingRewards =
                 ((user.amount * pool.accruedIntPerShare) / 1e12) -
                 user.rewardsPaid;
         }
@@ -250,9 +250,9 @@ contract CasaDePapel is Ownable {
         pools[poolId] = pool;
         userInfo[poolId][_msgSender()] = user;
 
-        if (pendingRewards > 0) {
+        if (_pendingRewards > 0) {
             // Pay the user the rewards
-            INTEREST_TOKEN.mint(_msgSender(), pendingRewards);
+            INTEREST_TOKEN.mint(_msgSender(), _pendingRewards);
         }
 
         emit Deposit(_msgSender(), poolId, amount);
@@ -285,7 +285,7 @@ contract CasaDePapel is Ownable {
         User memory user = userInfo[poolId][_msgSender()];
 
         // Save user rewards before any state manipulation
-        uint256 pendingRewards = ((user.amount * pool.accruedIntPerShare) /
+        uint256 _pendingRewards = ((user.amount * pool.accruedIntPerShare) /
             1e12) - user.rewardsPaid;
 
         if (amount > 0) {
@@ -301,8 +301,8 @@ contract CasaDePapel is Ownable {
         pools[poolId] = pool;
         userInfo[poolId][_msgSender()] = user;
 
-        if (pendingRewards > 0) {
-            INTEREST_TOKEN.mint(_msgSender(), pendingRewards);
+        if (_pendingRewards > 0) {
+            INTEREST_TOKEN.mint(_msgSender(), _pendingRewards);
         }
 
         emit Withdraw(_msgSender(), poolId, amount);
@@ -318,10 +318,10 @@ contract CasaDePapel is Ownable {
         Pool memory pool = pools[0];
         User memory user = userInfo[0][_msgSender()];
 
-        uint256 pendingRewards;
+        uint256 _pendingRewards;
 
         if (user.amount > 0) {
-            pendingRewards =
+            _pendingRewards =
                 ((user.amount * pool.accruedIntPerShare) / 1e12) -
                 user.rewardsPaid;
         }
@@ -342,10 +342,10 @@ contract CasaDePapel is Ownable {
 
         user.rewardsPaid = (user.amount * pool.accruedIntPerShare) / 1e12;
 
-        if (pendingRewards > 0) {
+        if (_pendingRewards > 0) {
             InterestToken(address(pool.stakingToken)).mint(
                 _msgSender(),
-                pendingRewards
+                _pendingRewards
             );
         }
 
@@ -423,7 +423,7 @@ contract CasaDePapel is Ownable {
      * @param poolId The id of the pool we wish to find the rewards for `_user`
      * @param _user The address of the user we wish to find his/her rewards
      */
-    function pendingInt(uint256 poolId, address _user)
+    function pendingRewards(uint256 poolId, address _user)
         external
         view
         returns (uint256)
@@ -487,7 +487,7 @@ contract CasaDePapel is Ownable {
         Pool memory pool = pools[0];
         User memory user = userInfo[0][debtor];
 
-        uint256 pendingRewards = ((user.amount * pool.accruedIntPerShare) /
+        uint256 _pendingRewards = ((user.amount * pool.accruedIntPerShare) /
             1e12) - user.rewardsPaid;
 
         if (amount > 0) {
@@ -504,10 +504,10 @@ contract CasaDePapel is Ownable {
         pools[0] = pool;
         userInfo[0][debtor] = user;
 
-        if (pendingRewards > 0) {
+        if (_pendingRewards > 0) {
             InterestToken(address(pool.stakingToken)).mint(
                 _msgSender(),
-                pendingRewards
+                _pendingRewards
             );
         }
     }

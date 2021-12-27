@@ -590,7 +590,7 @@ describe('Case de Papel', () => {
         casaDePapel.connect(alice).emergencyWithdraw(0)
       ).to.revertedWith('ERC20: burn amount exceeds balance');
     });
-    it('allows a user to withdraw tokens from a pool without getting any rewards', async () => {
+    it('allows a user to withdraw interest tokens from a pool without getting any rewards', async () => {
       const initialBalance = await interestToken.balanceOf(alice.address);
       await casaDePapel.connect(alice).stake(parseEther('5'));
 
@@ -625,5 +625,36 @@ describe('Case de Papel', () => {
       expect(userInfo1.rewardsPaid).to.be.equal(0);
       expect(pool1.totalSupply).to.be.equal(0);
     });
+  });
+  it('allows to check how many pending rewards a user has in a specific pool', async () => {
+    expect(await casaDePapel.pendingRewards(0, alice.address)).to.be.equal(0);
+
+    await casaDePapel.connect(alice).stake(parseEther('5'));
+
+    expect(await casaDePapel.pendingRewards(0, alice.address)).to.be.equal(0);
+
+    await advanceBlock(ethers);
+    await advanceBlock(ethers);
+
+    const [block, pool, user, totalAllocationPoints] = await Promise.all([
+      provider.getBlockNumber(),
+      casaDePapel.pools(0),
+      casaDePapel.userInfo(0, alice.address),
+      casaDePapel.totalAllocationPoints(),
+    ]);
+
+    expect(await casaDePapel.pendingRewards(0, alice.address)).to.be.equal(
+      calculateUserPendingRewards(
+        user.amount,
+        calculateAccruedInt(
+          BigNumber.from(0),
+          BigNumber.from(block).sub(pool.lastRewardBlock),
+          pool.allocationPoints,
+          totalAllocationPoints,
+          pool.totalSupply
+        ),
+        user.rewardsPaid
+      )
+    );
   });
 });
