@@ -945,4 +945,78 @@ describe('Case de Papel', () => {
       expect(lpBalance1).to.be.equal(lpBalance.sub(parseEther('7')));
     });
   });
+  it('updates all pools', async () => {
+    await Promise.all([
+      casaDePapel.connect(owner).addPool(1500, lpToken.address, false),
+      casaDePapel.connect(owner).addPool(1000, lpToken2.address, false),
+    ]);
+
+    const [pool, xFarm, yFarm] = await Promise.all([
+      casaDePapel.pools(0),
+      casaDePapel.pools(1),
+      casaDePapel.pools(2),
+    ]);
+
+    expect(pool.lastRewardBlock).to.be.equal(START_BLOCK);
+
+    expect(pool.accruedIntPerShare).to.be.equal(0);
+    expect(xFarm.accruedIntPerShare).to.be.equal(0);
+    expect(yFarm.accruedIntPerShare).to.be.equal(0);
+
+    await Promise.all([
+      casaDePapel.connect(alice).stake(parseEther('11')),
+      casaDePapel.connect(alice).deposit(1, parseEther('6.5')),
+      casaDePapel.connect(alice).deposit(2, parseEther('23')),
+    ]);
+
+    const [pool1, xFarm1, yFarm1] = await Promise.all([
+      casaDePapel.pools(0),
+      casaDePapel.pools(1),
+      casaDePapel.pools(2),
+    ]);
+
+    await casaDePapel.updateAllPools();
+
+    expect(pool1.lastRewardBlock.gt(pool.lastRewardBlock)).to.be.equal(true);
+    expect(xFarm1.lastRewardBlock.gt(xFarm.lastRewardBlock)).to.be.equal(true);
+    expect(yFarm1.lastRewardBlock.gt(yFarm.lastRewardBlock)).to.be.equal(true);
+
+    const [pool2, xFarm2, yFarm2] = await Promise.all([
+      casaDePapel.pools(0),
+      casaDePapel.pools(1),
+      casaDePapel.pools(2),
+    ]);
+
+    expect(pool2.lastRewardBlock.gt(pool1.lastRewardBlock)).to.be.equal(true);
+    expect(xFarm2.lastRewardBlock.gt(xFarm1.lastRewardBlock)).to.be.equal(true);
+    expect(yFarm2.lastRewardBlock.gt(yFarm1.lastRewardBlock)).to.be.equal(true);
+
+    expect(pool2.accruedIntPerShare).to.be.equal(
+      calculateAccruedInt(
+        pool1.accruedIntPerShare,
+        pool2.lastRewardBlock.sub(pool1.lastRewardBlock),
+        pool2.allocationPoints,
+        pool2.allocationPoints.add(2500),
+        pool2.totalSupply
+      )
+    );
+    expect(xFarm2.accruedIntPerShare).to.be.equal(
+      calculateAccruedInt(
+        xFarm1.accruedIntPerShare,
+        xFarm2.lastRewardBlock.sub(xFarm1.lastRewardBlock),
+        xFarm2.allocationPoints,
+        pool2.allocationPoints.add(2500),
+        xFarm2.totalSupply
+      )
+    );
+    expect(yFarm2.accruedIntPerShare).to.be.equal(
+      calculateAccruedInt(
+        yFarm1.accruedIntPerShare,
+        yFarm2.lastRewardBlock.sub(yFarm1.lastRewardBlock),
+        yFarm2.allocationPoints,
+        pool2.allocationPoints.add(2500),
+        yFarm2.totalSupply
+      )
+    );
+  });
 });
