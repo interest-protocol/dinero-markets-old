@@ -2,13 +2,13 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { multiDeploy } from '../lib/test-utils';
 import {
   MockChainLinkFeed,
   MockERC20,
   MockSimplePair,
   OracleV1,
 } from '../typechain';
+import { multiDeploy } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 

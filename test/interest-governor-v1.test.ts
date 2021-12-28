@@ -2,8 +2,8 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { deploy, multiDeploy } from '../lib/test-utils';
 import { Dinero, InterestGovernorV1, MockInterestMarketV1 } from '../typechain';
+import { deploy, multiDeploy } from './lib/test-utils';
 
 const { defaultAbiCoder, keccak256 } = ethers.utils;
 const { AddressZero } = ethers.constants;
@@ -266,9 +266,6 @@ describe('InterestGovernorV1', () => {
 
       expect(
         await dinero.hasRole(await dinero.MINTER_ROLE(), market)
-      ).to.be.equal(true);
-      expect(
-        await dinero.hasRole(await dinero.BURNER_ROLE(), market)
       ).to.be.equal(true);
       const marketContract: MockInterestMarketV1 = await (
         await ethers.getContractFactory('MockInterestMarketV1')

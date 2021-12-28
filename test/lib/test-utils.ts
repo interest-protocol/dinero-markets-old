@@ -1,4 +1,5 @@
 // eslint-disable-next-line node/no-unpublished-import
+import { BigNumber } from 'ethers';
 import { ethers } from 'hardhat';
 
 export const multiDeploy = async (
@@ -29,3 +30,29 @@ export const advanceTime = (time: number, _ethers: typeof ethers) =>
 
 export const advanceBlock = (_ethers: typeof ethers) =>
   _ethers.provider.send('evm_mine', []);
+
+export const B = (x: BigNumber) => ethers.BigNumber.from(x);
+
+export const makeCalculateAccruedInt =
+  (interestPerBlock: BigNumber) =>
+  (
+    accruedInterest: BigNumber,
+    blocksElapsed: BigNumber,
+    allocationPoints: BigNumber,
+    totalAllocationPoints: BigNumber,
+    totalSupply: BigNumber
+  ) => {
+    const rewards = blocksElapsed
+      .mul(interestPerBlock)
+      .mul(allocationPoints)
+      .div(totalAllocationPoints)
+      .mul(1e12);
+
+    return accruedInterest.add(rewards.div(totalSupply));
+  };
+
+export const calculateUserPendingRewards = (
+  userAmount: BigNumber,
+  poolAccruedIntPerShare: BigNumber,
+  userRewardsPaid: BigNumber
+) => userAmount.mul(poolAccruedIntPerShare).div(1e12).sub(userRewardsPaid);
