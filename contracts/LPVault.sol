@@ -1,3 +1,14 @@
+/*
+
+██╗███╗░░██╗████████╗███████╗██████╗░███████╗░██████╗████████╗  ██╗░░░██╗░█████╗░██╗░░░██╗██╗░░░░░████████╗
+██║████╗░██║╚══██╔══╝██╔════╝██╔══██╗██╔════╝██╔════╝╚══██╔══╝  ██║░░░██║██╔══██╗██║░░░██║██║░░░░░╚══██╔══╝
+██║██╔██╗██║░░░██║░░░█████╗░░██████╔╝█████╗░░╚█████╗░░░░██║░░░  ╚██╗░██╔╝███████║██║░░░██║██║░░░░░░░░██║░░░
+██║██║╚████║░░░██║░░░██╔══╝░░██╔══██╗██╔══╝░░░╚═══██╗░░░██║░░░  ░╚████╔╝░██╔══██║██║░░░██║██║░░░░░░░░██║░░░
+██║██║░╚███║░░░██║░░░███████╗██║░░██║███████╗██████╔╝░░░██║░░░  ░░╚██╔╝░░██║░░██║╚██████╔╝███████╗░░░██║░░░
+╚═╝╚═╝░░╚══╝░░░╚═╝░░░╚══════╝╚═╝░░╚═╝╚══════╝╚═════╝░░░░╚═╝░░░  ░░░╚═╝░░░╚═╝░░╚═╝░╚═════╝░╚══════╝░░░╚═╝░░░
+
+*/
+
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
@@ -17,9 +28,17 @@ contract LPVault is Ownable, IVault {
 
     event Deposit(address indexed account, uint256 amount);
 
-    event Withdraw(address indexed account, uint256 amount);
+    event Withdraw(
+        address indexed account,
+        address indexed recipient,
+        uint256 amount
+    );
 
-    event LogCompound(uint256 fee, uint256 indexed blockNumber);
+    event LogCompound(
+        uint256 rewards,
+        uint256 fee,
+        uint256 indexed blockNumber
+    );
 
     /****************************  STRUCT ****************************/
 
@@ -82,7 +101,7 @@ contract LPVault is Ownable, IVault {
 
     /**************************** VIEW FUNCTIONS ****************************/
     /**
-     * It checks the pending Cake in the farm and the CAKE pool which is always ID 0
+     * It checks the pending Cake in the farm and the CAKE pool which is always Id 0
      * @return The number of CAKE the contract has as rewards in the farm
      */
     function getPendingRewards() external view returns (uint256) {
@@ -106,24 +125,36 @@ contract LPVault is Ownable, IVault {
      */
     function compound() external {
         uint256 cakeRewards;
-        // Get rewards in the farm
+
+        uint256 _totalRewards = totalRewards;
+
+        // Get rewards from the `STAKING_TOKEN` farm
         cakeRewards += _depositFarm(0);
-        // Stake rewards in the CAKE pool
-        cakeRewards += _stakeCake();
+        // Get rewards from the `CAKE` pool
+        cakeRewards += _unStakeCake(0);
 
-        totalRewards += cakeRewards * 1e12;
+        // Calculate fee to reward the `msg.sender`
+        uint256 fee = (cakeRewards * 1000) / 1e5; // 1% of the rewards obtained
 
-        uint256 fee = (cakeRewards * 300) / 1e5; // 0.3% of the rewards obtained
+        // update state
+        _totalRewards += (cakeRewards - fee) * 1e12;
 
         uint256 cakeBalance = getCakeBalance();
 
         if (fee > cakeBalance) {
-            totalRewards += _unStakeCake(fee - cakeBalance);
+            _totalRewards += _unStakeCake(fee - cakeBalance) * 1e12;
         }
 
+        // Pay the `msg.sender`
         CAKE.safeTransfer(_msgSender(), fee);
 
-        emit LogCompound(fee, block.number);
+        // Compound the rewards
+        _totalRewards += _stakeCake() * 1e12;
+
+        // Update global state
+        totalRewards = _totalRewards;
+
+        emit LogCompound(cakeRewards - fee, fee, block.number);
     }
 
     /**************************** PRIVATE FUNCTIONS ****************************/
@@ -257,8 +288,8 @@ contract LPVault is Ownable, IVault {
         uint256 _totalRewards = totalRewards;
 
         _totalRewards += _withdrawFarm(amount) * 1e12;
-        // Reinvest all cake into the CAKE pool and get the current rewards
-        _totalRewards += _stakeCake() * 1e12;
+        // Collect the current rewards in the `CAKE` pool to properly calculate rewards
+        _totalRewards += _unStakeCake(0) * 1e12;
 
         // Calculate how many rewards the user is entitled before this deposit
         uint256 rewards = (((_totalRewards / _totalAmount) * user.amount) /
@@ -277,7 +308,15 @@ contract LPVault is Ownable, IVault {
 
         if (cakeBalance < rewards) {
             // Take cake from the Cake pool in case the contract does not enough CAKE
-            _totalRewards += _unStakeCake(rewards - cakeBalance);
+            _totalRewards += _unStakeCake(rewards - cakeBalance) * 1e12;
+        }
+
+        // Send the rewards tot he recipient
+        CAKE.safeTransfer(recipient, rewards);
+
+        // Only restake if there is at least 1 `CAKE` in the contract after sending the rewards
+        if (getCakeBalance() > 1 ether) {
+            _totalRewards += _stakeCake() * 1e12;
         }
 
         user.rewardDebt = ((_totalRewards / _totalAmount) * user.amount) / 1e12;
@@ -287,12 +326,10 @@ contract LPVault is Ownable, IVault {
         totalRewards = _totalRewards;
         userInfo[account] = user;
 
-        CAKE.safeTransfer(recipient, rewards);
-
         // Send the underlying token to the recipient
         STAKING_TOKEN.safeTransfer(recipient, amount);
 
-        emit Withdraw(account, amount);
+        emit Withdraw(account, recipient, amount);
     }
 
     /**************************** ONLY MARKET ****************************/
@@ -349,7 +386,9 @@ contract LPVault is Ownable, IVault {
         // update the total rewards
         _totalRewards += _withdrawFarm(totalAmount) * 1e12;
 
+        // Refresh full approval
         STAKING_TOKEN.safeApprove(address(CAKE_MASTER_CHEF), type(uint256).max);
+        CAKE.safeApprove(address(CAKE_MASTER_CHEF), type(uint256).max);
 
         // Update pool Id
         poolId = id;
