@@ -6,8 +6,9 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "./interfaces/IMasterChef.sol";
+import "./interfaces/IVault.sol";
 
-contract LPVault is Ownable {
+contract LPVault is Ownable, IVault {
     /**************************** LIBRARIES ****************************/
 
     using SafeERC20 for IERC20;
@@ -31,38 +32,32 @@ contract LPVault is Ownable {
     /****************************  CONSTANTS ****************************/
 
     //solhint-disable-next-line var-name-mixedcase
-    IMasterChef public immutable CAKE_MASTER_CHEF;
+    IMasterChef public immutable CAKE_MASTER_CHEF; // The cake masterchef. He is an honest Cooker!
 
     // solhint-disable-next-line var-name-mixedcase
-    address public immutable CAKE;
+    IERC20 public immutable CAKE; // The famous Cake token!!
 
     // solhint-disable-next-line
-    IERC20 public immutable STAKING_TOKEN;
+    IERC20 public immutable STAKING_TOKEN; // The current token being farmed
 
     // solhint-disable-next-line var-name-mixedcase
-    address public immutable MARKET;
+    address public immutable MARKET; // The market contract that deposits/withdraws from this contract
 
     /**************************** STATE ****************************/
 
-    uint256 public rewardsPerToken;
+    uint256 public poolId; // The current master chef farm being used
 
-    uint256 public lastUpdateTime;
+    mapping(address => User) public userInfo; // Account Address => Account Info
 
-    uint256 public poolId;
+    uint256 public totalAmount; // total amount of staking token in the contract
 
-    mapping(address => uint256) public userRewardsPerTokenPaid;
-
-    mapping(address => User) public userInfo;
-
-    uint256 public totalAmount;
-
-    uint256 public totalRewards; // has boosted by 1e12
+    uint256 public totalRewards; // is boosted by 1e12
 
     /**************************** CONSTRUCTOR ****************************/
 
     constructor(
         IMasterChef cakeMasterChef,
-        address cake,
+        IERC20 cake,
         IERC20 stakingToken,
         uint256 _poolId,
         address market
@@ -72,28 +67,43 @@ contract LPVault is Ownable {
         STAKING_TOKEN = stakingToken;
         MARKET = market;
         poolId = _poolId;
+        // Master chef needs full approval
         stakingToken.safeApprove(address(cakeMasterChef), type(uint256).max);
+        cake.safeApprove(address(cakeMasterChef), type(uint256).max);
     }
 
     /**************************** MODIFIER ****************************/
 
+    // Make sure that only the Market has access to certain functionality
     modifier onlyMarket() {
         require(_msgSender() == MARKET, "Vault: only market");
         _;
     }
 
     /**************************** VIEW FUNCTIONS ****************************/
-
+    /**
+     * It checks the pending Cake in the farm and the CAKE pool which is always ID 0
+     * @return The number of CAKE the contract has as rewards in the farm
+     */
     function getPendingRewards() external view returns (uint256) {
-        return CAKE_MASTER_CHEF.pendingCake(poolId, address(this));
+        return
+            CAKE_MASTER_CHEF.pendingCake(poolId, address(this)) +
+            CAKE_MASTER_CHEF.pendingCake(0, address(this));
     }
 
     /**************************** MUTATIVE FUNCTIONS ****************************/
 
+    /**
+     * This function gives the `CAKE_MASTER_CHEF` maximum approval of the underlying token and the `CAKE` token
+     */
     function approve() external {
         STAKING_TOKEN.safeApprove(address(CAKE_MASTER_CHEF), type(uint256).max);
+        CAKE.safeApprove(address(CAKE_MASTER_CHEF), type(uint256).max);
     }
 
+    /**
+     * This function compounds the `CAKE` rewards in the farm to the `CAKE` pool and pays the caller a small fee as reward
+     */
     function compound() external {
         uint256 cakeRewards;
         // Get rewards in the farm
@@ -111,17 +121,25 @@ contract LPVault is Ownable {
             totalRewards += _unStakeCake(fee - cakeBalance);
         }
 
-        IERC20(CAKE).safeTransfer(_msgSender(), fee);
+        CAKE.safeTransfer(_msgSender(), fee);
 
         emit LogCompound(fee, block.number);
     }
 
     /**************************** PRIVATE FUNCTIONS ****************************/
 
+    /**
+     * A helper function to get the current `CAKE` balance in this vault
+     */
     function getCakeBalance() private view returns (uint256) {
-        return IERC20(CAKE).balanceOf(address(this));
+        return CAKE.balanceOf(address(this));
     }
 
+    /**
+     * This function removes `STAKING_TOKEN` from the farm and returns the amount of `CAKE` farmed
+     * @param amount The number of `STAKING_TOKEN` to be withdrawn from the `CAKE_MASTER_CHEF`
+     * @return cakeHarvested It returns how many `CAKE` we got as reward
+     */
     function _withdrawFarm(uint256 amount)
         private
         returns (uint256 cakeHarvested)
@@ -132,6 +150,11 @@ contract LPVault is Ownable {
         cakeHarvested = getCakeBalance() - preBalance;
     }
 
+    /**
+     * This function deposits `STAKING_TOKEN` in the farm and returns the amount of `CAKE` farmed
+     * @param amount The number of `STAKING_TOKEN` to deposit in the `CAKE_MASTER_CHEF`
+     * @return cakeHarvested It returns how many `CAKE` we got as reward
+     */
     function _depositFarm(uint256 amount)
         private
         returns (uint256 cakeHarvested)
@@ -142,12 +165,21 @@ contract LPVault is Ownable {
         cakeHarvested = getCakeBalance() - preBalance;
     }
 
+    /**
+     * This function stakes the current `CAKE` in this vault in the farm
+     * @return cakeHarvested it returns the amount of `CAKE` farmed
+     */
     function _stakeCake() private returns (uint256 cakeHarvested) {
         CAKE_MASTER_CHEF.enterStaking(getCakeBalance());
         // Current Balance of Cake are extra rewards because we just staked our entire CAKE balance
         cakeHarvested = getCakeBalance();
     }
 
+    /**
+     * This function withdraws `CAKE` from the cake staking pool and returns the amount of rewards `CAKE`
+     * @param amount The number of `CAKE` to be unstaked
+     * @return cakeHarvested The number of `CAKE` that was farmed as reward
+     */
     function _unStakeCake(uint256 amount)
         private
         returns (uint256 cakeHarvested)
@@ -158,6 +190,13 @@ contract LPVault is Ownable {
         cakeHarvested = getCakeBalance() - preBalance - amount;
     }
 
+    /**
+     * This function takes `STAKING_TOKEN` from the `msg.sender` and puts it in the `CAKE_MASTER_CHEF`
+     * This function will update the global state and recalculate the `totalAmount`, `totalRewards` and `userInfo` accordingly
+     * This function does not send the current rewards accrued to the user
+     * @param account The account that is depositing `STAKING_TOKEN`
+     * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
+     */
     function _deposit(address account, uint256 amount) private {
         User memory user = userInfo[account];
         uint256 _totalAmount = totalAmount;
@@ -194,6 +233,14 @@ contract LPVault is Ownable {
         emit Deposit(account, amount);
     }
 
+    /**
+     * This function withdraws `STAKING_TOKEN` from the `CAKE_MASTER_CHEF` and sends to the `recipient`
+     * This function will update the global state and recalculate the `totalAmount`, `totalRewards` and `userInfo` accordingly
+     * This function will send the current accrued rewards to the `recipient`
+     * @param account The account that is depositing `STAKING_TOKEN`
+     * @param recipient the account which will get the `STAKING_TOKEN` and `CAKE` rewards
+     * @param amount The number of `STAKING_TOKEN` that he/she wishes to withdraw
+     */
     function _withdraw(
         address account,
         address recipient,
@@ -240,7 +287,7 @@ contract LPVault is Ownable {
         totalRewards = _totalRewards;
         userInfo[account] = user;
 
-        IERC20(CAKE).safeTransfer(recipient, rewards);
+        CAKE.safeTransfer(recipient, rewards);
 
         // Send the underlying token to the recipient
         STAKING_TOKEN.safeTransfer(recipient, amount);
@@ -250,6 +297,14 @@ contract LPVault is Ownable {
 
     /**************************** ONLY MARKET ****************************/
 
+    /**
+     * @param account The account that is depositing `STAKING_TOKEN`
+     * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
+     *
+     * This function disallows 0 values as they are applicable in the context. Cannot deposit 0 `amount` as we do not send rewards on deposit
+     * This function uses the {_deposit} function and is protected by the modifier {onlyMarket} to disallow funds mismanegement
+     *
+     */
     function deposit(address account, uint256 amount) external onlyMarket {
         require(amount > 0, "Vault: no zero amount");
         require(account != address(0), "Vault: no zero address");
@@ -257,6 +312,15 @@ contract LPVault is Ownable {
         _deposit(account, amount);
     }
 
+    /**
+     * @param account The account that is depositing `STAKING_TOKEN`
+     * @param recipient The account which will get the `CAKE` rewards and `STAKING_TOKEN`
+     * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
+     *
+     * This function disallows 0 values as they are applicable in the context. Cannot withdraw 0 `amount` as rewards are only paid for liquidators or on repayment.
+     * This function uses the {_deposit} function and is protected by the modifier {onlyMarket} to disallow funds mismanegement
+     *
+     */
     function withdraw(
         address account,
         address recipient,
@@ -270,6 +334,14 @@ contract LPVault is Ownable {
 
     /**************************** ONLY OWNER ****************************/
 
+    /**
+     * In case PCS creates a new farm for a specific market and we need to migrate to a new farm
+     * It will properly update the `totalRewards`, withdraw the `STAKING_TOKEN` from the old farm and deposit in the new one and compound `CAKE` as well.
+     * @param id The new id of the pool.
+     *
+     * This function is protected by the {onlyOwner} modifier to disallow griefing
+     *
+     */
     function updateFarm(uint256 id) external onlyOwner {
         uint256 _totalAmount = totalAmount;
         uint256 _totalRewards = totalRewards;
