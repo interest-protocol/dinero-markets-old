@@ -355,7 +355,7 @@ contract LPVault is Ownable, IVault {
      * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
      *
      * This function disallows 0 values as they are applicable in the context. Cannot withdraw 0 `amount` as rewards are only paid for liquidators or on repayment.
-     * This function uses the {_deposit} function and is protected by the modifier {onlyMarket} to disallow funds mismanegement
+     * This function uses the {_withdraw} function and is protected by the modifier {onlyMarket} to disallow funds mismanegement
      *
      */
     function withdraw(

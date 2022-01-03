@@ -356,7 +356,7 @@ contract CasaDePapel is Ownable {
     }
 
     /**
-     * @dev This function is meant to be called by contracts that accept accept {STAKED_INTEREST_TOKEN} and requires the user to give permission beforehand. This is meant for an urgent situation in which the contract requires to swap the {STAKED_INTEREST_TOKEN} back to {INTEREST_TOKEN}
+     * @dev This function is meant to be called by contracts that accept {STAKED_INTEREST_TOKEN} and requires the user to give permission beforehand. This is meant for an urgent situation in which the contract requires to swap the {STAKED_INTEREST_TOKEN} back to {INTEREST_TOKEN}
      * @param debtor The account that will be liquidated. The one who owes the `msg.sender` {INTEREST_TOKENS}
      * @param amount The number of tokens the `account` owes the `msg.sender`
      *
