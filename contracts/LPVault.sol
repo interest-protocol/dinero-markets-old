@@ -14,12 +14,12 @@ pragma solidity 0.8.10;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Context.sol";
 
 import "./interfaces/IMasterChef.sol";
 import "./interfaces/IVault.sol";
 
-contract LPVault is Ownable, IVault {
+contract LPVault is IVault, Context {
     /**************************** LIBRARIES ****************************/
 
     using SafeERC20 for IERC20;
@@ -62,9 +62,10 @@ contract LPVault is Ownable, IVault {
     // solhint-disable-next-line var-name-mixedcase
     address public immutable MARKET; // The market contract that deposits/withdraws from this contract
 
-    /**************************** STATE ****************************/
+    // solhint-disable-next-line var-name-mixedcase
+    uint256 public immutable POOL_ID; // The current master chef farm being used
 
-    uint256 public poolId; // The current master chef farm being used
+    /**************************** STATE ****************************/
 
     mapping(address => User) public userInfo; // Account Address => Account Info
 
@@ -85,7 +86,7 @@ contract LPVault is Ownable, IVault {
         CAKE = cake;
         STAKING_TOKEN = stakingToken;
         MARKET = market;
-        poolId = _poolId;
+        POOL_ID = _poolId;
         // Master chef needs full approval
         stakingToken.safeApprove(address(cakeMasterChef), type(uint256).max);
         cake.safeApprove(address(cakeMasterChef), type(uint256).max);
@@ -106,7 +107,7 @@ contract LPVault is Ownable, IVault {
      */
     function getPendingRewards() external view returns (uint256) {
         return
-            CAKE_MASTER_CHEF.pendingCake(poolId, address(this)) +
+            CAKE_MASTER_CHEF.pendingCake(POOL_ID, address(this)) +
             CAKE_MASTER_CHEF.pendingCake(0, address(this));
     }
 
@@ -176,7 +177,7 @@ contract LPVault is Ownable, IVault {
         returns (uint256 cakeHarvested)
     {
         uint256 preBalance = getCakeBalance();
-        CAKE_MASTER_CHEF.withdraw(poolId, amount);
+        CAKE_MASTER_CHEF.withdraw(POOL_ID, amount);
         // Find how much cake we earned after depositing as it always gives the rewards
         cakeHarvested = getCakeBalance() - preBalance;
     }
@@ -191,7 +192,7 @@ contract LPVault is Ownable, IVault {
         returns (uint256 cakeHarvested)
     {
         uint256 preBalance = getCakeBalance();
-        CAKE_MASTER_CHEF.deposit(poolId, amount);
+        CAKE_MASTER_CHEF.deposit(POOL_ID, amount);
         // Find how much cake we earned after depositing as it always gives the rewards
         cakeHarvested = getCakeBalance() - preBalance;
     }
@@ -364,39 +365,5 @@ contract LPVault is Ownable, IVault {
         require(account != address(0), "Vault: no zero address");
 
         _withdraw(account, recipient, amount);
-    }
-
-    /**************************** ONLY OWNER ****************************/
-
-    /**
-     * In case PCS creates a new farm for a specific market and we need to migrate to a new farm
-     * It will properly update the `totalRewards`, withdraw the `STAKING_TOKEN` from the old farm and deposit in the new one and compound `CAKE` as well.
-     * @param id The new id of the pool.
-     *
-     * This function is protected by the {onlyOwner} modifier to disallow griefing
-     *
-     */
-    function updateFarm(uint256 id) external onlyOwner {
-        uint256 _totalAmount = totalAmount;
-        uint256 _totalRewards = totalRewards;
-
-        // update the total rewards
-        _totalRewards += _withdrawFarm(totalAmount) * 1e12;
-
-        // Refresh full approval
-        STAKING_TOKEN.safeApprove(address(CAKE_MASTER_CHEF), type(uint256).max);
-        CAKE.safeApprove(address(CAKE_MASTER_CHEF), type(uint256).max);
-
-        // Update pool Id
-        poolId = id;
-
-        // This should happen once so there are no rewards
-        CAKE_MASTER_CHEF.deposit(id, _totalAmount);
-
-        // Stake current Cake in the Cake pool and update rewards
-        _totalRewards += _stakeCake() * 1e12;
-
-        // Update global state
-        totalRewards = _totalRewards;
     }
 }
