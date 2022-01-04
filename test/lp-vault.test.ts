@@ -15,7 +15,7 @@ const { parseEther } = ethers.utils;
 
 const CAKE_PER_BLOCK = parseEther('40');
 
-const START_BLOCK = 20;
+const START_BLOCK = 1;
 
 describe('LPVault', () => {
   let cake: CakeToken;
@@ -77,6 +77,7 @@ describe('LPVault', () => {
       // Pool Id for lptoken2 becomes 2
       masterChef.connect(owner).add(1000, lpToken2.address, false),
       syrup.connect(owner).transferOwnership(masterChef.address),
+      cake.connect(owner).transferOwnership(masterChef.address),
     ]);
   });
   it('shows the pending rewards in the CAKE and lp token pools', async () => {
@@ -88,10 +89,43 @@ describe('LPVault', () => {
     await advanceBlock(ethers);
     await advanceBlock(ethers);
 
+    // to get Cake rewards
+    await lpVault.compound();
+
+    // accrue some cake
+    await advanceBlock(ethers);
+    await advanceBlock(ethers);
+
     expect(await lpVault.getPendingRewards()).to.be.equal(
       (await masterChef.pendingCake(0, lpVault.address)).add(
         await masterChef.pendingCake(1, lpVault.address)
       )
     );
+  });
+  it('gives full approval to masterchef for cake and staking token', async () => {
+    // Deposit first to compound
+    await lpVault.connect(market).deposit(alice.address, parseEther('10'));
+
+    // accrue some cake
+    await advanceBlock(ethers);
+    await advanceBlock(ethers);
+
+    // to use some allowance to be able to increase allowance by a value
+    await lpVault.compound();
+
+    // accrue some cake
+    await advanceBlock(ethers);
+    await advanceBlock(ethers);
+
+    const [lpTokenAllowance, cakeAllowance] = await Promise.all([
+      lpToken.allowance(lpVault.address, masterChef.address),
+      cake.allowance(lpVault.address, masterChef.address),
+    ]);
+
+    await expect(lpVault.approve(5, 10))
+      .to.emit(lpToken, 'Approval')
+      .withArgs(lpVault.address, masterChef.address, lpTokenAllowance.add(5))
+      .to.emit(cake, 'Approval')
+      .withArgs(lpVault.address, masterChef.address, cakeAllowance.add(10));
   });
 });

@@ -87,7 +87,7 @@ contract LPVault is IVault, Context {
         STAKING_TOKEN = stakingToken;
         MARKET = market;
         POOL_ID = _poolId;
-        // Master chef needs full approval
+        // Master chef needs full approval. {safeApprove} is fine to be used for the initial allowance
         stakingToken.safeApprove(address(cakeMasterChef), type(uint256).max);
         cake.safeApprove(address(cakeMasterChef), type(uint256).max);
     }
@@ -116,9 +116,12 @@ contract LPVault is IVault, Context {
     /**
      * This function gives the `CAKE_MASTER_CHEF` maximum approval of the underlying token and the `CAKE` token
      */
-    function approve() external {
-        STAKING_TOKEN.safeApprove(address(CAKE_MASTER_CHEF), type(uint256).max);
-        CAKE.safeApprove(address(CAKE_MASTER_CHEF), type(uint256).max);
+    function approve(uint256 stakingAmount, uint256 cakeAmount) external {
+        STAKING_TOKEN.safeIncreaseAllowance(
+            address(CAKE_MASTER_CHEF),
+            stakingAmount
+        );
+        CAKE.safeIncreaseAllowance(address(CAKE_MASTER_CHEF), cakeAmount);
     }
 
     /**
@@ -241,7 +244,8 @@ contract LPVault is IVault, Context {
 
         // No need to calculate rewards if the user has no deposit
         if (user.amount > 0) {
-            user.rewards =
+            // Calculate and add how many rewards the user accrued
+            user.rewards +=
                 (((_totalRewards / _totalAmount) * user.amount) / 1e12) -
                 user.rewardDebt;
         }
