@@ -239,17 +239,20 @@ contract LPVault is IVault, Context {
         // Reinvest all cake into the CAKE pool and get the current rewards
         _totalRewards += _stakeCake() * 1e12;
 
-        // Calculate how many rewards the user is entitled before this deposit
-        uint256 rewards = (((_totalRewards / _totalAmount) * user.amount) /
-            1e12) - user.rewardDebt;
+        // No need to calculate rewards if the user has no deposit
+        if (user.amount > 0) {
+            user.rewards =
+                (((_totalRewards / _totalAmount) * user.amount) / 1e12) -
+                user.rewardDebt;
+        }
 
         // Update State
         _totalAmount += amount;
         user.amount += amount;
-        user.rewards += rewards;
 
-        // Get Tokens from `msg.sender`
-        STAKING_TOKEN.safeTransferFrom(_msgSender(), address(this), amount);
+        // Get Tokens from `account`
+        // This is to save gas. `account` has to approve the vault
+        STAKING_TOKEN.safeTransferFrom(account, address(this), amount);
 
         // Deposit the new acquired tokens in the farm
         _totalRewards += _depositFarm(amount) * 1e12;

@@ -1,5 +1,5 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-// import { expect } from 'chai';
+import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import {
@@ -9,7 +9,7 @@ import {
   MockERC20,
   SyrupBar,
 } from '../typechain';
-import { deploy, multiDeploy } from './lib/test-utils';
+import { advanceBlock, deploy, multiDeploy } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
@@ -47,14 +47,21 @@ describe('LPVault', () => {
       START_BLOCK,
     ]);
 
-    [lpToken, lpToken2, lpVault] = await multiDeploy(
-      ['MockERC20', 'MockERC20', 'LPVault'],
+    [lpToken, lpToken2] = await multiDeploy(
+      ['MockERC20', 'MockERC20'],
       [
         ['CAKE-LP', 'LP', parseEther('1000')],
         ['CAKE-LP-2', 'LP-2', parseEther('1000')],
-        [masterChef.address, cake.address, lpToken.address, 1, market.address],
       ]
     );
+
+    lpVault = await deploy('LPVault', [
+      masterChef.address,
+      cake.address,
+      lpToken.address,
+      1,
+      market.address,
+    ]);
 
     await Promise.all([
       lpToken
@@ -69,6 +76,22 @@ describe('LPVault', () => {
       masterChef.connect(owner).add(800, lpToken.address, false),
       // Pool Id for lptoken2 becomes 2
       masterChef.connect(owner).add(1000, lpToken2.address, false),
+      syrup.connect(owner).transferOwnership(masterChef.address),
     ]);
+  });
+  it('shows the pending rewards in the CAKE and lp token pools', async () => {
+    expect(await lpVault.getPendingRewards()).to.be.equal(0);
+
+    await lpVault.connect(market).deposit(alice.address, parseEther('10'));
+
+    // accrue some cake
+    await advanceBlock(ethers);
+    await advanceBlock(ethers);
+
+    expect(await lpVault.getPendingRewards()).to.be.equal(
+      (await masterChef.pendingCake(0, lpVault.address)).add(
+        await masterChef.pendingCake(1, lpVault.address)
+      )
+    );
   });
 });
