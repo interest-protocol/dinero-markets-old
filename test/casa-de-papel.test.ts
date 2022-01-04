@@ -573,7 +573,7 @@ describe('Case de Papel', () => {
       await casaDePapel.connect(alice).stake(parseEther('2'));
       await sInterestToken
         .connect(alice)
-        .transfer(constants.AddressZero, parseEther('1'));
+        .transfer(owner.address, parseEther('1'));
       await expect(
         casaDePapel.connect(alice).emergencyWithdraw(0)
       ).to.revertedWith('ERC20: burn amount exceeds balance');
