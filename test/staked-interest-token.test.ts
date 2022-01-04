@@ -47,4 +47,34 @@ describe('Staked Interest Token', () => {
       );
     });
   });
+  describe('function: burn', () => {
+    it('reverts if the is not called by the owner', async () => {
+      await expect(
+        stakedInterestToken
+          .connect(alice)
+          .burn(alice.address, parseEther('100'))
+      ).to.revertedWith('Ownable: caller is not the owner');
+    });
+    it('burns tokens', async () => {
+      await stakedInterestToken
+        .connect(owner)
+        .mint(alice.address, parseEther('100'));
+      expect(await stakedInterestToken.balanceOf(alice.address)).to.be.equal(
+        parseEther('100')
+      );
+      await expect(
+        stakedInterestToken.connect(owner).burn(alice.address, parseEther('50'))
+      )
+        .to.emit(stakedInterestToken, 'Transfer')
+        .withArgs(
+          alice.address,
+          ethers.constants.AddressZero,
+          parseEther('50')
+        );
+
+      expect(await stakedInterestToken.balanceOf(alice.address)).to.be.equal(
+        parseEther('50')
+      );
+    });
+  });
 });

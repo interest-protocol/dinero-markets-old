@@ -46,11 +46,17 @@ contract StakedInterestToken is Ownable, ERC20Votes {
 
     /**
      * @dev Destroys `amount` tokens from the caller.
+     * @param account The address whom the tokens will be destroyed
+     * @param amount The number of `Staked Interest Token` that will be destroyed
      *
      * See {ERC20-_burn}.
+     *
+     * Requirements:
+     *
+     * The caller must be the {owner}.
      */
-    function burn(uint256 amount) public virtual {
-        _burn(_msgSender(), amount);
+    function burn(address account, uint256 amount) external onlyOwner {
+        _burn(account, amount);
     }
 
     /**
@@ -64,7 +70,7 @@ contract StakedInterestToken is Ownable, ERC20Votes {
      * - the caller must have allowance for ``accounts``'s tokens of at least
      * `amount`.
      */
-    function burnFrom(address account, uint256 amount) public virtual {
+    function burnFrom(address account, uint256 amount) external {
         uint256 currentAllowance = allowance(account, _msgSender());
         // solhint-disable-next-line reason-string
         require(

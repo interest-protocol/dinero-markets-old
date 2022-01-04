@@ -277,9 +277,6 @@ contract LPVault is Ownable, IVault {
         address recipient,
         uint256 amount
     ) private {
-        require(amount > 0, "Vault: no zero amount");
-        require(account != address(0), "Vault: no zero address");
-
         User memory user = userInfo[account];
 
         require(user.amount >= amount, "Vault: not enough tokens");

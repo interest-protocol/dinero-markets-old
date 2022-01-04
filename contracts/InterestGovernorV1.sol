@@ -162,6 +162,7 @@ contract InterestGovernorV1 is Ownable {
         InterestMarketV1Interface(market).initialize(data);
 
         DINERO.grantRole(DINERO.MINTER_ROLE(), market);
+        DINERO.grantRole(DINERO.BURNER_ROLE(), market);
         isMarket[market] = true;
         allMarkets.push(market);
 

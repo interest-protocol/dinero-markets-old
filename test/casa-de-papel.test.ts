@@ -421,9 +421,6 @@ describe('Case de Papel', () => {
       const [user, sInterestTokenBalance] = await Promise.all([
         casaDePapel.userInfo(0, alice.address),
         sInterestToken.balanceOf(alice.address),
-        sInterestToken
-          .connect(alice)
-          .approve(casaDePapel.address, parseEther('4')),
       ]);
 
       await expect(casaDePapel.connect(alice).unstake(parseEther('4')))
@@ -478,9 +475,6 @@ describe('Case de Papel', () => {
       await Promise.all([
         casaDePapel.connect(bob).givePermission(alice.address),
         casaDePapel.connect(bob).stake(parseEther('10')),
-        sInterestToken
-          .connect(alice)
-          .approve(casaDePapel.address, parseEther('10')),
       ]);
 
       await expect(
@@ -491,9 +485,6 @@ describe('Case de Papel', () => {
       await casaDePapel.connect(alice).stake(parseEther('10'));
       await Promise.all([
         sInterestToken.connect(alice).transfer(jose.address, parseEther('10')),
-        sInterestToken
-          .connect(jose)
-          .approve(casaDePapel.address, parseEther('10')),
         casaDePapel.connect(alice).givePermission(jose.address),
       ]);
 
@@ -580,12 +571,9 @@ describe('Case de Papel', () => {
     });
     it('reverts if the user does not have staked interest token', async () => {
       await casaDePapel.connect(alice).stake(parseEther('2'));
-      await Promise.all([
-        sInterestToken.connect(alice).burn(parseEther('1')),
-        sInterestToken
-          .connect(alice)
-          .approve(casaDePapel.address, parseEther('10')),
-      ]);
+      await sInterestToken
+        .connect(alice)
+        .transfer(constants.AddressZero, parseEther('1'));
       await expect(
         casaDePapel.connect(alice).emergencyWithdraw(0)
       ).to.revertedWith('ERC20: burn amount exceeds balance');
@@ -598,9 +586,6 @@ describe('Case de Papel', () => {
         casaDePapel.userInfo(0, alice.address),
         casaDePapel.pools(0),
         casaDePapel.updateAllPools(),
-        sInterestToken
-          .connect(alice)
-          .approve(casaDePapel.address, parseEther('20')),
       ]);
 
       expect(userInfo.amount).to.be.equal(parseEther('5'));

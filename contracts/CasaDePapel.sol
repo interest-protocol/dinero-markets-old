@@ -393,7 +393,7 @@ contract CasaDePapel is Ownable {
         uint256 amount = user.amount;
 
         if (poolId == 0) {
-            STAKED_INTEREST_TOKEN.burnFrom(_msgSender(), amount);
+            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
         }
 
         // Clean user history
@@ -492,7 +492,7 @@ contract CasaDePapel is Ownable {
 
         if (amount > 0) {
             // `msg.sender` must have enough receipt tokens. As sINT totalSupply must always be equal to the `pool.totalSupply` of Int
-            STAKED_INTEREST_TOKEN.burnFrom(_msgSender(), amount);
+            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
             user.amount -= amount;
             pool.totalSupply -= amount;
             pool.stakingToken.safeTransfer(_msgSender(), amount);
