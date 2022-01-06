@@ -102,13 +102,42 @@ contract LPVault is IVault, Context {
 
     /**************************** VIEW FUNCTIONS ****************************/
     /**
-     * It checks the pending Cake in the farm and the CAKE pool which is always Id 0
-     * @return The number of CAKE the contract has as rewards in the farm
+     * It checks the pending `CAKE` the farm and the CAKE pool which is always Id 0
+     * @return The number of `CAKE` the contract has as rewards in the farm
      */
-    function getPendingRewards() external view returns (uint256) {
+    function getPendingRewards() public view returns (uint256) {
         return
             CAKE_MASTER_CHEF.pendingCake(POOL_ID, address(this)) +
             CAKE_MASTER_CHEF.pendingCake(0, address(this));
+    }
+
+    /**
+     * It checks how many pending `CAKE` a user is entitled to.
+     * @param account The address to check how much pending `CAKE` he will get
+     * @return rewards The number of `CAKE`
+     */
+    function getUserPendingReward(address account)
+        external
+        view
+        returns (uint256 rewards)
+    {
+        // No need to calculate rewards if there are no tokens deposited in this contract;
+        // Also add this condition to avoid dividing by 0 whewn calculating the rewards
+        if (totalAmount <= 0) return rewards;
+
+        uint256 pendingRewards = getPendingRewards() * 1e12;
+
+        User memory user = userInfo[account];
+        rewards += user.rewards;
+
+        if (pendingRewards > 0) {
+            rewards +=
+                ((((totalRewards + pendingRewards) / totalAmount) *
+                    user.amount) / 1e12) -
+                user.rewardDebt;
+        }
+
+        return rewards;
     }
 
     /**************************** MUTATIVE FUNCTIONS ****************************/
@@ -142,12 +171,6 @@ contract LPVault is IVault, Context {
 
         // update state
         _totalRewards += (cakeRewards - fee) * 1e12;
-
-        uint256 cakeBalance = getCakeBalance();
-
-        if (fee > cakeBalance) {
-            _totalRewards += _unStakeCake(fee - cakeBalance) * 1e12;
-        }
 
         // Pay the `msg.sender`
         CAKE.safeTransfer(_msgSender(), fee);
