@@ -27,12 +27,13 @@ describe('LPVault', () => {
 
   let owner: SignerWithAddress;
   let alice: SignerWithAddress;
+  let bob: SignerWithAddress;
   let developer: SignerWithAddress;
   // @notice Market does not need to be an address for testing purposes
   let market: SignerWithAddress;
 
   beforeEach(async () => {
-    [[owner, alice, developer, market], cake] = await Promise.all([
+    [[owner, alice, bob, developer, market], cake] = await Promise.all([
       ethers.getSigners(),
       deploy('CakeToken'),
     ]);
@@ -50,8 +51,8 @@ describe('LPVault', () => {
     [lpToken, lpToken2] = await multiDeploy(
       ['MockERC20', 'MockERC20'],
       [
-        ['CAKE-LP', 'LP', parseEther('1000')],
-        ['CAKE-LP-2', 'LP-2', parseEther('1000')],
+        ['CAKE-LP', 'LP', parseEther('1000000')],
+        ['CAKE-LP-2', 'LP-2', parseEther('1000000')],
       ]
     );
 
@@ -68,9 +69,13 @@ describe('LPVault', () => {
         .connect(alice)
         .approve(lpVault.address, ethers.constants.MaxUint256),
       lpToken
+        .connect(bob)
+        .approve(lpVault.address, ethers.constants.MaxUint256),
+      lpToken
         .connect(market)
         .approve(lpVault.address, ethers.constants.MaxUint256),
-      lpToken.mint(alice.address, parseEther('100')),
+      lpToken.mint(bob.address, parseEther('10000')),
+      lpToken.mint(alice.address, parseEther('10000')),
       lpToken.mint(market.address, parseEther('1000')),
       // Pool Id for lpToken becomes 1
       masterChef.connect(owner).add(800, lpToken.address, false),
@@ -80,6 +85,7 @@ describe('LPVault', () => {
       cake.connect(owner).transferOwnership(masterChef.address),
     ]);
   });
+
   it('shows the pending rewards in the CAKE and lp token pools', async () => {
     expect(await lpVault.getPendingRewards()).to.be.equal(0);
 
@@ -102,15 +108,14 @@ describe('LPVault', () => {
       )
     );
   });
-  it('gives full approval to masterchef for cake and staking token', async () => {
-    // Deposit first to compound
+  it('increases allowance to masterchef for cake and staking token', async () => {
     await lpVault.connect(market).deposit(alice.address, parseEther('10'));
 
     // accrue some cake
     await advanceBlock(ethers);
     await advanceBlock(ethers);
 
-    // to use some allowance to be able to increase allowance by a value
+    // to get Cake rewards
     await lpVault.compound();
 
     // accrue some cake
@@ -127,5 +132,84 @@ describe('LPVault', () => {
       .withArgs(lpVault.address, masterChef.address, lpTokenAllowance.add(5))
       .to.emit(cake, 'Approval')
       .withArgs(lpVault.address, masterChef.address, cakeAllowance.add(10));
+  });
+  it.only('allows to see how many pending rewards a user has', async () => {
+    expect(await lpVault.getUserPendingRewards(alice.address)).to.be.equal(0);
+
+    await lpVault.connect(market).deposit(alice.address, parseEther('10'));
+
+    // accrue some cake
+    await advanceBlock(ethers);
+    await advanceBlock(ethers);
+
+    // to get Cake rewards
+    await lpVault.compound();
+
+    lpVault.connect(market).deposit(bob.address, parseEther('20'));
+
+    // accrue some cake
+    await advanceBlock(ethers);
+    await advanceBlock(ethers);
+
+    await Promise.all([
+      lpVault.connect(market).deposit(alice.address, parseEther('20')),
+      lpVault.connect(market).deposit(bob.address, parseEther('15')),
+    ]);
+
+    // to get Cake rewards
+    await lpVault.compound();
+
+    // accrue some cake
+    await advanceBlock(ethers);
+    await advanceBlock(ethers);
+    await advanceBlock(ethers);
+
+    const [
+      totalAmount,
+      totalRewardsPerAmount,
+      pendingRewards,
+      aliceInfo,
+      bobInfo,
+    ] = await Promise.all([
+      lpVault.totalAmount(),
+      lpVault.totalRewardsPerAmount(),
+      lpVault.getPendingRewards(),
+      lpVault.userInfo(alice.address),
+      lpVault.userInfo(bob.address),
+    ]);
+
+    const rewardsPerAmount = totalRewardsPerAmount.add(
+      pendingRewards.mul(1e12).div(totalAmount)
+    );
+
+    const aliceRewards = aliceInfo.rewards.add(
+      rewardsPerAmount.mul(parseEther('30')).div(1e12).sub(aliceInfo.rewardDebt)
+    );
+
+    const bobRewards = bobInfo.rewards.add(
+      rewardsPerAmount.mul(parseEther('35')).div(1e12).sub(bobInfo.rewardDebt)
+    );
+
+    expect(await lpVault.getUserPendingRewards(alice.address)).to.be.equal(
+      aliceRewards
+    );
+
+    expect(await lpVault.getUserPendingRewards(bob.address)).to.be.equal(
+      bobRewards
+    );
+
+    expect(await lpVault.getUserPendingRewards(owner.address)).to.be.equal(0);
+
+    // @notice pending rewards need to account for current pending cake in the pool + the auto compounded cake
+    expect(aliceRewards.add(bobRewards)).to.be.equal(
+      totalRewardsPerAmount
+        .add(pendingRewards.mul(1e12).div(totalAmount))
+        .mul(parseEther('65'))
+        .div(1e12)
+        .sub(aliceInfo.rewardDebt)
+        .sub(bobInfo.rewardDebt)
+        .add(aliceInfo.rewards)
+        .add(bobInfo.rewards)
+    );
   });
 });

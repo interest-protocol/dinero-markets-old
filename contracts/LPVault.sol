@@ -15,6 +15,7 @@ pragma solidity 0.8.10;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
+import "hardhat/console.sol";
 
 import "./interfaces/IMasterChef.sol";
 import "./interfaces/IVault.sol";
@@ -71,7 +72,7 @@ contract LPVault is IVault, Context {
 
     uint256 public totalAmount; // total amount of staking token in the contract
 
-    uint256 public totalRewards; // is boosted by 1e12
+    uint256 public totalRewardsPerAmount; // is boosted by 1e12
 
     /**************************** CONSTRUCTOR ****************************/
 
@@ -82,6 +83,7 @@ contract LPVault is IVault, Context {
         uint256 _poolId,
         address market
     ) {
+        require(_poolId != 0, "LPVault: this is a LP vault");
         CAKE_MASTER_CHEF = cakeMasterChef;
         CAKE = cake;
         STAKING_TOKEN = stakingToken;
@@ -112,32 +114,32 @@ contract LPVault is IVault, Context {
     }
 
     /**
-     * It checks how many pending `CAKE` a user is entitled to.
+     * It checks how many pending `CAKE` a user is entitled to by calculating how much `CAKE` they have accrued + pending `CAKE` in `CAKE_MASTER_CHEF`
      * @param account The address to check how much pending `CAKE` he will get
      * @return rewards The number of `CAKE`
      */
-    function getUserPendingReward(address account)
+    function getUserPendingRewards(address account)
         external
         view
         returns (uint256 rewards)
     {
+        uint256 _totalAmount = totalAmount;
+        uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
         // No need to calculate rewards if there are no tokens deposited in this contract;
-        // Also add this condition to avoid dividing by 0 whewn calculating the rewards
-        if (totalAmount <= 0) return rewards;
-
-        uint256 pendingRewards = getPendingRewards() * 1e12;
+        // Also add this condition to avoid dividing by 0 when calculating the rewards
+        if (_totalAmount <= 0) return rewards;
 
         User memory user = userInfo[account];
-        rewards += user.rewards;
 
-        if (pendingRewards > 0) {
-            rewards +=
-                ((((totalRewards + pendingRewards) / totalAmount) *
-                    user.amount) / 1e12) -
-                user.rewardDebt;
-        }
+        uint256 pendingRewardsPerAmount = (getPendingRewards() * 1e12) /
+            _totalAmount;
 
-        return rewards;
+        rewards +=
+            (((_totalRewardsPerAmount + pendingRewardsPerAmount) *
+                user.amount) / 1e12) -
+            user.rewardDebt;
+
+        return rewards + user.rewards;
     }
 
     /**************************** MUTATIVE FUNCTIONS ****************************/
@@ -159,7 +161,8 @@ contract LPVault is IVault, Context {
     function compound() external {
         uint256 cakeRewards;
 
-        uint256 _totalRewards = totalRewards;
+        uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
+        uint256 _totalAmount = totalAmount;
 
         // Get rewards from the `STAKING_TOKEN` farm
         cakeRewards += _depositFarm(0);
@@ -167,19 +170,19 @@ contract LPVault is IVault, Context {
         cakeRewards += _unStakeCake(0);
 
         // Calculate fee to reward the `msg.sender`
-        uint256 fee = (cakeRewards * 1000) / 1e5; // 1% of the rewards obtained
+        uint256 fee = (cakeRewards * 1e3) / 1e5; // 1% of the rewards obtained
 
         // update state
-        _totalRewards += (cakeRewards - fee) * 1e12;
+        _totalRewardsPerAmount += ((cakeRewards - fee) * 1e12) / _totalAmount;
 
         // Pay the `msg.sender`
         CAKE.safeTransfer(_msgSender(), fee);
 
-        // Compound the rewards
-        _totalRewards += _stakeCake() * 1e12;
+        // Compound the rewards. We already took the rewards up to this block. So the `CAKE` pool should be empty.
+        _stakeCake();
 
         // Update global state
-        totalRewards = _totalRewards;
+        totalRewardsPerAmount = _totalRewardsPerAmount;
 
         emit LogCompound(cakeRewards - fee, fee, block.number);
     }
@@ -258,18 +261,21 @@ contract LPVault is IVault, Context {
     function _deposit(address account, uint256 amount) private {
         User memory user = userInfo[account];
         uint256 _totalAmount = totalAmount;
-        uint256 _totalRewards = totalRewards;
+        uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
 
-        // Get rewards currently in the farm
-        _totalRewards += _depositFarm(0) * 1e12;
-        // Reinvest all cake into the CAKE pool and get the current rewards
-        _totalRewards += _stakeCake() * 1e12;
+        // If there are no tokens deposited, we do not need to run these operations
+        if (_totalAmount > 0) {
+            // Get rewards currently in the farm
+            _totalRewardsPerAmount += (_depositFarm(0) * 1e12) / _totalAmount;
+            // Reinvest all cake into the CAKE pool and get the current rewards
+            _totalRewardsPerAmount += (_stakeCake() * 1e12) / _totalAmount;
+        }
 
         // No need to calculate rewards if the user has no deposit
         if (user.amount > 0) {
             // Calculate and add how many rewards the user accrued
             user.rewards +=
-                (((_totalRewards / _totalAmount) * user.amount) / 1e12) -
+                ((_totalRewardsPerAmount * user.amount) / 1e12) -
                 user.rewardDebt;
         }
 
@@ -282,15 +288,16 @@ contract LPVault is IVault, Context {
         STAKING_TOKEN.safeTransferFrom(account, address(this), amount);
 
         // Deposit the new acquired tokens in the farm
-        _totalRewards += _depositFarm(amount) * 1e12;
+        // Since we already got the rewards in this block. There should be no rewards right now to harvest.
+        _depositFarm(amount);
 
         // Update State to tell us that user has been completed paid up to this point
-        user.rewardDebt = ((_totalRewards / _totalAmount) * user.amount) / 1e12;
+        user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
 
         // Update Global state
         userInfo[account] = user;
         totalAmount = _totalAmount;
-        totalRewards = _totalRewards;
+        totalRewardsPerAmount = _totalRewardsPerAmount;
 
         emit Deposit(account, amount);
     }
@@ -313,15 +320,15 @@ contract LPVault is IVault, Context {
         require(user.amount >= amount, "Vault: not enough tokens");
 
         uint256 _totalAmount = totalAmount;
-        uint256 _totalRewards = totalRewards;
+        uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
 
-        _totalRewards += _withdrawFarm(amount) * 1e12;
+        _totalRewardsPerAmount += (_withdrawFarm(amount) * 1e12) / _totalAmount;
         // Collect the current rewards in the `CAKE` pool to properly calculate rewards
-        _totalRewards += _unStakeCake(0) * 1e12;
+        _totalRewardsPerAmount += (_unStakeCake(0) * 1e12) / _totalAmount;
 
         // Calculate how many rewards the user is entitled before this deposit
-        uint256 rewards = (((_totalRewards / _totalAmount) * user.amount) /
-            1e12) - user.rewardDebt;
+        uint256 rewards = ((_totalRewardsPerAmount * user.amount) / 1e12) -
+            user.rewardDebt;
 
         _totalAmount -= amount;
         user.amount -= amount;
@@ -335,23 +342,31 @@ contract LPVault is IVault, Context {
         uint256 cakeBalance = getCakeBalance();
 
         if (cakeBalance < rewards) {
-            // Take cake from the Cake pool in case the contract does not enough CAKE
-            _totalRewards += _unStakeCake(rewards - cakeBalance) * 1e12;
+            uint256 unstakeRewards = _unStakeCake(rewards - cakeBalance);
+            // If the pool no longer has any supply we do not need to add to the totalRewardsPerAmount
+            if (_totalAmount > 0) {
+                // Take cake from the Cake pool in case the contract does not enough CAKE
+                _totalRewardsPerAmount +=
+                    (unstakeRewards * 1e12) /
+                    _totalAmount;
+            }
         }
 
         // Send the rewards tot he recipient
         CAKE.safeTransfer(recipient, rewards);
 
         // Only restake if there is at least 1 `CAKE` in the contract after sending the rewards
-        if (getCakeBalance() > 1 ether) {
-            _totalRewards += _stakeCake() * 1e12;
+        // If the does not have any tokens left we do not need to restake
+        if (_totalAmount > 0 && getCakeBalance() > 1 ether) {
+            _totalRewardsPerAmount += (_stakeCake() * 1e12) / _totalAmount;
         }
 
-        user.rewardDebt = ((_totalRewards / _totalAmount) * user.amount) / 1e12;
+        user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
 
         // Update Gloabl state
         totalAmount = _totalAmount;
-        totalRewards = _totalRewards;
+        // Reset totalRewardsPerAmount if the pool is totally empty
+        totalRewardsPerAmount = _totalAmount > 0 ? _totalRewardsPerAmount : 0;
         userInfo[account] = user;
 
         // Send the underlying token to the recipient
