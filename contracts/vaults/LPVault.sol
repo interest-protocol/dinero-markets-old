@@ -14,84 +14,48 @@ pragma solidity 0.8.10;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/Context.sol";
 
-import "./interfaces/IMasterChef.sol";
-import "./interfaces/IVault.sol";
+import "./Vault.Sol";
 
-contract CakeVault is IVault, Context {
+contract LPVault is Vault {
     /**************************** LIBRARIES ****************************/
 
     using SafeERC20 for IERC20;
 
-    /****************************  EVENTS ****************************/
-
-    event Deposit(address indexed account, uint256 amount);
-
-    event Withdraw(
-        address indexed account,
-        address indexed recipient,
-        uint256 amount
-    );
-
-    event Compound(uint256 rewards, uint256 fee, uint256 indexed blockNumber);
-
-    /****************************  STRUCT ****************************/
-
-    struct User {
-        uint256 amount;
-        uint256 rewardDebt;
-        uint256 rewards;
-    }
-
     /****************************  CONSTANTS ****************************/
 
-    //solhint-disable-next-line var-name-mixedcase
-    IMasterChef public immutable CAKE_MASTER_CHEF; // The cake masterchef. He is an honest Cooker!
+    // solhint-disable-next-line
+    IERC20 public immutable STAKING_TOKEN; // The current token being farmed
 
     // solhint-disable-next-line var-name-mixedcase
-    IERC20 public immutable CAKE; // The famous Cake token!!
-
-    // solhint-disable-next-line var-name-mixedcase
-    address public immutable MARKET; // The market contract that deposits/withdraws from this contract
-
-    /**************************** STATE ****************************/
-
-    mapping(address => User) public userInfo; // Account Address => Account Info
-
-    uint256 public totalAmount; // total amount of staking token in the contract
-
-    uint256 public totalRewardsPerAmount; // is boosted by 1e12
+    uint256 public immutable POOL_ID; // The current master chef farm being used
 
     /**************************** CONSTRUCTOR ****************************/
 
     constructor(
         IMasterChef cakeMasterChef,
         IERC20 cake,
+        IERC20 stakingToken,
+        uint256 _poolId,
         address market
-    ) {
-        CAKE_MASTER_CHEF = cakeMasterChef;
-        CAKE = cake;
-        MARKET = market;
+    ) Vault(cakeMasterChef, cake, market) {
+        require(_poolId != 0, "LPVault: this is a LP vault");
+        STAKING_TOKEN = stakingToken;
+        POOL_ID = _poolId;
         // Master chef needs full approval. {safeApprove} is fine to be used for the initial allowance
+        stakingToken.safeApprove(address(cakeMasterChef), type(uint256).max);
         cake.safeApprove(address(cakeMasterChef), type(uint256).max);
-    }
-
-    /**************************** MODIFIER ****************************/
-
-    // Make sure that only the Market has access to certain functionality
-    modifier onlyMarket() {
-        require(_msgSender() == MARKET, "Vault: only market");
-        _;
     }
 
     /**************************** VIEW FUNCTIONS ****************************/
     /**
-     * It checks the pending `CAKE` in the CAKE pool which is always Id 0
-     * @return The number of `CAKE` the contract has as rewards in the pool
+     * It checks the pending `CAKE` the farm and the CAKE pool which is always Id 0
+     * @return The number of `CAKE` the contract has as rewards in the farm
      */
     function getPendingRewards() public view returns (uint256) {
-        return CAKE_MASTER_CHEF.pendingCake(0, address(this));
+        return
+            CAKE_MASTER_CHEF.pendingCake(POOL_ID, address(this)) +
+            CAKE_MASTER_CHEF.pendingCake(0, address(this));
     }
 
     /**
@@ -127,10 +91,13 @@ contract CakeVault is IVault, Context {
 
     /**
      * This function gives the `CAKE_MASTER_CHEF` maximum approval of the underlying token and the `CAKE` token
-     * @param amount How many more units of `CAKE` the `CAKE_MASTER_CHEF` will have access to
      */
-    function approve(uint256 amount) external {
-        CAKE.safeIncreaseAllowance(address(CAKE_MASTER_CHEF), amount);
+    function approve(uint256 stakingAmount, uint256 cakeAmount) external {
+        STAKING_TOKEN.safeIncreaseAllowance(
+            address(CAKE_MASTER_CHEF),
+            stakingAmount
+        );
+        CAKE.safeIncreaseAllowance(address(CAKE_MASTER_CHEF), cakeAmount);
     }
 
     /**
@@ -142,8 +109,10 @@ contract CakeVault is IVault, Context {
         uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
         uint256 _totalAmount = totalAmount;
 
+        // Get rewards from the `STAKING_TOKEN` farm
+        cakeRewards += _depositFarm(0);
         // Get rewards from the `CAKE` pool
-        cakeRewards += _unStake(0);
+        cakeRewards += _unStakeCake(0);
 
         // Calculate fee to reward the `msg.sender`
         uint256 fee = (cakeRewards * 2e4) / 1e6; // 2% of the rewards obtained
@@ -166,17 +135,40 @@ contract CakeVault is IVault, Context {
     /**************************** PRIVATE FUNCTIONS ****************************/
 
     /**
-     * A helper function to get the current `CAKE` balance in this vault
+     * This function removes `STAKING_TOKEN` from the farm and returns the amount of `CAKE` farmed
+     * @param amount The number of `STAKING_TOKEN` to be withdrawn from the `CAKE_MASTER_CHEF`
+     * @return cakeHarvested It returns how many `CAKE` we got as reward
      */
-    function _getCakeBalance() private view returns (uint256) {
-        return CAKE.balanceOf(address(this));
+    function _withdrawFarm(uint256 amount)
+        private
+        returns (uint256 cakeHarvested)
+    {
+        uint256 preBalance = _getCakeBalance();
+        CAKE_MASTER_CHEF.withdraw(POOL_ID, amount);
+        // Find how much cake we earned after withdrawing as it always gives the rewards
+        cakeHarvested = _getCakeBalance() - preBalance;
     }
 
     /**
-     * This function stakes the current `CAKE` in this vault into the `CAKE` pool
+     * This function deposits `STAKING_TOKEN` in the farm and returns the amount of `CAKE` farmed
+     * @param amount The number of `STAKING_TOKEN` to deposit in the `CAKE_MASTER_CHEF`
+     * @return cakeHarvested It returns how many `CAKE` we got as reward
+     */
+    function _depositFarm(uint256 amount)
+        private
+        returns (uint256 cakeHarvested)
+    {
+        uint256 preBalance = _getCakeBalance();
+        CAKE_MASTER_CHEF.deposit(POOL_ID, amount);
+        // Find how much cake we earned after depositing as it always gives the rewards
+        cakeHarvested = _getCakeBalance() - preBalance;
+    }
+
+    /**
+     * This function stakes the current `CAKE` in this vault in the farm
      * @return cakeHarvested it returns the amount of `CAKE` farmed
      */
-    function _stake() private returns (uint256 cakeHarvested) {
+    function _stakeCake() private returns (uint256 cakeHarvested) {
         CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
         // Current Balance of Cake are extra rewards because we just staked our entire CAKE balance
         cakeHarvested = _getCakeBalance();
@@ -187,7 +179,10 @@ contract CakeVault is IVault, Context {
      * @param amount The number of `CAKE` to be unstaked
      * @return cakeHarvested The number of `CAKE` that was farmed as reward
      */
-    function _unStake(uint256 amount) private returns (uint256 cakeHarvested) {
+    function _unStakeCake(uint256 amount)
+        private
+        returns (uint256 cakeHarvested)
+    {
         uint256 preBalance = _getCakeBalance();
 
         CAKE_MASTER_CHEF.leaveStaking(amount);
@@ -208,8 +203,10 @@ contract CakeVault is IVault, Context {
 
         // If there are no tokens deposited, we do not need to run these operations
         if (_totalAmount > 0) {
+            // Get rewards currently in the farm
+            _totalRewardsPerAmount += (_depositFarm(0) * 1e12) / _totalAmount;
             // Reinvest all cake into the CAKE pool and get the current rewards
-            _totalRewardsPerAmount += (_stake() * 1e12) / _totalAmount;
+            _totalRewardsPerAmount += (_stakeCake() * 1e12) / _totalAmount;
         }
 
         // No need to calculate rewards if the user has no deposit
@@ -226,11 +223,11 @@ contract CakeVault is IVault, Context {
 
         // Get Tokens from `account`
         // This is to save gas. `account` has to approve the vault
-        CAKE.safeTransferFrom(account, address(this), amount);
+        STAKING_TOKEN.safeTransferFrom(account, address(this), amount);
 
-        // Deposit the new acquired tokens in the `CAKE` pool
+        // Deposit the new acquired tokens in the farm
         // Since we already got the rewards in this block. There should be no rewards right now to harvest.
-        CAKE_MASTER_CHEF.deposit(0, amount);
+        CAKE_MASTER_CHEF.deposit(POOL_ID, amount);
 
         // Update State to tell us that user has been completed paid up to this point
         user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
@@ -263,9 +260,9 @@ contract CakeVault is IVault, Context {
         uint256 _totalAmount = totalAmount;
         uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
 
+        _totalRewardsPerAmount += (_withdrawFarm(amount) * 1e12) / _totalAmount;
         // Collect the current rewards in the `CAKE` pool to properly calculate rewards
-        // And withdraw the amount of `CAKE` from the pool
-        _totalRewardsPerAmount += (_unStake(amount) * 1e12) / _totalAmount;
+        _totalRewardsPerAmount += (_unStakeCake(0) * 1e12) / _totalAmount;
 
         // Calculate how many rewards the user is entitled before this deposit
         uint256 rewards = ((_totalRewardsPerAmount * user.amount) / 1e12) -
@@ -283,7 +280,7 @@ contract CakeVault is IVault, Context {
         uint256 cakeBalance = _getCakeBalance();
 
         if (cakeBalance < rewards) {
-            uint256 unstakeRewards = _unStake(rewards - cakeBalance);
+            uint256 unstakeRewards = _unStakeCake(rewards - cakeBalance);
             // If the pool no longer has any supply we do not need to add to the totalRewardsPerAmount
             if (_totalAmount > 0) {
                 // Take cake from the Cake pool in case the contract does not enough CAKE
@@ -293,13 +290,13 @@ contract CakeVault is IVault, Context {
             }
         }
 
-        // Send the underlying token to the recipient
-        CAKE.safeTransfer(recipient, amount + rewards);
+        // Send the rewards to the recipient
+        CAKE.safeTransfer(recipient, rewards);
 
         // Only restake if there is at least 1 `CAKE` in the contract after sending the rewards
         // If there are no `STAKING TOKENS` left, we do not need to restake
         if (_totalAmount > 0 && _getCakeBalance() >= 1 ether) {
-            _totalRewardsPerAmount += (_stake() * 1e12) / _totalAmount;
+            _totalRewardsPerAmount += (_stakeCake() * 1e12) / _totalAmount;
         }
 
         // If the Vault still has assets update the state as usual
@@ -317,6 +314,9 @@ contract CakeVault is IVault, Context {
         }
 
         userInfo[account] = user;
+
+        // Send the underlying token to the recipient
+        STAKING_TOKEN.safeTransfer(recipient, amount);
 
         emit Withdraw(account, recipient, amount);
     }
