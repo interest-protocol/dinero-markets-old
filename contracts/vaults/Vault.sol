@@ -18,7 +18,11 @@ import "@openzeppelin/contracts/utils/Context.sol";
 import "../interfaces/IMasterChef.sol";
 import "../interfaces/IVault.sol";
 
-contract Vault is IVault, Context {
+/**
+ * @dev This contract is not meant to be deployed without a child contract to implement the core logic.
+ * It relies on all it's virtual functions to be overriden to have any use!
+ */
+abstract contract Vault is IVault, Context {
     /****************************  EVENTS ****************************/
 
     event Deposit(address indexed account, uint256 amount);

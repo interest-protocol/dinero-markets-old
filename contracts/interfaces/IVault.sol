@@ -9,4 +9,6 @@ interface IVault {
         address recipient,
         uint256 amount
     ) external;
+
+    function compound() external;
 }

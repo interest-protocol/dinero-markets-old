@@ -82,7 +82,7 @@ contract CakeVault is Vault {
         emit Compound(cakeRewards - fee, fee, block.number);
     }
 
-    /**************************** INTERNAL FUNCTIONS ****************************/
+    /**************************** INTERNAL OVERRIDE FUNCTIONS ****************************/
 
     /**
      * This function takes `STAKING_TOKEN` from the `msg.sender` and puts it in the `CAKE_MASTER_CHEF`
@@ -121,9 +121,9 @@ contract CakeVault is Vault {
         // This is to save gas. `account` has to approve the vault
         CAKE.safeTransferFrom(account, address(this), amount);
 
-        // Deposit the new acquired tokens in the `CAKE` pool
+        // Deposit the new acquired tokens + any rewards  in the `CAKE` pool
         // Since we already got the rewards in this block. There should be no rewards right now to harvest.
-        CAKE_MASTER_CHEF.deposit(0, amount);
+        CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
 
         // Update State to tell us that user has been completed paid up to this point
         user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
@@ -174,9 +174,12 @@ contract CakeVault is Vault {
         user.rewards = 0;
 
         uint256 cakeBalance = _getCakeBalance();
+        uint256 amountToRecipient = amount + rewards;
 
-        if (cakeBalance < rewards) {
-            uint256 unstakeRewards = _unStakeCake(rewards - cakeBalance);
+        if (amountToRecipient > cakeBalance) {
+            uint256 unstakeRewards = _unStakeCake(
+                amountToRecipient - cakeBalance
+            );
             // If the pool no longer has any supply we do not need to add to the totalRewardsPerAmount
             if (_totalAmount > 0) {
                 // Take cake from the Cake pool in case the contract does not enough CAKE
@@ -187,7 +190,7 @@ contract CakeVault is Vault {
         }
 
         // Send the underlying token to the recipient
-        CAKE.safeTransfer(recipient, amount + rewards);
+        CAKE.safeTransfer(recipient, amountToRecipient);
 
         // Only restake if there is at least 1 `CAKE` in the contract after sending the rewards
         // If there are no `STAKING TOKENS` left, we do not need to restake

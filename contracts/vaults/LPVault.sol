@@ -135,6 +135,8 @@ contract LPVault is Vault {
         cakeHarvested = _getCakeBalance() - preBalance;
     }
 
+    /**************************** INTERNAL OVERRIDE FUNCTIONS ****************************/
+
     /**
      * This function takes `STAKING_TOKEN` from the `msg.sender` and puts it in the `CAKE_MASTER_CHEF`
      * This function will update the global state and recalculate the `totalAmount`, `totalRewards` and `userInfo` accordingly
@@ -177,6 +179,8 @@ contract LPVault is Vault {
         // Deposit the new acquired tokens in the farm
         // Since we already got the rewards in this block. There should be no rewards right now to harvest.
         CAKE_MASTER_CHEF.deposit(POOL_ID, amount);
+        // Compound the rewards
+        CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
 
         // Update State to tell us that user has been completed paid up to this point
         user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
