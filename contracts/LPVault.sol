@@ -15,7 +15,6 @@ pragma solidity 0.8.10;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
-import "hardhat/console.sol";
 
 import "./interfaces/IMasterChef.sol";
 import "./interfaces/IVault.sol";
@@ -175,7 +174,7 @@ contract LPVault is IVault, Context {
         CAKE.safeTransfer(_msgSender(), fee);
 
         // Compound the rewards. We already took the rewards up to this block. So the `CAKE` pool rewards should be 0.
-        CAKE_MASTER_CHEF.enterStaking(getCakeBalance());
+        CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
 
         // Update global state
         totalRewardsPerAmount = _totalRewardsPerAmount;
@@ -188,7 +187,7 @@ contract LPVault is IVault, Context {
     /**
      * A helper function to get the current `CAKE` balance in this vault
      */
-    function getCakeBalance() private view returns (uint256) {
+    function _getCakeBalance() private view returns (uint256) {
         return CAKE.balanceOf(address(this));
     }
 
@@ -201,10 +200,10 @@ contract LPVault is IVault, Context {
         private
         returns (uint256 cakeHarvested)
     {
-        uint256 preBalance = getCakeBalance();
+        uint256 preBalance = _getCakeBalance();
         CAKE_MASTER_CHEF.withdraw(POOL_ID, amount);
-        // Find how much cake we earned after depositing as it always gives the rewards
-        cakeHarvested = getCakeBalance() - preBalance;
+        // Find how much cake we earned after withdrawing as it always gives the rewards
+        cakeHarvested = _getCakeBalance() - preBalance;
     }
 
     /**
@@ -216,10 +215,10 @@ contract LPVault is IVault, Context {
         private
         returns (uint256 cakeHarvested)
     {
-        uint256 preBalance = getCakeBalance();
+        uint256 preBalance = _getCakeBalance();
         CAKE_MASTER_CHEF.deposit(POOL_ID, amount);
         // Find how much cake we earned after depositing as it always gives the rewards
-        cakeHarvested = getCakeBalance() - preBalance;
+        cakeHarvested = _getCakeBalance() - preBalance;
     }
 
     /**
@@ -227,9 +226,9 @@ contract LPVault is IVault, Context {
      * @return cakeHarvested it returns the amount of `CAKE` farmed
      */
     function _stakeCake() private returns (uint256 cakeHarvested) {
-        CAKE_MASTER_CHEF.enterStaking(getCakeBalance());
+        CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
         // Current Balance of Cake are extra rewards because we just staked our entire CAKE balance
-        cakeHarvested = getCakeBalance();
+        cakeHarvested = _getCakeBalance();
     }
 
     /**
@@ -241,10 +240,10 @@ contract LPVault is IVault, Context {
         private
         returns (uint256 cakeHarvested)
     {
-        uint256 preBalance = getCakeBalance();
+        uint256 preBalance = _getCakeBalance();
 
         CAKE_MASTER_CHEF.leaveStaking(amount);
-        cakeHarvested = getCakeBalance() - preBalance - amount;
+        cakeHarvested = _getCakeBalance() - preBalance - amount;
     }
 
     /**
@@ -335,7 +334,7 @@ contract LPVault is IVault, Context {
         // Set rewards to 0
         user.rewards = 0;
 
-        uint256 cakeBalance = getCakeBalance();
+        uint256 cakeBalance = _getCakeBalance();
 
         if (cakeBalance < rewards) {
             uint256 unstakeRewards = _unStakeCake(rewards - cakeBalance);
@@ -353,7 +352,7 @@ contract LPVault is IVault, Context {
 
         // Only restake if there is at least 1 `CAKE` in the contract after sending the rewards
         // If there are no `STAKING TOKENS` left, we do not need to restake
-        if (_totalAmount > 0 && getCakeBalance() >= 1 ether) {
+        if (_totalAmount > 0 && _getCakeBalance() >= 1 ether) {
             _totalRewardsPerAmount += (_stakeCake() * 1e12) / _totalAmount;
         }
 
@@ -411,8 +410,10 @@ contract LPVault is IVault, Context {
         uint256 amount
     ) external onlyMarket {
         require(amount > 0, "Vault: no zero amount");
-        require(account != address(0), "Vault: no zero address");
-        require(recipient != address(0), "Vault: no zero address");
+        require(
+            account != address(0) && recipient != address(0),
+            "Vault: no zero address"
+        );
 
         _withdraw(account, recipient, amount);
     }
