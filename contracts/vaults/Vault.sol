@@ -78,7 +78,70 @@ contract Vault is IVault, Context {
         _;
     }
 
-    /**************************** PRIVATE FUNCTIONS ****************************/
+    /**************************** VIEW FUNCTIONS ****************************/
+
+    /**
+     * The logic of this function is supposed to be implemented by the child contract
+     */
+    function getPendingRewards() public view virtual returns (uint256) {
+        return 0;
+    }
+
+    /**
+     * It checks how many pending `CAKE` a user is entitled to by calculating how much `CAKE` they have accrued + pending `CAKE` in `CAKE_MASTER_CHEF`
+     * @param account The address to check how much pending `CAKE` he will get
+     * @return rewards The number of `CAKE`
+     */
+    function getUserPendingRewards(address account)
+        external
+        view
+        returns (uint256 rewards)
+    {
+        uint256 _totalAmount = totalAmount;
+        // No need to calculate rewards if there are no tokens deposited in this contract;
+        // Also add this condition to avoid dividing by 0 when calculating the rewards
+        if (_totalAmount <= 0) return 0;
+
+        uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
+        User memory user = userInfo[account];
+
+        uint256 pendingRewardsPerAmount = (getPendingRewards() * 1e12) /
+            _totalAmount;
+
+        rewards +=
+            (((_totalRewardsPerAmount + pendingRewardsPerAmount) *
+                user.amount) / 1e12) -
+            user.rewardDebt;
+
+        return rewards + user.rewards;
+    }
+
+    /**************************** INTERNAL FUNCTIONS ****************************/
+
+    /**
+     * This function stakes the current `CAKE` in this vault in the farm
+     * @return cakeHarvested it returns the amount of `CAKE` farmed
+     */
+    function _stakeCake() internal returns (uint256 cakeHarvested) {
+        CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
+        // Current Balance of Cake are extra rewards because we just staked our entire CAKE balance
+        cakeHarvested = _getCakeBalance();
+    }
+
+    /**
+     * This function withdraws `CAKE` from the cake staking pool and returns the amount of rewards `CAKE`
+     * @param amount The number of `CAKE` to be unstaked
+     * @return cakeHarvested The number of `CAKE` that was farmed as reward
+     */
+    function _unStakeCake(uint256 amount)
+        internal
+        returns (uint256 cakeHarvested)
+    {
+        uint256 preBalance = _getCakeBalance();
+
+        CAKE_MASTER_CHEF.leaveStaking(amount);
+        cakeHarvested = _getCakeBalance() - preBalance - amount;
+    }
 
     /**
      * A helper function to get the current `CAKE` balance in this vault

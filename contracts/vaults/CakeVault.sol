@@ -38,37 +38,8 @@ contract CakeVault is Vault {
      * It checks the pending `CAKE` in the CAKE pool which is always Id 0
      * @return The number of `CAKE` the contract has as rewards in the pool
      */
-    function getPendingRewards() public view returns (uint256) {
+    function getPendingRewards() public view override(Vault) returns (uint256) {
         return CAKE_MASTER_CHEF.pendingCake(0, address(this));
-    }
-
-    /**
-     * It checks how many pending `CAKE` a user is entitled to by calculating how much `CAKE` they have accrued + pending `CAKE` in `CAKE_MASTER_CHEF`
-     * @param account The address to check how much pending `CAKE` he will get
-     * @return rewards The number of `CAKE`
-     */
-    function getUserPendingRewards(address account)
-        external
-        view
-        returns (uint256 rewards)
-    {
-        uint256 _totalAmount = totalAmount;
-        // No need to calculate rewards if there are no tokens deposited in this contract;
-        // Also add this condition to avoid dividing by 0 when calculating the rewards
-        if (_totalAmount <= 0) return 0;
-
-        uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
-        User memory user = userInfo[account];
-
-        uint256 pendingRewardsPerAmount = (getPendingRewards() * 1e12) /
-            _totalAmount;
-
-        rewards +=
-            (((_totalRewardsPerAmount + pendingRewardsPerAmount) *
-                user.amount) / 1e12) -
-            user.rewardDebt;
-
-        return rewards + user.rewards;
     }
 
     /**************************** MUTATIVE FUNCTIONS ****************************/
@@ -91,7 +62,7 @@ contract CakeVault is Vault {
         uint256 _totalAmount = totalAmount;
 
         // Get rewards from the `CAKE` pool
-        cakeRewards += _unStake(0);
+        cakeRewards += _unStakeCake(0);
 
         // Calculate fee to reward the `msg.sender`
         uint256 fee = (cakeRewards * 2e4) / 1e6; // 2% of the rewards obtained
@@ -111,29 +82,7 @@ contract CakeVault is Vault {
         emit Compound(cakeRewards - fee, fee, block.number);
     }
 
-    /**************************** PRIVATE FUNCTIONS ****************************/
-
-    /**
-     * This function stakes the current `CAKE` in this vault into the `CAKE` pool
-     * @return cakeHarvested it returns the amount of `CAKE` farmed
-     */
-    function _stake() private returns (uint256 cakeHarvested) {
-        CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
-        // Current Balance of Cake are extra rewards because we just staked our entire CAKE balance
-        cakeHarvested = _getCakeBalance();
-    }
-
-    /**
-     * This function withdraws `CAKE` from the cake staking pool and returns the amount of rewards `CAKE`
-     * @param amount The number of `CAKE` to be unstaked
-     * @return cakeHarvested The number of `CAKE` that was farmed as reward
-     */
-    function _unStake(uint256 amount) private returns (uint256 cakeHarvested) {
-        uint256 preBalance = _getCakeBalance();
-
-        CAKE_MASTER_CHEF.leaveStaking(amount);
-        cakeHarvested = _getCakeBalance() - preBalance - amount;
-    }
+    /**************************** INTERNAL FUNCTIONS ****************************/
 
     /**
      * This function takes `STAKING_TOKEN` from the `msg.sender` and puts it in the `CAKE_MASTER_CHEF`
@@ -153,7 +102,7 @@ contract CakeVault is Vault {
         // If there are no tokens deposited, we do not need to run these operations
         if (_totalAmount > 0) {
             // Reinvest all cake into the CAKE pool and get the current rewards
-            _totalRewardsPerAmount += (_stake() * 1e12) / _totalAmount;
+            _totalRewardsPerAmount += (_stakeCake() * 1e12) / _totalAmount;
         }
 
         // No need to calculate rewards if the user has no deposit
@@ -209,7 +158,7 @@ contract CakeVault is Vault {
 
         // Collect the current rewards in the `CAKE` pool to properly calculate rewards
         // And withdraw the amount of `CAKE` from the pool
-        _totalRewardsPerAmount += (_unStake(amount) * 1e12) / _totalAmount;
+        _totalRewardsPerAmount += (_unStakeCake(amount) * 1e12) / _totalAmount;
 
         // Calculate how many rewards the user is entitled before this deposit
         uint256 rewards = ((_totalRewardsPerAmount * user.amount) / 1e12) -
@@ -227,7 +176,7 @@ contract CakeVault is Vault {
         uint256 cakeBalance = _getCakeBalance();
 
         if (cakeBalance < rewards) {
-            uint256 unstakeRewards = _unStake(rewards - cakeBalance);
+            uint256 unstakeRewards = _unStakeCake(rewards - cakeBalance);
             // If the pool no longer has any supply we do not need to add to the totalRewardsPerAmount
             if (_totalAmount > 0) {
                 // Take cake from the Cake pool in case the contract does not enough CAKE
@@ -243,7 +192,7 @@ contract CakeVault is Vault {
         // Only restake if there is at least 1 `CAKE` in the contract after sending the rewards
         // If there are no `STAKING TOKENS` left, we do not need to restake
         if (_totalAmount > 0 && _getCakeBalance() >= 1 ether) {
-            _totalRewardsPerAmount += (_stake() * 1e12) / _totalAmount;
+            _totalRewardsPerAmount += (_stakeCake() * 1e12) / _totalAmount;
         }
 
         // If the Vault still has assets update the state as usual
