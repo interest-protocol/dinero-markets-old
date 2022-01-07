@@ -273,4 +273,127 @@ describe('LPVault', () => {
     // Paid the `msg.sender`
     expect((await cake.balanceOf(alice.address)).gt(0)).to.be.equal(true);
   });
+  describe('function: deposit', () => {
+    it('reverts if the amount if smaller or 0', async () => {
+      await expect(
+        lpVault.connect(market).deposit(alice.address, 0)
+      ).to.revertedWith('Vault: no zero amount');
+    });
+    it('reverts if the amount if smaller or 0', async () => {
+      await expect(
+        lpVault.connect(market).deposit(ethers.constants.AddressZero, 10)
+      ).to.revertedWith('Vault: no zero address');
+    });
+    it('reverts if the user is not the market', async () => {
+      await expect(
+        lpVault.connect(owner).deposit(alice.address, 10)
+      ).to.revertedWith('Vault: only market');
+      await expect(
+        lpVault.connect(alice).deposit(alice.address, 10)
+      ).to.revertedWith('Vault: only market');
+      await expect(
+        lpVault.connect(bob).deposit(alice.address, 10)
+      ).to.revertedWith('Vault: only market');
+    });
+    it('allows deposits', async () => {
+      const [
+        aliceInfo,
+        totalAmount,
+        totalRewardsPerAmount,
+        masterChefCakePool,
+        masterChefLpPool,
+      ] = await Promise.all([
+        lpVault.userInfo(alice.address),
+        lpVault.totalAmount(),
+        lpVault.totalRewardsPerAmount(),
+        masterChef.userInfo(0, lpVault.address),
+        masterChef.userInfo(1, lpVault.address),
+      ]);
+
+      expect(aliceInfo.rewardDebt).to.be.equal(0);
+      expect(aliceInfo.rewards).to.be.equal(0);
+      expect(aliceInfo.amount).to.be.equal(0);
+      expect(totalAmount).to.be.equal(0);
+      expect(totalRewardsPerAmount).to.be.equal(0);
+      expect(masterChefCakePool.amount).to.be.equal(0);
+      expect(masterChefLpPool.amount).to.be.equal(0);
+
+      await expect(
+        lpVault.connect(market).deposit(alice.address, parseEther('20'))
+      )
+        .to.emit(lpVault, 'Deposit')
+        .withArgs(alice.address, parseEther('20'))
+        .to.emit(masterChef, 'Deposit')
+        .withArgs(lpVault.address, 1, parseEther('20'))
+        .to.not.emit(cake, 'Transfer');
+
+      const [
+        aliceInfo2,
+        totalAmount2,
+        totalRewardsPerAmount2,
+        masterChefCakePool2,
+        masterChefLpPool2,
+      ] = await Promise.all([
+        lpVault.userInfo(alice.address),
+        lpVault.totalAmount(),
+        lpVault.totalRewardsPerAmount(),
+        masterChef.userInfo(0, lpVault.address),
+        masterChef.userInfo(1, lpVault.address),
+      ]);
+
+      expect(aliceInfo2.rewardDebt).to.be.equal(0);
+      expect(aliceInfo2.rewards).to.be.equal(0);
+      expect(aliceInfo2.amount).to.be.equal(parseEther('20'));
+      expect(totalAmount2).to.be.equal(parseEther('20'));
+      expect(totalRewardsPerAmount2).to.be.equal(0);
+      expect(masterChefCakePool2.amount).to.be.equal(0);
+      expect(masterChefLpPool2.amount).to.be.equal(parseEther('20'));
+
+      await expect(
+        lpVault.connect(market).deposit(alice.address, parseEther('10'))
+      )
+        .to.emit(lpVault, 'Deposit')
+        .withArgs(alice.address, parseEther('10'))
+        .to.emit(masterChef, 'Deposit')
+        .withArgs(lpVault.address, 1, parseEther('10'))
+        // Cake was deposited
+        .to.emit(cake, 'Transfer')
+        // Rewards were reinvested to Cake Pool
+        .to.emit(masterChef, 'Deposit')
+        // Rewards were taken from lpToken Farm
+        .withArgs(lpVault.address, 1, 0);
+
+      const [
+        aliceInfo3,
+        totalAmount3,
+        totalRewardsPerAmount3,
+        masterChefCakePool3,
+        masterChefLpPool3,
+      ] = await Promise.all([
+        lpVault.userInfo(alice.address),
+        lpVault.totalAmount(),
+        lpVault.totalRewardsPerAmount(),
+        masterChef.userInfo(0, lpVault.address),
+        masterChef.userInfo(1, lpVault.address),
+      ]);
+
+      expect(aliceInfo3.rewardDebt).to.be.equal(
+        totalRewardsPerAmount3.mul(parseEther('30')).div(1e12)
+      );
+      expect(aliceInfo3.rewards).to.be.equal(
+        totalRewardsPerAmount3.mul(parseEther('20')).div(1e12)
+      );
+      expect(aliceInfo3.amount).to.be.equal(parseEther('30'));
+      expect(totalAmount3).to.be.equal(parseEther('30'));
+      expect(totalRewardsPerAmount3).to.be.equal(
+        totalRewardsPerAmount2
+          .add(masterChefCakePool3.amount)
+          .mul(1e12)
+          .div(totalAmount2)
+      );
+      // Hard to calculate precise Cake reward
+      expect(masterChefCakePool3.amount.gt(0)).to.be.equal(true);
+      expect(masterChefLpPool3.amount).to.be.equal(parseEther('30'));
+    });
+  });
 });
