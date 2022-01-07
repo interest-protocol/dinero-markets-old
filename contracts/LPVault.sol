@@ -348,21 +348,29 @@ contract LPVault is IVault, Context {
             }
         }
 
-        // Send the rewards tot he recipient
+        // Send the rewards to the recipient
         CAKE.safeTransfer(recipient, rewards);
 
         // Only restake if there is at least 1 `CAKE` in the contract after sending the rewards
-        // If the does not have any tokens left we do not need to restake
-        if (_totalAmount > 0 && getCakeBalance() > 1 ether) {
+        // If there are no `STAKING TOKENS` left, we do not need to restake
+        if (_totalAmount > 0 && getCakeBalance() >= 1 ether) {
             _totalRewardsPerAmount += (_stakeCake() * 1e12) / _totalAmount;
         }
 
-        user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
+        // If the Vault still has assets update the state as usual
+        if (_totalAmount > 0) {
+            // Reset totalRewardsPerAmount if the pool is totally empty
+            totalRewardsPerAmount = _totalRewardsPerAmount;
+            user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
+            totalAmount = _totalAmount;
+        } else {
+            // If the Vault does not have any `STAKING_TOKEN`, reset the whole state.
+            totalAmount = 0;
+            totalRewardsPerAmount = 0;
+            user.rewardDebt = 0;
+            user.amount = 0;
+        }
 
-        // Update Gloabl state
-        totalAmount = _totalAmount;
-        // Reset totalRewardsPerAmount if the pool is totally empty
-        totalRewardsPerAmount = _totalAmount > 0 ? _totalRewardsPerAmount : 0;
         userInfo[account] = user;
 
         // Send the underlying token to the recipient
@@ -404,6 +412,7 @@ contract LPVault is IVault, Context {
     ) external onlyMarket {
         require(amount > 0, "Vault: no zero amount");
         require(account != address(0), "Vault: no zero address");
+        require(recipient != address(0), "Vault: no zero address");
 
         _withdraw(account, recipient, amount);
     }

@@ -31,12 +31,11 @@ describe('LPVault', () => {
   let developer: SignerWithAddress;
   // @notice Market does not need to be an address for testing purposes
   let market: SignerWithAddress;
+  let recipient: SignerWithAddress;
 
   beforeEach(async () => {
-    [[owner, alice, bob, developer, market], cake] = await Promise.all([
-      ethers.getSigners(),
-      deploy('CakeToken'),
-    ]);
+    [[owner, alice, bob, developer, market, recipient], cake] =
+      await Promise.all([ethers.getSigners(), deploy('CakeToken')]);
 
     syrup = await deploy('SyrupBar', [cake.address]);
 
@@ -279,12 +278,12 @@ describe('LPVault', () => {
         lpVault.connect(market).deposit(alice.address, 0)
       ).to.revertedWith('Vault: no zero amount');
     });
-    it('reverts if the amount if smaller or 0', async () => {
+    it('reverts if the account is the zero address', async () => {
       await expect(
         lpVault.connect(market).deposit(ethers.constants.AddressZero, 10)
       ).to.revertedWith('Vault: no zero address');
     });
-    it('reverts if the user is not the market', async () => {
+    it('reverts if the msg.sender is not the market', async () => {
       await expect(
         lpVault.connect(owner).deposit(alice.address, 10)
       ).to.revertedWith('Vault: only market');
@@ -325,7 +324,8 @@ describe('LPVault', () => {
         .withArgs(alice.address, parseEther('20'))
         .to.emit(masterChef, 'Deposit')
         .withArgs(lpVault.address, 1, parseEther('20'))
-        .to.not.emit(cake, 'Transfer');
+        .to.emit(lpToken, 'Transfer')
+        .withArgs(alice.address, lpVault.address, parseEther('20'));
 
       const [
         aliceInfo2,
@@ -356,12 +356,12 @@ describe('LPVault', () => {
         .withArgs(alice.address, parseEther('10'))
         .to.emit(masterChef, 'Deposit')
         .withArgs(lpVault.address, 1, parseEther('10'))
-        // Cake was deposited
-        .to.emit(cake, 'Transfer')
         // Rewards were reinvested to Cake Pool
         .to.emit(masterChef, 'Deposit')
         // Rewards were taken from lpToken Farm
-        .withArgs(lpVault.address, 1, 0);
+        .withArgs(lpVault.address, 1, 0)
+        .to.emit(lpToken, 'Transfer')
+        .withArgs(alice.address, lpVault.address, parseEther('10'));
 
       const [
         aliceInfo3,
@@ -394,6 +394,154 @@ describe('LPVault', () => {
       // Hard to calculate precise Cake reward
       expect(masterChefCakePool3.amount.gt(0)).to.be.equal(true);
       expect(masterChefLpPool3.amount).to.be.equal(parseEther('30'));
+    });
+  });
+  describe('function: withdraw', () => {
+    it('reverts if the amount if smaller or 0', async () => {
+      await expect(
+        lpVault.connect(market).withdraw(alice.address, alice.address, 0)
+      ).to.revertedWith('Vault: no zero amount');
+    });
+    it('reverts if the account that is withdrawing is the zero address', async () => {
+      await expect(
+        lpVault
+          .connect(market)
+          .withdraw(ethers.constants.AddressZero, alice.address, 10)
+      ).to.revertedWith('Vault: no zero address');
+    });
+    it('reverts if the recipient of the tokens and rewards is the zero address', async () => {
+      await expect(
+        lpVault
+          .connect(market)
+          .withdraw(alice.address, ethers.constants.AddressZero, 10)
+      ).to.revertedWith('Vault: no zero address');
+    });
+    it('reverts if the msg.sender is not the market', async () => {
+      await expect(
+        lpVault.connect(owner).withdraw(alice.address, alice.address, 10)
+      ).to.revertedWith('Vault: only market');
+      await expect(
+        lpVault.connect(alice).withdraw(alice.address, alice.address, 10)
+      ).to.revertedWith('Vault: only market');
+      await expect(
+        lpVault.connect(bob).withdraw(alice.address, alice.address, 10)
+      ).to.revertedWith('Vault: only market');
+    });
+    it('reverts if the msg.sender tries to withdraw more than the account has', async () => {
+      await lpVault.connect(market).deposit(alice.address, parseEther('20'));
+
+      await expect(
+        lpVault
+          .connect(market)
+          .withdraw(alice.address, alice.address, parseEther('20.1'))
+      ).to.revertedWith('Vault: not enough tokens');
+    });
+    it('market to withdraw assets', async () => {
+      await Promise.all([
+        lpVault.connect(market).deposit(alice.address, parseEther('20')),
+        lpVault.connect(market).deposit(bob.address, parseEther('30')),
+      ]);
+
+      // accrue some cake
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      const [
+        aliceInfo,
+        totalAmount,
+        totalRewardsPerAmount,
+        masterChefCakePool,
+        masterChefLpPool,
+        recipientLpTokenBalance,
+        recipientCakeBalance,
+      ] = await Promise.all([
+        lpVault.userInfo(alice.address),
+        lpVault.totalAmount(),
+        lpVault.totalRewardsPerAmount(),
+        masterChef.userInfo(0, lpVault.address),
+        masterChef.userInfo(1, lpVault.address),
+        lpToken.balanceOf(recipient.address),
+        cake.balanceOf(recipient.address),
+      ]);
+
+      expect(aliceInfo.amount).to.be.equal(parseEther('20'));
+      expect(aliceInfo.rewardDebt).to.be.equal(0); // @notice she was the first to deposit
+      expect(totalAmount).to.be.equal(parseEther('50'));
+      expect(masterChefLpPool.amount).to.be.equal(parseEther('50'));
+      expect(recipientLpTokenBalance).to.be.equal(0);
+      expect(recipientCakeBalance).to.be.equal(0);
+
+      await expect(
+        lpVault
+          .connect(market)
+          .withdraw(alice.address, recipient.address, parseEther('10'))
+      )
+        .to.emit(masterChef, 'Withdraw')
+        .withArgs(lpVault.address, 0, 0)
+        .to.emit(masterChef, 'Withdraw')
+        .withArgs(lpVault.address, 1, parseEther('10'))
+        .to.emit(cake, 'Transfer')
+        .to.emit(lpToken, 'Transfer')
+        .withArgs(lpVault.address, recipient.address, parseEther('10'));
+
+      const [
+        aliceInfo2,
+        totalAmount2,
+        totalRewardsPerAmount2,
+        masterChefCakePool2,
+        masterChefLpPool2,
+        recipientLpTokenBalance2,
+        recipientCakeBalance2,
+      ] = await Promise.all([
+        lpVault.userInfo(alice.address),
+        lpVault.totalAmount(),
+        lpVault.totalRewardsPerAmount(),
+        masterChef.userInfo(0, lpVault.address),
+        masterChef.userInfo(1, lpVault.address),
+        lpToken.balanceOf(recipient.address),
+        cake.balanceOf(recipient.address),
+      ]);
+
+      expect(aliceInfo2.amount).to.be.equal(parseEther('10'));
+      expect(aliceInfo2.rewardDebt).to.be.equal(
+        totalRewardsPerAmount2.mul(parseEther('10')).div(1e12)
+      );
+      expect(aliceInfo2.rewards).to.be.equal(0);
+      expect(totalRewardsPerAmount2.gt(totalRewardsPerAmount)).to.be.equal(
+        true
+      );
+      expect(totalRewardsPerAmount2.isZero()).to.be.equal(false);
+      expect(
+        masterChefCakePool2.amount.gt(masterChefCakePool.amount)
+      ).to.be.equal(true);
+      expect(totalAmount2).to.be.equal(parseEther('40'));
+      expect(masterChefLpPool2.amount).to.be.equal(parseEther('40'));
+      expect(recipientLpTokenBalance2).to.be.equal(parseEther('10'));
+      expect(recipientCakeBalance2.gt(0)).to.be.equal(true);
+
+      await Promise.all([
+        lpVault
+          .connect(market)
+          .withdraw(alice.address, recipient.address, parseEther('10')),
+        lpVault
+          .connect(market)
+          .withdraw(bob.address, recipient.address, parseEther('30')),
+      ]);
+
+      const [bobInfo, totalAmount3, totalRewardsPerAmount3] = await Promise.all(
+        [
+          lpVault.userInfo(bob.address),
+          lpVault.totalAmount(),
+          lpVault.totalRewardsPerAmount(),
+        ]
+      );
+
+      expect(bobInfo.rewardDebt).to.be.equal(0);
+      expect(bobInfo.amount).to.be.equal(0);
+      expect(totalAmount3).to.be.equal(0);
+      expect(totalRewardsPerAmount3).to.be.equal(0);
     });
   });
 });
