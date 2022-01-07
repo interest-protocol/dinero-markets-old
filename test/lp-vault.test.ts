@@ -133,7 +133,7 @@ describe('LPVault', () => {
       .to.emit(cake, 'Approval')
       .withArgs(lpVault.address, masterChef.address, cakeAllowance.add(10));
   });
-  it.only('allows to see how many pending rewards a user has', async () => {
+  it('allows to see how many pending rewards a user has', async () => {
     expect(await lpVault.getUserPendingRewards(alice.address)).to.be.equal(0);
 
     await lpVault.connect(market).deposit(alice.address, parseEther('10'));
@@ -211,5 +211,66 @@ describe('LPVault', () => {
         .add(aliceInfo.rewards)
         .add(bobInfo.rewards)
     );
+  });
+  it('reinvests the Cake rewards from the farm and Cake pool back in the Cake pool', async () => {
+    await Promise.all([
+      lpVault.connect(market).deposit(alice.address, parseEther('10')),
+      lpVault.connect(market).deposit(bob.address, parseEther('30')),
+    ]);
+
+    // accrue some cake
+    await advanceBlock(ethers);
+    await advanceBlock(ethers);
+    await advanceBlock(ethers);
+    await advanceBlock(ethers);
+
+    const [pendingRewards, totalRewardsPerAmount, masterChefUserInfo] =
+      await Promise.all([
+        lpVault.getPendingRewards(),
+        lpVault.totalRewardsPerAmount(),
+        masterChef.userInfo(0, lpVault.address),
+      ]);
+
+    // There are pending rewards that can be compounded
+    expect(pendingRewards).to.be.not.equal(0);
+    expect(await cake.balanceOf(alice.address)).to.be.equal(0);
+
+    await expect(lpVault.connect(alice).compound())
+      .to.emit(lpVault, 'Compound')
+      .to.emit(masterChef, 'Deposit')
+      .to.emit(masterChef, 'Withdraw');
+
+    const [
+      pendingRewards2,
+      totalRewardsPerAmount2,
+      totalAmount,
+      masterChefUserInfo2,
+    ] = await Promise.all([
+      lpVault.getPendingRewards(),
+      lpVault.totalRewardsPerAmount(),
+      lpVault.totalAmount(),
+      masterChef.userInfo(0, lpVault.address),
+    ]);
+
+    // Due to delays it is possible that we already accumulated some rewards after compounding
+    // So we test that there are less rewards after compounding
+    expect(pendingRewards.gt(pendingRewards2)).to.be.equal(true);
+    // Test that the `CAKE` pool amount increased more than the pending rewards before compound
+    expect(
+      masterChefUserInfo2.amount.gt(
+        masterChefUserInfo.amount.add(pendingRewards)
+      )
+    ).to.be.equal(true);
+    // Properly updated the totalRewardsPerAmount
+    expect(totalRewardsPerAmount2).to.be.equal(
+      totalRewardsPerAmount.add(
+        masterChefUserInfo2.amount
+          .sub(masterChefUserInfo.amount)
+          .mul(1e12)
+          .div(totalAmount)
+      )
+    );
+    // Paid the `msg.sender`
+    expect((await cake.balanceOf(alice.address)).gt(0)).to.be.equal(true);
   });
 });

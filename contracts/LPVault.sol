@@ -35,11 +35,7 @@ contract LPVault is IVault, Context {
         uint256 amount
     );
 
-    event LogCompound(
-        uint256 rewards,
-        uint256 fee,
-        uint256 indexed blockNumber
-    );
+    event Compound(uint256 rewards, uint256 fee, uint256 indexed blockNumber);
 
     /****************************  STRUCT ****************************/
 
@@ -124,11 +120,11 @@ contract LPVault is IVault, Context {
         returns (uint256 rewards)
     {
         uint256 _totalAmount = totalAmount;
-        uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
         // No need to calculate rewards if there are no tokens deposited in this contract;
         // Also add this condition to avoid dividing by 0 when calculating the rewards
-        if (_totalAmount <= 0) return rewards;
+        if (_totalAmount <= 0) return 0;
 
+        uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
         User memory user = userInfo[account];
 
         uint256 pendingRewardsPerAmount = (getPendingRewards() * 1e12) /
@@ -170,7 +166,7 @@ contract LPVault is IVault, Context {
         cakeRewards += _unStakeCake(0);
 
         // Calculate fee to reward the `msg.sender`
-        uint256 fee = (cakeRewards * 1e3) / 1e5; // 1% of the rewards obtained
+        uint256 fee = (cakeRewards * 2e4) / 1e6; // 2% of the rewards obtained
 
         // update state
         _totalRewardsPerAmount += ((cakeRewards - fee) * 1e12) / _totalAmount;
@@ -178,13 +174,13 @@ contract LPVault is IVault, Context {
         // Pay the `msg.sender`
         CAKE.safeTransfer(_msgSender(), fee);
 
-        // Compound the rewards. We already took the rewards up to this block. So the `CAKE` pool should be empty.
-        _stakeCake();
+        // Compound the rewards. We already took the rewards up to this block. So the `CAKE` pool rewards should be 0.
+        CAKE_MASTER_CHEF.enterStaking(getCakeBalance());
 
         // Update global state
         totalRewardsPerAmount = _totalRewardsPerAmount;
 
-        emit LogCompound(cakeRewards - fee, fee, block.number);
+        emit Compound(cakeRewards - fee, fee, block.number);
     }
 
     /**************************** PRIVATE FUNCTIONS ****************************/
@@ -289,7 +285,7 @@ contract LPVault is IVault, Context {
 
         // Deposit the new acquired tokens in the farm
         // Since we already got the rewards in this block. There should be no rewards right now to harvest.
-        _depositFarm(amount);
+        CAKE_MASTER_CHEF.deposit(POOL_ID, amount);
 
         // Update State to tell us that user has been completed paid up to this point
         user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
