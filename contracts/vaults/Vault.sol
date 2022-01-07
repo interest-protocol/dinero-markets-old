@@ -18,7 +18,7 @@ import "@openzeppelin/contracts/utils/Context.sol";
 import "../interfaces/IMasterChef.sol";
 import "../interfaces/IVault.sol";
 
-abstract contract Vault is IVault, Context {
+contract Vault is IVault, Context {
     /****************************  EVENTS ****************************/
 
     event Deposit(address indexed account, uint256 amount);
@@ -85,5 +85,60 @@ abstract contract Vault is IVault, Context {
      */
     function _getCakeBalance() internal view returns (uint256) {
         return CAKE.balanceOf(address(this));
+    }
+
+    /**
+     * The logic for this function is to be implemented by the child contract
+     */
+    //solhint-disable-next-line no-empty-blocks
+    function _deposit(address, uint256) internal virtual {}
+
+    /**
+     * This function is to be implemented by the child contract
+     */
+    function _withdraw(
+        address,
+        address,
+        uint256 //solhint-disable-next-line no-empty-blocks
+    ) internal virtual {}
+
+    /**************************** ONLY MARKET ****************************/
+
+    /**
+     * @param account The account that is depositing `STAKING_TOKEN`
+     * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
+     *
+     * This function disallows 0 values as they are applicable in the context. Cannot deposit 0 `amount` as we do not send rewards on deposit
+     * This function uses the {_deposit} function and is protected by the modifier {onlyMarket} to disallow funds mismanegement
+     *
+     */
+    function deposit(address account, uint256 amount) external onlyMarket {
+        require(amount > 0, "Vault: no zero amount");
+        require(account != address(0), "Vault: no zero address");
+
+        _deposit(account, amount);
+    }
+
+    /**
+     * @param account The account that is depositing `STAKING_TOKEN`
+     * @param recipient The account which will get the `CAKE` rewards and `STAKING_TOKEN`
+     * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
+     *
+     * This function disallows 0 values as they are applicable in the context. Cannot withdraw 0 `amount` as rewards are only paid for liquidators or on repayment.
+     * This function uses the {_withdraw} function and is protected by the modifier {onlyMarket} to disallow funds mismanegement
+     *
+     */
+    function withdraw(
+        address account,
+        address recipient,
+        uint256 amount
+    ) external onlyMarket {
+        require(amount > 0, "Vault: no zero amount");
+        require(
+            account != address(0) && recipient != address(0),
+            "Vault: no zero address"
+        );
+
+        _withdraw(account, recipient, amount);
     }
 }

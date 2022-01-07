@@ -142,7 +142,10 @@ contract CakeVault is Vault {
      * @param account The account that is depositing `STAKING_TOKEN`
      * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
      */
-    function _deposit(address account, uint256 amount) private {
+    function _deposit(address account, uint256 amount)
+        internal
+        override(Vault)
+    {
         User memory user = userInfo[account];
         uint256 _totalAmount = totalAmount;
         uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
@@ -196,7 +199,7 @@ contract CakeVault is Vault {
         address account,
         address recipient,
         uint256 amount
-    ) private {
+    ) internal override(Vault) {
         User memory user = userInfo[account];
 
         require(user.amount >= amount, "Vault: not enough tokens");
@@ -260,45 +263,5 @@ contract CakeVault is Vault {
         userInfo[account] = user;
 
         emit Withdraw(account, recipient, amount);
-    }
-
-    /**************************** ONLY MARKET ****************************/
-
-    /**
-     * @param account The account that is depositing `STAKING_TOKEN`
-     * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
-     *
-     * This function disallows 0 values as they are applicable in the context. Cannot deposit 0 `amount` as we do not send rewards on deposit
-     * This function uses the {_deposit} function and is protected by the modifier {onlyMarket} to disallow funds mismanegement
-     *
-     */
-    function deposit(address account, uint256 amount) external onlyMarket {
-        require(amount > 0, "Vault: no zero amount");
-        require(account != address(0), "Vault: no zero address");
-
-        _deposit(account, amount);
-    }
-
-    /**
-     * @param account The account that is depositing `STAKING_TOKEN`
-     * @param recipient The account which will get the `CAKE` rewards and `STAKING_TOKEN`
-     * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
-     *
-     * This function disallows 0 values as they are applicable in the context. Cannot withdraw 0 `amount` as rewards are only paid for liquidators or on repayment.
-     * This function uses the {_withdraw} function and is protected by the modifier {onlyMarket} to disallow funds mismanegement
-     *
-     */
-    function withdraw(
-        address account,
-        address recipient,
-        uint256 amount
-    ) external onlyMarket {
-        require(amount > 0, "Vault: no zero amount");
-        require(
-            account != address(0) && recipient != address(0),
-            "Vault: no zero address"
-        );
-
-        _withdraw(account, recipient, amount);
     }
 }
