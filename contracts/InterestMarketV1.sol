@@ -29,6 +29,6 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable {
     }
 
     function initialize(bytes calldata) external payable initializer {
-        require(address(MASTER_CONTRACT) == address(0), "IMV1: not allowed");
+        require(address(MASTER_CONTRACT) != address(this), "IMV1: not allowed");
     }
 }

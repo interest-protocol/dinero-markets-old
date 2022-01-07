@@ -47,4 +47,40 @@ describe('Dinero', () => {
       expect(await dinero.balanceOf(alice.address)).to.be.equal(amount);
     });
   });
+  describe('function: burn', () => {
+    it('reverts if an account without the BURNER_ROLE calls it', async () => {
+      const amount = parseEther('10');
+
+      await expect(
+        dinero.connect(alice).burn(alice.address, amount)
+      ).to.revertedWith(
+        'AccessControl: account 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 is missing role 0x3c11d16cbaffd01df69ce1c404f6340ee057498f5f00246190ea54220576a848'
+      );
+    });
+    it('creates new tokens', async () => {
+      const amount = parseEther('10');
+      await Promise.all([
+        dinero
+          .connect(owner)
+          .grantRole(await dinero.BURNER_ROLE(), owner.address),
+        dinero
+          .connect(owner)
+          .grantRole(await dinero.MINTER_ROLE(), owner.address),
+      ]);
+
+      await dinero.connect(owner).mint(alice.address, amount);
+
+      expect(await dinero.balanceOf(alice.address)).to.be.equal(
+        parseEther('10')
+      );
+
+      await expect(dinero.connect(owner).burn(alice.address, parseEther('8')))
+        .to.emit(dinero, 'Transfer')
+        .withArgs(alice.address, ethers.constants.AddressZero, parseEther('8'));
+
+      expect(await dinero.balanceOf(alice.address)).to.be.equal(
+        parseEther('2')
+      );
+    });
+  });
 });

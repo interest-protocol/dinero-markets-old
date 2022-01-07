@@ -356,7 +356,7 @@ contract CasaDePapel is Ownable {
     }
 
     /**
-     * @dev This function is meant to be called by contracts that accept accept {STAKED_INTEREST_TOKEN} and requires the user to give permission beforehand. This is meant for an urgent situation in which the contract requires to swap the {STAKED_INTEREST_TOKEN} back to {INTEREST_TOKEN}
+     * @dev This function is meant to be called by contracts that accept {STAKED_INTEREST_TOKEN} and requires the user to give permission beforehand. This is meant for an urgent situation in which the contract requires to swap the {STAKED_INTEREST_TOKEN} back to {INTEREST_TOKEN}
      * @param debtor The account that will be liquidated. The one who owes the `msg.sender` {INTEREST_TOKENS}
      * @param amount The number of tokens the `account` owes the `msg.sender`
      *
@@ -393,7 +393,7 @@ contract CasaDePapel is Ownable {
         uint256 amount = user.amount;
 
         if (poolId == 0) {
-            STAKED_INTEREST_TOKEN.burnFrom(_msgSender(), amount);
+            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
         }
 
         // Clean user history
@@ -492,7 +492,7 @@ contract CasaDePapel is Ownable {
 
         if (amount > 0) {
             // `msg.sender` must have enough receipt tokens. As sINT totalSupply must always be equal to the `pool.totalSupply` of Int
-            STAKED_INTEREST_TOKEN.burnFrom(_msgSender(), amount);
+            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
             user.amount -= amount;
             pool.totalSupply -= amount;
             pool.stakingToken.safeTransfer(_msgSender(), amount);
