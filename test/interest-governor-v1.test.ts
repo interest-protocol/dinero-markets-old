@@ -92,32 +92,6 @@ describe('InterestGovernorV1', () => {
     expect(await interestGovernorV1.isMarket(market)).to.be.equal(true);
   });
 
-  describe('function: getStaker', () => {
-    it('reverts if the market does not exist', async () => {
-      await expect(interestGovernorV1.getStaker(AddressZero)).to.revertedWith(
-        'IFV1: not a market'
-      );
-    });
-    it('returns the staker associated with a market', async () => {
-      await interestGovernorV1
-        .connect(owner)
-        .createMarket(
-          mockInterestMarketV1.address,
-          collateralTokenAddress,
-          makeData('data1')
-        );
-
-      const market = await interestGovernorV1.allMarkets(0);
-
-      // @notice Since this is a unit test using a mock contract we can use any address for the staker contract
-      await interestGovernorV1.setStaker(market, stakerContractAddress);
-
-      expect(await interestGovernorV1.getStaker(market)).to.be.equal(
-        stakerContractAddress
-      );
-    });
-  });
-
   it('allows to predict a clone address', async () => {
     const data = makeData('data1');
     await interestGovernorV1
@@ -134,40 +108,6 @@ describe('InterestGovernorV1', () => {
     ).to.be.equal(market);
   });
 
-  describe('function: setStaker', () => {
-    it('reverts if it is not called by the owner', async () => {
-      await expect(
-        interestGovernorV1
-          .connect(alice)
-          // @notice because this a unit test we can pass arbitrary addresses
-          .setStaker(unregisteredMarketAddress, stakerContractAddress)
-      ).to.revertedWith('Ownable: caller is not the owner');
-    });
-    it('reverts if the market does not exist', async () => {
-      await expect(
-        interestGovernorV1
-          .connect(owner)
-          // @notice because this a unit test we can pass arbitrary addresses
-          .setStaker(unregisteredMarketAddress, stakerContractAddress)
-      ).to.revertedWith('IFV1: not a market');
-    });
-    it('sets a staker address to a market', async () => {
-      await interestGovernorV1
-        .connect(owner)
-        .createMarket(
-          mockInterestMarketV1.address,
-          stakerContractAddress,
-          makeData('data1')
-        );
-
-      const market = await interestGovernorV1.allMarkets([0]);
-
-      // @notice Since this is a unit test using a mock contract we can use any address for the staker contract
-      await expect(interestGovernorV1.setStaker(market, stakerContractAddress))
-        .to.emit(interestGovernorV1, 'StakerUpdated')
-        .withArgs(market, stakerContractAddress);
-    });
-  });
   describe('function: setFeeTo', () => {
     it('reverts if the caller is not the owner', async () => {
       await expect(

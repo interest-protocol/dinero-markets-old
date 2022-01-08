@@ -60,9 +60,6 @@ contract InterestGovernorV1 is Ownable {
 
     mapping(address => bool) public isMarket;
 
-    // @notice Returns the staker contract for a specific market.
-    mapping(address => address) private _stakerMap;
-
     /**************************** CONSTRUCTOR ****************************/
 
     constructor(Dinero _dinero) {
@@ -76,19 +73,6 @@ contract InterestGovernorV1 is Ownable {
      */
     function getAllMarketsLength() external view returns (uint256) {
         return allMarkets.length;
-    }
-
-    /**
-     * @dev Returns the staker contract associated with a market.
-     * @param market The account which we will find it's associated staker contract.
-     * @return the associated staker contract to the `market`.
-     *
-     * Note that not all markets have associated staker contracts.
-     *
-     */
-    function getStaker(address market) external view returns (address) {
-        require(isMarket[market], "IFV1: not a market");
-        return _stakerMap[market];
     }
 
     /**
@@ -106,21 +90,6 @@ contract InterestGovernorV1 is Ownable {
     }
 
     /**************************** ONLY OWNER FUNCTIONS ****************************/
-
-    /**
-     * @dev Sets a new staker contract for a market.
-     * @param market The market to assign a new staker contract.
-     * @param staker The new staker contract.
-     *
-     * This function has the modifier {onlyOwner} to ensure that only safe stakers are assigned.
-     * It emits the event {StakerUpdated} with the new market and staker addresses
-     *
-     */
-    function setStaker(address market, address staker) external onlyOwner {
-        require(isMarket[market], "IFV1: not a market");
-        _stakerMap[market] = staker;
-        emit StakerUpdated(market, staker);
-    }
 
     /**
      * @dev It assigns a new address to receive the accrued fees from the markets.
