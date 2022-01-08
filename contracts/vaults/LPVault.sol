@@ -14,60 +14,21 @@ pragma solidity 0.8.10;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/Context.sol";
 
-import "./interfaces/IMasterChef.sol";
-import "./interfaces/IVault.sol";
+import "./Vault.sol";
 
-contract LPVault is IVault, Context {
+contract LPVault is Vault {
     /**************************** LIBRARIES ****************************/
 
     using SafeERC20 for IERC20;
 
-    /****************************  EVENTS ****************************/
-
-    event Deposit(address indexed account, uint256 amount);
-
-    event Withdraw(
-        address indexed account,
-        address indexed recipient,
-        uint256 amount
-    );
-
-    event Compound(uint256 rewards, uint256 fee, uint256 indexed blockNumber);
-
-    /****************************  STRUCT ****************************/
-
-    struct User {
-        uint256 amount;
-        uint256 rewardDebt;
-        uint256 rewards;
-    }
-
     /****************************  CONSTANTS ****************************/
-
-    //solhint-disable-next-line var-name-mixedcase
-    IMasterChef public immutable CAKE_MASTER_CHEF; // The cake masterchef. He is an honest Cooker!
-
-    // solhint-disable-next-line var-name-mixedcase
-    IERC20 public immutable CAKE; // The famous Cake token!!
 
     // solhint-disable-next-line
     IERC20 public immutable STAKING_TOKEN; // The current token being farmed
 
     // solhint-disable-next-line var-name-mixedcase
-    address public immutable MARKET; // The market contract that deposits/withdraws from this contract
-
-    // solhint-disable-next-line var-name-mixedcase
     uint256 public immutable POOL_ID; // The current master chef farm being used
-
-    /**************************** STATE ****************************/
-
-    mapping(address => User) public userInfo; // Account Address => Account Info
-
-    uint256 public totalAmount; // total amount of staking token in the contract
-
-    uint256 public totalRewardsPerAmount; // is boosted by 1e12
 
     /**************************** CONSTRUCTOR ****************************/
 
@@ -77,24 +38,13 @@ contract LPVault is IVault, Context {
         IERC20 stakingToken,
         uint256 _poolId,
         address market
-    ) {
+    ) Vault(cakeMasterChef, cake, market) {
         require(_poolId != 0, "LPVault: this is a LP vault");
-        CAKE_MASTER_CHEF = cakeMasterChef;
-        CAKE = cake;
         STAKING_TOKEN = stakingToken;
-        MARKET = market;
         POOL_ID = _poolId;
         // Master chef needs full approval. {safeApprove} is fine to be used for the initial allowance
         stakingToken.safeApprove(address(cakeMasterChef), type(uint256).max);
         cake.safeApprove(address(cakeMasterChef), type(uint256).max);
-    }
-
-    /**************************** MODIFIER ****************************/
-
-    // Make sure that only the Market has access to certain functionality
-    modifier onlyMarket() {
-        require(_msgSender() == MARKET, "Vault: only market");
-        _;
     }
 
     /**************************** VIEW FUNCTIONS ****************************/
@@ -102,39 +52,10 @@ contract LPVault is IVault, Context {
      * It checks the pending `CAKE` the farm and the CAKE pool which is always Id 0
      * @return The number of `CAKE` the contract has as rewards in the farm
      */
-    function getPendingRewards() public view returns (uint256) {
+    function getPendingRewards() public view override(Vault) returns (uint256) {
         return
             CAKE_MASTER_CHEF.pendingCake(POOL_ID, address(this)) +
             CAKE_MASTER_CHEF.pendingCake(0, address(this));
-    }
-
-    /**
-     * It checks how many pending `CAKE` a user is entitled to by calculating how much `CAKE` they have accrued + pending `CAKE` in `CAKE_MASTER_CHEF`
-     * @param account The address to check how much pending `CAKE` he will get
-     * @return rewards The number of `CAKE`
-     */
-    function getUserPendingRewards(address account)
-        external
-        view
-        returns (uint256 rewards)
-    {
-        uint256 _totalAmount = totalAmount;
-        // No need to calculate rewards if there are no tokens deposited in this contract;
-        // Also add this condition to avoid dividing by 0 when calculating the rewards
-        if (_totalAmount <= 0) return 0;
-
-        uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
-        User memory user = userInfo[account];
-
-        uint256 pendingRewardsPerAmount = (getPendingRewards() * 1e12) /
-            _totalAmount;
-
-        rewards +=
-            (((_totalRewardsPerAmount + pendingRewardsPerAmount) *
-                user.amount) / 1e12) -
-            user.rewardDebt;
-
-        return rewards + user.rewards;
     }
 
     /**************************** MUTATIVE FUNCTIONS ****************************/
@@ -185,13 +106,6 @@ contract LPVault is IVault, Context {
     /**************************** PRIVATE FUNCTIONS ****************************/
 
     /**
-     * A helper function to get the current `CAKE` balance in this vault
-     */
-    function _getCakeBalance() private view returns (uint256) {
-        return CAKE.balanceOf(address(this));
-    }
-
-    /**
      * This function removes `STAKING_TOKEN` from the farm and returns the amount of `CAKE` farmed
      * @param amount The number of `STAKING_TOKEN` to be withdrawn from the `CAKE_MASTER_CHEF`
      * @return cakeHarvested It returns how many `CAKE` we got as reward
@@ -221,30 +135,7 @@ contract LPVault is IVault, Context {
         cakeHarvested = _getCakeBalance() - preBalance;
     }
 
-    /**
-     * This function stakes the current `CAKE` in this vault in the farm
-     * @return cakeHarvested it returns the amount of `CAKE` farmed
-     */
-    function _stakeCake() private returns (uint256 cakeHarvested) {
-        CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
-        // Current Balance of Cake are extra rewards because we just staked our entire CAKE balance
-        cakeHarvested = _getCakeBalance();
-    }
-
-    /**
-     * This function withdraws `CAKE` from the cake staking pool and returns the amount of rewards `CAKE`
-     * @param amount The number of `CAKE` to be unstaked
-     * @return cakeHarvested The number of `CAKE` that was farmed as reward
-     */
-    function _unStakeCake(uint256 amount)
-        private
-        returns (uint256 cakeHarvested)
-    {
-        uint256 preBalance = _getCakeBalance();
-
-        CAKE_MASTER_CHEF.leaveStaking(amount);
-        cakeHarvested = _getCakeBalance() - preBalance - amount;
-    }
+    /**************************** INTERNAL OVERRIDE FUNCTIONS ****************************/
 
     /**
      * This function takes `STAKING_TOKEN` from the `msg.sender` and puts it in the `CAKE_MASTER_CHEF`
@@ -253,7 +144,10 @@ contract LPVault is IVault, Context {
      * @param account The account that is depositing `STAKING_TOKEN`
      * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
      */
-    function _deposit(address account, uint256 amount) private {
+    function _deposit(address account, uint256 amount)
+        internal
+        override(Vault)
+    {
         User memory user = userInfo[account];
         uint256 _totalAmount = totalAmount;
         uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
@@ -285,6 +179,8 @@ contract LPVault is IVault, Context {
         // Deposit the new acquired tokens in the farm
         // Since we already got the rewards in this block. There should be no rewards right now to harvest.
         CAKE_MASTER_CHEF.deposit(POOL_ID, amount);
+        // Compound the rewards
+        CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
 
         // Update State to tell us that user has been completed paid up to this point
         user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
@@ -309,7 +205,7 @@ contract LPVault is IVault, Context {
         address account,
         address recipient,
         uint256 amount
-    ) private {
+    ) internal override(Vault) {
         User memory user = userInfo[account];
 
         require(user.amount >= amount, "Vault: not enough tokens");
@@ -337,14 +233,8 @@ contract LPVault is IVault, Context {
         uint256 cakeBalance = _getCakeBalance();
 
         if (cakeBalance < rewards) {
-            uint256 unstakeRewards = _unStakeCake(rewards - cakeBalance);
-            // If the pool no longer has any supply we do not need to add to the totalRewardsPerAmount
-            if (_totalAmount > 0) {
-                // Take cake from the Cake pool in case the contract does not enough CAKE
-                _totalRewardsPerAmount +=
-                    (unstakeRewards * 1e12) /
-                    _totalAmount;
-            }
+            // Already took the rewards up to this block. So the poo should be empty
+            CAKE_MASTER_CHEF.leaveStaking(rewards - cakeBalance);
         }
 
         // Send the rewards to the recipient
@@ -353,7 +243,8 @@ contract LPVault is IVault, Context {
         // Only restake if there is at least 1 `CAKE` in the contract after sending the rewards
         // If there are no `STAKING TOKENS` left, we do not need to restake
         if (_totalAmount > 0 && _getCakeBalance() >= 1 ether) {
-            _totalRewardsPerAmount += (_stakeCake() * 1e12) / _totalAmount;
+            // Already took the rewards up to this block. So the poo should be empty
+            CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
         }
 
         // If the Vault still has assets update the state as usual
@@ -376,45 +267,5 @@ contract LPVault is IVault, Context {
         STAKING_TOKEN.safeTransfer(recipient, amount);
 
         emit Withdraw(account, recipient, amount);
-    }
-
-    /**************************** ONLY MARKET ****************************/
-
-    /**
-     * @param account The account that is depositing `STAKING_TOKEN`
-     * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
-     *
-     * This function disallows 0 values as they are applicable in the context. Cannot deposit 0 `amount` as we do not send rewards on deposit
-     * This function uses the {_deposit} function and is protected by the modifier {onlyMarket} to disallow funds mismanegement
-     *
-     */
-    function deposit(address account, uint256 amount) external onlyMarket {
-        require(amount > 0, "Vault: no zero amount");
-        require(account != address(0), "Vault: no zero address");
-
-        _deposit(account, amount);
-    }
-
-    /**
-     * @param account The account that is depositing `STAKING_TOKEN`
-     * @param recipient The account which will get the `CAKE` rewards and `STAKING_TOKEN`
-     * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
-     *
-     * This function disallows 0 values as they are applicable in the context. Cannot withdraw 0 `amount` as rewards are only paid for liquidators or on repayment.
-     * This function uses the {_withdraw} function and is protected by the modifier {onlyMarket} to disallow funds mismanegement
-     *
-     */
-    function withdraw(
-        address account,
-        address recipient,
-        uint256 amount
-    ) external onlyMarket {
-        require(amount > 0, "Vault: no zero amount");
-        require(
-            account != address(0) && recipient != address(0),
-            "Vault: no zero address"
-        );
-
-        _withdraw(account, recipient, amount);
     }
 }
