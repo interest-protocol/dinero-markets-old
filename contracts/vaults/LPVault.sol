@@ -233,14 +233,8 @@ contract LPVault is Vault {
         uint256 cakeBalance = _getCakeBalance();
 
         if (cakeBalance < rewards) {
-            uint256 unstakeRewards = _unStakeCake(rewards - cakeBalance);
-            // If the pool no longer has any supply we do not need to add to the totalRewardsPerAmount
-            if (_totalAmount > 0) {
-                // Take cake from the Cake pool in case the contract does not enough CAKE
-                _totalRewardsPerAmount +=
-                    (unstakeRewards * 1e12) /
-                    _totalAmount;
-            }
+            // Already took the rewards up to this block. So the poo should be empty
+            CAKE_MASTER_CHEF.leaveStaking(rewards - cakeBalance);
         }
 
         // Send the rewards to the recipient
@@ -249,7 +243,8 @@ contract LPVault is Vault {
         // Only restake if there is at least 1 `CAKE` in the contract after sending the rewards
         // If there are no `STAKING TOKENS` left, we do not need to restake
         if (_totalAmount > 0 && _getCakeBalance() >= 1 ether) {
-            _totalRewardsPerAmount += (_stakeCake() * 1e12) / _totalAmount;
+            // Already took the rewards up to this block. So the poo should be empty
+            CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
         }
 
         // If the Vault still has assets update the state as usual
