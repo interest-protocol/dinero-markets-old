@@ -89,9 +89,6 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
     // solhint-disable-next-line var-name-mixedcase
     OracleV1 public immutable ORACLE;
 
-    // solhint-disable-next-line var-name-mixedcase
-    IERC20 public immutable REWARD_TOKEN;
-
     /*********************************** CLONE STATE ***********************************/
 
     // Only support tokens with 18 decimals
@@ -130,15 +127,13 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
         IPancakeRouter02 router,
         Dinero dinero,
         InterestGovernorV1 governor,
-        OracleV1 oracle,
-        IERC20 reward
+        OracleV1 oracle
     ) {
         MASTER_CONTRACT = this;
         ROUTER = router;
         DINERO = dinero;
         GOVERNOR = governor;
         ORACLE = oracle;
-        REWARD_TOKEN = reward;
     }
 
     /**************************** INITIALIZE ****************************/
@@ -389,7 +384,9 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
             // Remove the collateral from the account. We can consider the debt paid.
             userCollateral[account] -= collateralToCover;
 
-            // Get the Rewards and collateral if they are in a vault to this contract
+            // Get the Rewards and collateral if they are in a vault to this contract.
+            // The rewards go to the `account`
+            // The collateral comes to this contract
             if (Vault(address(0)) != VAULT) {
                 VAULT.withdraw(account, address(this), collateralToCover);
             }
@@ -411,7 +408,8 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
         totalCollateral -= allCollateral;
 
         // 10% of the liquidation fee to be given to the protocol
-        uint256 protocolFee = (allDebt * _liquidationFee) / 1e7;
+        uint256 protocolFee = (allFee * 100) / 1000;
+        // Pay the fee to the protocol
         loan.feesEarned += protocolFee.toUint128();
 
         if (useCollateral) {

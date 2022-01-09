@@ -182,7 +182,8 @@ contract CakeVault is Vault {
         }
 
         // Send the underlying token to the recipient
-        CAKE.safeTransfer(recipient, amountToRecipient);
+        CAKE.safeTransfer(recipient, amount);
+        CAKE.safeTransfer(account, rewards);
 
         // Only restake if there is at least 1 `CAKE` in the contract after sending the rewards
         // If there are no `STAKING TOKENS` left, we do not need to restake
