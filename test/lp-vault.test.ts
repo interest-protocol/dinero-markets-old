@@ -60,7 +60,6 @@ describe('LPVault', () => {
       cake.address,
       lpToken.address,
       1,
-      market.address,
     ]);
 
     await Promise.all([
@@ -82,7 +81,21 @@ describe('LPVault', () => {
       masterChef.connect(owner).add(1000, lpToken2.address, false),
       syrup.connect(owner).transferOwnership(masterChef.address),
       cake.connect(owner).transferOwnership(masterChef.address),
+      lpVault.connect(owner).setMarket(market.address),
     ]);
+  });
+
+  describe('function: setMarket', () => {
+    it('reverts if it is not called byt he owner', async () => {
+      await expect(
+        lpVault.connect(alice).setMarket(bob.address)
+      ).to.revertedWith('Ownable: caller is not the owner');
+    });
+    it('reverts if the market is already set', async () => {
+      await expect(
+        lpVault.connect(owner).setMarket(bob.address)
+      ).to.revertedWith('Vault: already set');
+    });
   });
 
   it('shows the pending rewards in the CAKE and lp token pools', async () => {
@@ -455,7 +468,7 @@ describe('LPVault', () => {
         masterChefCakePool,
         masterChefLpPool,
         recipientLpTokenBalance,
-        recipientCakeBalance,
+        aliceCakeBalance,
       ] = await Promise.all([
         lpVault.userInfo(alice.address),
         lpVault.totalAmount(),
@@ -463,7 +476,7 @@ describe('LPVault', () => {
         masterChef.userInfo(0, lpVault.address),
         masterChef.userInfo(1, lpVault.address),
         lpToken.balanceOf(recipient.address),
-        cake.balanceOf(recipient.address),
+        cake.balanceOf(alice.address),
       ]);
 
       expect(aliceInfo.amount).to.be.equal(parseEther('20'));
@@ -471,7 +484,7 @@ describe('LPVault', () => {
       expect(totalAmount).to.be.equal(parseEther('50'));
       expect(masterChefLpPool.amount).to.be.equal(parseEther('50'));
       expect(recipientLpTokenBalance).to.be.equal(0);
-      expect(recipientCakeBalance).to.be.equal(0);
+      expect(aliceCakeBalance).to.be.equal(0);
 
       await expect(
         lpVault
@@ -493,7 +506,7 @@ describe('LPVault', () => {
         masterChefCakePool2,
         masterChefLpPool2,
         recipientLpTokenBalance2,
-        recipientCakeBalance2,
+        aliceCakeBalance2,
       ] = await Promise.all([
         lpVault.userInfo(alice.address),
         lpVault.totalAmount(),
@@ -501,7 +514,7 @@ describe('LPVault', () => {
         masterChef.userInfo(0, lpVault.address),
         masterChef.userInfo(1, lpVault.address),
         lpToken.balanceOf(recipient.address),
-        cake.balanceOf(recipient.address),
+        cake.balanceOf(alice.address),
       ]);
 
       expect(aliceInfo2.amount).to.be.equal(parseEther('10'));
@@ -519,7 +532,7 @@ describe('LPVault', () => {
       expect(totalAmount2).to.be.equal(parseEther('40'));
       expect(masterChefLpPool2.amount).to.be.equal(parseEther('40'));
       expect(recipientLpTokenBalance2).to.be.equal(parseEther('10'));
-      expect(recipientCakeBalance2.gt(0)).to.be.equal(true);
+      expect(aliceCakeBalance2.gt(0)).to.be.equal(true);
 
       await Promise.all([
         lpVault

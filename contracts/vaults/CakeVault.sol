@@ -24,11 +24,9 @@ contract CakeVault is Vault {
 
     /**************************** CONSTRUCTOR ****************************/
 
-    constructor(
-        IMasterChef cakeMasterChef,
-        IERC20 cake,
-        address market
-    ) Vault(cakeMasterChef, cake, market) {
+    constructor(IMasterChef cakeMasterChef, IERC20 cake)
+        Vault(cakeMasterChef, cake)
+    {
         // Master chef needs full approval. {safeApprove} is fine to be used for the initial allowance
         cake.safeApprove(address(cakeMasterChef), type(uint256).max);
     }

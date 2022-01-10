@@ -36,9 +36,8 @@ contract LPVault is Vault {
         IMasterChef cakeMasterChef,
         IERC20 cake,
         IERC20 stakingToken,
-        uint256 _poolId,
-        address market
-    ) Vault(cakeMasterChef, cake, market) {
+        uint256 _poolId
+    ) Vault(cakeMasterChef, cake) {
         require(_poolId != 0, "LPVault: this is a LP vault");
         STAKING_TOKEN = stakingToken;
         POOL_ID = _poolId;

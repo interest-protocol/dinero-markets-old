@@ -13,7 +13,7 @@
 pragma solidity 0.8.10;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/utils/Context.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "../interfaces/IMasterChef.sol";
 import "../interfaces/IVault.sol";
@@ -22,7 +22,7 @@ import "../interfaces/IVault.sol";
  * @dev This contract is not meant to be deployed without a child contract to implement the core logic.
  * It relies on all it's virtual functions to be overriden to have any use!
  */
-abstract contract Vault is IVault, Context {
+abstract contract Vault is IVault, Ownable {
     /****************************  EVENTS ****************************/
 
     event Deposit(address indexed account, uint256 amount);
@@ -52,7 +52,7 @@ abstract contract Vault is IVault, Context {
     IERC20 public immutable CAKE; // The famous Cake token!!
 
     // solhint-disable-next-line var-name-mixedcase
-    address public immutable MARKET; // The market contract that deposits/withdraws from this contract
+    address public MARKET; // The market contract that deposits/withdraws from this contract
 
     /**************************** STATE ****************************/
 
@@ -64,14 +64,9 @@ abstract contract Vault is IVault, Context {
 
     /**************************** CONSTRUCTOR ****************************/
 
-    constructor(
-        IMasterChef cakeMasterChef,
-        IERC20 cake,
-        address market
-    ) {
+    constructor(IMasterChef cakeMasterChef, IERC20 cake) {
         CAKE_MASTER_CHEF = cakeMasterChef;
         CAKE = cake;
-        MARKET = market;
     }
 
     /**************************** MODIFIER ****************************/
@@ -207,5 +202,20 @@ abstract contract Vault is IVault, Context {
         );
 
         _withdraw(account, recipient, amount);
+    }
+
+    /**************************** ONLY MARKET ****************************/
+
+    /**
+     * This function can only be set once for security reasons. Otherwise, user funds could be at risk.
+     * @param market The address of the MARKET
+     *
+     * Requirements:
+     * Only the {owner} can call this function to avoid griefing.
+     *
+     */
+    function setMarket(address market) external onlyOwner {
+        require(address(0) == MARKET, "Vault: already set");
+        MARKET = market;
     }
 }
