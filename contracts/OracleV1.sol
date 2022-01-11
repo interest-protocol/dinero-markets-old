@@ -20,7 +20,7 @@ import "./interfaces/IPancakePair.sol";
 
 import "./lib/Math.sol";
 
-// @important This oracle only supports tokens with 8 decimal houses
+// @important This oracle only supports tokens with 18 decimal houses
 contract OracleV1 is Ownable {
     /****************************  ENUMS ****************************/
 
@@ -61,7 +61,7 @@ contract OracleV1 is Ownable {
         pure
         returns (uint256)
     {
-        uint256 baseDecimals = 8;
+        uint256 baseDecimals = 18;
         uint256 _price = uint256(price);
         if (decimals < baseDecimals) {
             return _price * 10**uint256(baseDecimals - decimals);

@@ -247,7 +247,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
      * @return rate The latest exchange rate from Chainlink
      */
     function updateExchangeRate() public returns (uint256 rate) {
-        // Get USD price for 1 Token (18 decimals). The USD price also has 18 decimals
+        // Get USD price for 1 Token (18 decimals). The USD price also has 18 decimals. We need to reduc
         rate = ORACLE.getTokenUSDPrice(address(COLLATERAL), 1 ether);
 
         // if the exchange rate is different we need to update the global state
@@ -379,7 +379,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
             // Calculate the collateralFee (for the liquidator and the protocol)
             uint256 fee = (debt * _liquidationFee) / 1e6;
 
-            uint256 collateralToCover = ((debt + fee) * 1e8) / _exchangeRate;
+            uint256 collateralToCover = ((debt + fee) * 1e18) / _exchangeRate;
 
             // Remove the collateral from the account. We can consider the debt paid.
             userCollateral[account] -= collateralToCover;
@@ -472,7 +472,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
         Rebase memory _totalLoan = totalLoan;
 
         // Convert the collateral to USD. USD has 18 decimals so we need to remove them
-        uint256 collateralInUSD = (collateralAmount * _exchangeRate) / 1e8;
+        uint256 collateralInUSD = (collateralAmount * _exchangeRate) / 1e18;
 
         /**
         All Loans are emitted in `DINERO` which is based on USD price
