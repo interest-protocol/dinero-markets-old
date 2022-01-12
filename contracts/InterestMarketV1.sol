@@ -436,7 +436,10 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
             // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee
             DINERO.burn(address(this), minAmount);
             // We send to the `recipient` what is left after paying the outstanding debt + protocol fee
-            DINERO.transfer(recipient, amounts[amounts.length - 1] - minAmount);
+            IERC20(DINERO).safeTransfer(
+                recipient,
+                amounts[amounts.length - 1] - minAmount
+            );
         } else {
             // Liquidator will be paid in `COLLATERAL`
             // Liquidator needs to cover the whole loan + fees
@@ -541,5 +544,19 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
     function setLiquidationFee(uint256 amount) external onlyOwner {
         require(amount < 15e4, "MKT: too high");
         liquidationFee = amount;
+    }
+
+    /**
+     * @param amount The new interest rate.
+     *
+     * Requirements:
+     *
+     * This function is guarded by the {onlyOwner} modifier to disallow users dont arbitrarly changing the interest rate of borrowing
+     * It also requires the new interest rate to be lower than 4% annually. Please note that the value is boosted by 1e18
+     *
+     */
+    function setInterestRate(uint64 amount) external onlyOwner {
+        require(13e8 >= amount, "MKT: too high");
+        loan.INTEREST_RATE = amount;
     }
 }

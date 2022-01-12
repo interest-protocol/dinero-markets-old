@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: Unlicensed
 pragma solidity 0.8.10;
 
-import "../interfaces/IPancakePair.sol";
+import "../PancakePair.sol";
 
 import "./SafeMath.sol";
 
@@ -29,6 +29,8 @@ library PancakeLibrary {
         address tokenB
     ) internal pure returns (address pair) {
         (address token0, address token1) = sortTokens(tokenA, tokenB);
+        bytes memory bytecode = type(PancakePair).creationCode;
+
         pair = address(
             uint160(
                 uint256(
@@ -37,7 +39,7 @@ library PancakeLibrary {
                             hex"ff",
                             factory,
                             keccak256(abi.encodePacked(token0, token1)),
-                            hex"d0d4c4cd0848c93cb4fd1f498d7013ee6bfb25783ea21593d5834f5d250ece66" // init code hash
+                            keccak256(bytecode)
                         )
                     )
                 )
@@ -53,7 +55,7 @@ library PancakeLibrary {
     ) internal view returns (uint256 reserveA, uint256 reserveB) {
         (address token0, ) = sortTokens(tokenA, tokenB);
         pairFor(factory, tokenA, tokenB);
-        (uint256 reserve0, uint256 reserve1, ) = IPancakePair(
+        (uint112 reserve0, uint112 reserve1, ) = PancakePair(
             pairFor(factory, tokenA, tokenB)
         ).getReserves();
         (reserveA, reserveB) = tokenA == token0

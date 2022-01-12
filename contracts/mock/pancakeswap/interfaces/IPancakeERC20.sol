@@ -9,19 +9,18 @@ interface IPancakeERC20 {
     );
     event Transfer(address indexed from, address indexed to, uint256 value);
 
-    function name() external pure returns (string memory);
+    function name() external returns (string memory);
 
-    function symbol() external pure returns (string memory);
+    function symbol() external returns (string memory);
 
-    function decimals() external pure returns (uint8);
+    function decimals() external returns (uint8);
 
-    function totalSupply() external view returns (uint256);
+    function totalSupply() external returns (uint256);
 
-    function balanceOf(address owner) external view returns (uint256);
+    function balanceOf(address owner) external returns (uint256);
 
     function allowance(address owner, address spender)
         external
-        view
         returns (uint256);
 
     function approve(address spender, uint256 value) external returns (bool);
@@ -35,12 +34,12 @@ interface IPancakeERC20 {
     ) external returns (bool);
 
     //solhint-disable-next-line
-    function DOMAIN_SEPARATOR() external view returns (bytes32);
+    function DOMAIN_SEPARATOR() external returns (bytes32);
 
     //solhint-disable-next-line
-    function PERMIT_TYPEHASH() external pure returns (bytes32);
+    function PERMIT_TYPEHASH() external returns (bytes32);
 
-    function nonces(address owner) external view returns (uint256);
+    function nonces(address owner) external returns (uint256);
 
     function permit(
         address owner,

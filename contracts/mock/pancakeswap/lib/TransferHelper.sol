@@ -26,6 +26,7 @@ library TransferHelper {
         uint256 value
     ) internal {
         // bytes4(keccak256(bytes('transfer(address,uint256)')));
+        //solhint-disable-next-line
         (bool success, bytes memory data) = token.call(
             abi.encodeWithSelector(0xa9059cbb, to, value)
         );
