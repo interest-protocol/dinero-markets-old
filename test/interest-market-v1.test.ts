@@ -277,10 +277,12 @@ describe('InterestMarketV1', () => {
       .withArgs(treasury.address, debt);
 
     expect((await cakeMarket.loan()).feesEarned).to.be.equal(0);
-    expect(await dinero.balanceOf(treasury.address)).to.be.equal(debt);
-    expect((await cakeMarket.totalLoan()).elastic).to.be.equal(
-      parseEther('490').add(debt)
+    expect((await dinero.balanceOf(treasury.address)).gte(debt)).to.be.equal(
+      true
     );
+    expect(
+      (await cakeMarket.totalLoan()).elastic.gte(parseEther('490').add(debt))
+    ).to.be.equal(true);
   });
   describe('function: accrue', () => {
     it('does not update the state if there is no debt', async () => {
@@ -606,6 +608,87 @@ describe('InterestMarketV1', () => {
       );
       expect(await cake.balanceOf(cakeMarket2.address)).to.be.equal(
         bobAmount.sub(parseEther('3'))
+      );
+    });
+  });
+  describe('function: setCollateralRatio', () => {
+    it('reverts if it is not called by the owner', async () => {
+      await expect(
+        cakeMarket.connect(alice).setCollateralRatio(0)
+      ).to.revertedWith('MKT: caller is not the owner');
+    });
+    it('reverts if we set a collateral higher than 9e5', async () => {
+      await expect(
+        cakeMarket
+          .connect(owner)
+          .setCollateralRatio(ethers.BigNumber.from(9e5).add(1))
+      ).to.revertedWith('MKT: too high');
+    });
+    it('updates the collateralRatio', async () => {
+      expect(await cakeMarket.collateralRatio()).to.be.equal(
+        ethers.BigNumber.from(5e5)
+      );
+
+      await cakeMarket
+        .connect(owner)
+        .setCollateralRatio(ethers.BigNumber.from(9e5));
+
+      expect(await cakeMarket.collateralRatio()).to.be.equal(
+        ethers.BigNumber.from(9e5)
+      );
+    });
+  });
+  describe('function: setLiquidationFee', () => {
+    it('reverts if it is not called by the owner', async () => {
+      await expect(
+        cakeMarket.connect(alice).setLiquidationFee(0)
+      ).to.revertedWith('MKT: caller is not the owner');
+    });
+    it('reverts if we set a liquidation fee higher than 15e4', async () => {
+      await expect(
+        cakeMarket
+          .connect(owner)
+          .setLiquidationFee(ethers.BigNumber.from(15e4).add(1))
+      ).to.revertedWith('MKT: too high');
+    });
+    it('updates the liquidation fee', async () => {
+      expect(await cakeMarket.liquidationFee()).to.be.equal(
+        ethers.BigNumber.from(10e4)
+      );
+
+      await cakeMarket
+        .connect(owner)
+        .setLiquidationFee(ethers.BigNumber.from(15e4));
+
+      expect(await cakeMarket.liquidationFee()).to.be.equal(
+        ethers.BigNumber.from(15e4)
+      );
+    });
+  });
+  describe('function: setInterestRate', () => {
+    it('reverts if it is not called by the owner', async () => {
+      await expect(
+        cakeMarket.connect(alice).setInterestRate(0)
+      ).to.revertedWith('MKT: caller is not the owner');
+    });
+    it('reverts if we set a liquidation fee higher than 15e4', async () => {
+      await expect(
+        cakeMarket
+          .connect(owner)
+          .setInterestRate(ethers.BigNumber.from(13e8).add(1))
+      ).to.revertedWith('MKT: too high');
+    });
+    it('updates the liquidation fee', async () => {
+      expect((await cakeMarket.loan()).INTEREST_RATE).to.be.equal(
+        ethers.BigNumber.from(12e8)
+      );
+
+      await cakeMarket
+        .connect(owner)
+        .setInterestRate(ethers.BigNumber.from(13e8));
+
+      expect((await cakeMarket.loan()).INTEREST_RATE).to.be.equal(
+        ethers.BigNumber.from(13e8)
       );
     });
   });

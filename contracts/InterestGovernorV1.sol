@@ -26,7 +26,7 @@ pragma solidity 0.8.10;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
 
-import "./interfaces/InterestMarketV1Interface.sol";
+import "./InterestMarketV1.sol";
 
 import "./Dinero.sol";
 
@@ -128,7 +128,7 @@ contract InterestGovernorV1 is Ownable {
 
         market = Clones.cloneDeterministic(masterMarketContract, salt);
 
-        InterestMarketV1Interface(market).initialize(data);
+        InterestMarketV1(market).initialize(data);
 
         DINERO.grantRole(DINERO.MINTER_ROLE(), market);
         DINERO.grantRole(DINERO.BURNER_ROLE(), market);

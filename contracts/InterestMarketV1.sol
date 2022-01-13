@@ -12,11 +12,10 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 pragma solidity 0.8.10;
 
 import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/Context.sol";
 
-import "./interfaces/InterestMarketV1Interface.sol";
 import "./interfaces/IPancakeRouter02.sol";
 
 import "./lib/Rebase.sol";
@@ -34,7 +33,7 @@ import "./InterestGovernorV1.sol";
  * collateralRatio precision is 1e6
  * liquidationFee precision 1e6
  */
-contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
+contract InterestMarketV1 is Initializable, Context {
     /*********************************** LIBRARY ***********************************/
 
     using RebaseLibrary for Rebase;
@@ -172,6 +171,17 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
             _isSolvent(_msgSender(), exchangeRate),
             "MKT: sender is insolvent"
         );
+    }
+
+    /**
+     * @dev Throws if called by any account other than the owner.
+     */
+    modifier onlyGovernorOwner() {
+        require(
+            GOVERNOR.owner() == _msgSender(),
+            "MKT: caller is not the owner"
+        );
+        _;
     }
 
     /**************************** MUTATIVE PUBLIC FUNCTIONS ****************************/
@@ -542,7 +552,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
      * It can only be called by the owner to avoid griefing
      *
      */
-    function setCollateralRatio(uint256 amount) external onlyOwner {
+    function setCollateralRatio(uint256 amount) external onlyGovernorOwner {
         require(9e5 >= amount, "MKT: too high");
         collateralRatio = amount;
     }
@@ -555,7 +565,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
      * It can only be called by the owner to avoid griefing
      *
      */
-    function setLiquidationFee(uint256 amount) external onlyOwner {
+    function setLiquidationFee(uint256 amount) external onlyGovernorOwner {
         require(15e4 >= amount, "MKT: too high");
         liquidationFee = amount;
     }
@@ -569,7 +579,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
      * It also requires the new interest rate to be lower than 4% annually. Please note that the value is boosted by 1e18
      *
      */
-    function setInterestRate(uint64 amount) external onlyOwner {
+    function setInterestRate(uint64 amount) external onlyGovernorOwner {
         require(13e8 >= amount, "MKT: too high");
         loan.INTEREST_RATE = amount;
     }
