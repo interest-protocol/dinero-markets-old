@@ -72,6 +72,13 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
         uint128 feesEarned;
     }
 
+    struct LiquidationInfo {
+        uint128 allCollateral;
+        uint128 allDebt;
+        uint128 allPrincipal;
+        uint128 allFee;
+    }
+
     /**************************** MASTER CONTRACT STATE ****************************/
 
     // solhint-disable-next-line var-name-mixedcase
@@ -296,6 +303,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
      * @param amount The number of `DINERO` to borrow
      */
     function borrow(address to, uint256 amount) external isSolvent {
+        require(to != address(0), "IMV1: no zero address");
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
 
@@ -331,11 +339,20 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
         emit Repay(_msgSender(), account, principal, debt);
     }
 
+    /**
+     * @param accounts The  list of accounts to be liquidated
+     * @param principals The amount of debt the `msg.sender` wants to liquidate for each account
+     * @param recipient The address that will receive the proceeds gained by liquidating
+     * @param path The list of tokens from collateral to dinero in case the `msg.sender` wishes to use collateral to cover the debt
+     *
+     * This function closes under-collaterized position. It charges the borrower a fee and rewards the liquidator for keeping the integrity of the protocol
+     *
+     */
     function liquidate(
         address[] calldata accounts,
         uint256[] calldata principals,
         address recipient,
-        bool useCollateral
+        address[] calldata path
     ) external {
         // Liquidations must be based on the current exchange rate
         uint256 _exchangeRate = updateExchangeRate();
@@ -343,10 +360,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
         // Update all debt
         accrue();
 
-        uint256 allCollateral;
-        uint256 allDebt;
-        uint256 allPrincipal;
-        uint256 allFee;
+        LiquidationInfo memory liquidationInfo;
 
         Rebase memory _totalLoan = totalLoan;
 
@@ -394,35 +408,37 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
             emit RemoveCollateral(account, collateralToCover);
             emit Repay(_msgSender(), account, principal, debt);
 
-            allCollateral += collateralToCover;
-            allPrincipal += principal;
-            allDebt += debt;
-            allFee += fee;
+            liquidationInfo.allCollateral += collateralToCover.toUint128();
+            liquidationInfo.allPrincipal += principal.toUint128();
+            liquidationInfo.allDebt += debt.toUint128();
+            liquidationInfo.allFee += fee.toUint128();
         }
 
         // There must have liquidations or we throw an error;
-        require(allPrincipal > 0, "MKT: no liquidations");
+        require(liquidationInfo.allPrincipal > 0, "MKT: no liquidations");
 
         // Update Global state
-        totalLoan = _totalLoan.sub(allPrincipal, allDebt);
-        totalCollateral -= allCollateral;
+        totalLoan = _totalLoan.sub(
+            liquidationInfo.allPrincipal,
+            liquidationInfo.allDebt
+        );
+        totalCollateral -= liquidationInfo.allCollateral;
 
         // 10% of the liquidation fee to be given to the protocol
-        uint256 protocolFee = (allFee * 100) / 1000;
+        uint256 protocolFee = (liquidationInfo.allFee * 100) / 1000;
         // Pay the fee to the protocol
         loan.feesEarned += protocolFee.toUint128();
 
-        if (useCollateral) {
-            address[] memory path = new address[](2);
-            path[0] = address(COLLATERAL);
-            path[1] = address(DINERO);
-
+        // If a path is provided, we will use the collateral to cover the debt
+        if (path.length >= 2) {
             // We need to get enough `DINERO` to cover outstanding debt + protocol fee. This means the liquidator will pay for the slippage
-            uint256 minAmount = allDebt + protocolFee - allFee;
+            uint256 minAmount = liquidationInfo.allDebt +
+                protocolFee -
+                liquidationInfo.allFee;
 
             uint256[] memory amounts = ROUTER.swapExactTokensForTokens(
                 // Sell all collateral for this liquidation
-                allCollateral,
+                liquidationInfo.allCollateral,
                 minAmount,
                 // Sell COLLATERAL -> DINERO
                 path,
@@ -443,9 +459,9 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
         } else {
             // Liquidator will be paid in `COLLATERAL`
             // Liquidator needs to cover the whole loan + fees
-            DINERO.burn(_msgSender(), allDebt + protocolFee);
+            DINERO.burn(_msgSender(), liquidationInfo.allDebt + protocolFee);
             // Send collateral to the `recipient` (includes liquidator fee + protocol fee)
-            COLLATERAL.safeTransfer(recipient, allCollateral);
+            COLLATERAL.safeTransfer(recipient, liquidationInfo.allCollateral);
         }
     }
 
@@ -529,7 +545,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
      *
      */
     function setCollateralRatio(uint256 amount) external onlyOwner {
-        require(amount < 9e5, "MKT: too high");
+        require(9e5 >= amount, "MKT: too high");
         collateralRatio = amount;
     }
 
@@ -542,7 +558,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
      *
      */
     function setLiquidationFee(uint256 amount) external onlyOwner {
-        require(amount < 15e4, "MKT: too high");
+        require(15e4 >= amount, "MKT: too high");
         liquidationFee = amount;
     }
 
@@ -551,7 +567,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
      *
      * Requirements:
      *
-     * This function is guarded by the {onlyOwner} modifier to disallow users dont arbitrarly changing the interest rate of borrowing
+     * This function is guarded by the {onlyOwner} modifier to disallow users from arbitrarly changing the interest rate of borrowing
      * It also requires the new interest rate to be lower than 4% annually. Please note that the value is boosted by 1e18
      *
      */
