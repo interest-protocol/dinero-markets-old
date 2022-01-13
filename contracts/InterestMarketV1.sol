@@ -146,7 +146,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
     /**************************** INITIALIZE ****************************/
 
     function initialize(bytes calldata data) external payable initializer {
-        require(address(MASTER_CONTRACT) != address(this), "IMV1: not allowed");
+        require(address(MASTER_CONTRACT) != address(this), "MKT: not allowed");
 
         (
             COLLATERAL,
@@ -303,7 +303,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
      * @param amount The number of `DINERO` to borrow
      */
     function borrow(address to, uint256 amount) external isSolvent {
-        require(to != address(0), "IMV1: no zero address");
+        require(to != address(0), "MKT: no zero address");
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
 

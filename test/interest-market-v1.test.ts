@@ -461,4 +461,152 @@ describe('InterestMarketV1', () => {
       );
     });
   });
+  describe('function: removeCollateral', () => {
+    it('removes collateral using a vault', async () => {
+      const aliceAmount = parseEther('12');
+      const bobAmount = parseEther('7');
+      await Promise.all([
+        cakeMarket.connect(alice).addCollateral(aliceAmount),
+        cakeMarket.connect(bob).addCollateral(bobAmount),
+      ]);
+
+      // We need to borrow to test the Accrue event
+      await cakeMarket.connect(bob).borrow(alice.address, parseEther('10'));
+
+      expect(await cakeMarket.totalCollateral()).to.be.equal(
+        aliceAmount.add(bobAmount)
+      );
+
+      expect(await cakeMarket.userCollateral(alice.address)).to.be.equal(
+        aliceAmount
+      );
+      expect(await cakeMarket.userCollateral(bob.address)).to.be.equal(
+        bobAmount
+      );
+
+      await expect(cakeMarket.connect(alice).removeCollateral(aliceAmount))
+        .to.emit(cakeMarket, 'RemoveCollateral')
+        .withArgs(alice.address, aliceAmount)
+        .to.emit(cakeVault, 'Withdraw')
+        .withArgs(alice.address, alice.address, aliceAmount)
+        .to.emit(cakeMarket, 'Accrue')
+        .to.emit(cake, 'Transfer')
+        .withArgs(cakeVault.address, alice.address, aliceAmount);
+
+      expect(await cakeMarket.totalCollateral()).to.be.equal(bobAmount);
+
+      expect(await cakeMarket.userCollateral(alice.address)).to.be.equal(0);
+
+      expect(await cakeMarket.userCollateral(bob.address)).to.be.equal(
+        bobAmount
+      );
+
+      await expect(cakeMarket.connect(bob).removeCollateral(parseEther('3')))
+        .to.emit(cakeMarket, 'RemoveCollateral')
+        .withArgs(bob.address, parseEther('3'))
+        .to.emit(cakeVault, 'Withdraw')
+        .withArgs(bob.address, bob.address, parseEther('3'))
+        .to.emit(cakeMarket, 'Accrue')
+        .to.emit(cake, 'Transfer')
+        .withArgs(cakeVault.address, bob.address, parseEther('3'));
+
+      expect(await cakeMarket.totalCollateral()).to.be.equal(
+        bobAmount.sub(parseEther('3'))
+      );
+
+      expect(await cakeMarket.userCollateral(bob.address)).to.be.equal(
+        bobAmount.sub(parseEther('3'))
+      );
+    });
+    it('removes collateral without a vault', async () => {
+      const aliceAmount = parseEther('12');
+      const bobAmount = parseEther('14');
+
+      const data = defaultAbiCoder.encode(
+        ['address', 'address', 'uint64', 'uint256', 'uint256'],
+        [
+          cake.address,
+          ethers.constants.AddressZero,
+          ethers.BigNumber.from(12e8),
+          ethers.BigNumber.from(5e5),
+          ethers.BigNumber.from(10e4),
+        ]
+      );
+
+      const [cakeMarketAddress] = await Promise.all([
+        governor.predictMarketAddress(masterMarket.address, keccak256(data)),
+        governor
+          .connect(owner)
+          .createMarket(masterMarket.address, cake.address, data),
+      ]);
+
+      const cakeMarket2 = (
+        await ethers.getContractFactory('InterestMarketV1')
+      ).attach(cakeMarketAddress);
+
+      await Promise.all([
+        cake
+          .connect(alice)
+          .approve(cakeMarket2.address, ethers.constants.MaxUint256),
+        cake
+          .connect(bob)
+          .approve(cakeMarket2.address, ethers.constants.MaxUint256),
+        cakeMarket2.updateExchangeRate(),
+      ]);
+
+      await Promise.all([
+        cakeMarket2.connect(alice).addCollateral(aliceAmount),
+        cakeMarket2.connect(bob).addCollateral(bobAmount),
+      ]);
+
+      // We need to borrow to test the Accrue event
+      await cakeMarket2.connect(bob).borrow(alice.address, parseEther('10'));
+
+      expect(await cakeMarket2.totalCollateral()).to.be.equal(
+        aliceAmount.add(bobAmount)
+      );
+
+      expect(await cakeMarket2.userCollateral(alice.address)).to.be.equal(
+        aliceAmount
+      );
+      expect(await cakeMarket2.userCollateral(bob.address)).to.be.equal(
+        bobAmount
+      );
+
+      await expect(cakeMarket2.connect(alice).removeCollateral(aliceAmount))
+        .to.emit(cakeMarket2, 'RemoveCollateral')
+        .withArgs(alice.address, aliceAmount)
+        .to.emit(cakeMarket2, 'Accrue')
+        .to.emit(cake, 'Transfer')
+        .withArgs(cakeMarket2.address, alice.address, aliceAmount)
+        .to.not.emit(cakeVault, 'Withdraw');
+
+      expect(await cakeMarket2.totalCollateral()).to.be.equal(bobAmount);
+
+      expect(await cakeMarket2.userCollateral(alice.address)).to.be.equal(0);
+
+      expect(await cakeMarket2.userCollateral(bob.address)).to.be.equal(
+        bobAmount
+      );
+
+      await expect(cakeMarket2.connect(bob).removeCollateral(parseEther('3')))
+        .to.emit(cakeMarket2, 'RemoveCollateral')
+        .withArgs(bob.address, parseEther('3'))
+        .to.emit(cakeMarket2, 'Accrue')
+        .to.emit(cake, 'Transfer')
+        .withArgs(cakeMarket2.address, bob.address, parseEther('3'))
+        .to.not.emit(cakeVault, 'Withdraw');
+
+      expect(await cakeMarket2.totalCollateral()).to.be.equal(
+        bobAmount.sub(parseEther('3'))
+      );
+
+      expect(await cakeMarket2.userCollateral(bob.address)).to.be.equal(
+        bobAmount.sub(parseEther('3'))
+      );
+      expect(await cake.balanceOf(cakeMarket2.address)).to.be.equal(
+        bobAmount.sub(parseEther('3'))
+      );
+    });
+  });
 });
