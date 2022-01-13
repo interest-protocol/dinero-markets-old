@@ -432,9 +432,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
         // If a path is provided, we will use the collateral to cover the debt
         if (path.length >= 2) {
             // We need to get enough `DINERO` to cover outstanding debt + protocol fee. This means the liquidator will pay for the slippage
-            uint256 minAmount = liquidationInfo.allDebt +
-                protocolFee -
-                liquidationInfo.allFee;
+            uint256 minAmount = liquidationInfo.allDebt + protocolFee;
 
             uint256[] memory amounts = ROUTER.swapExactTokensForTokens(
                 // Sell all collateral for this liquidation

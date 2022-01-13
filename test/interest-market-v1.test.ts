@@ -18,7 +18,7 @@ import {
   SyrupBar,
   WETH9,
 } from '../typechain';
-import { deploy, multiDeploy } from './lib/test-utils';
+import { advanceTime, deploy, multiDeploy } from './lib/test-utils';
 
 const { parseEther, defaultAbiCoder, keccak256 } = ethers.utils;
 
@@ -250,5 +250,102 @@ describe('InterestMarketV1', () => {
       await cake.allowance(cakeMarket.address, router.address)
     ).to.be.equal(currentAllowance.add(5));
   });
-  // it.only('sends the feesEarned ');
+  it('sends the feesEarned ot the treasury', async () => {
+    // Add 50 CAKE as collateral
+    await cakeMarket.connect(alice).addCollateral(parseEther('50'));
+
+    // Borrow 490 DINERO
+    await cakeMarket.connect(alice).borrow(alice.address, parseEther('490'));
+
+    // Pass time to accrue fees
+    await advanceTime(10_000, ethers); // advance 10_000 milliseconds
+
+    const debt = parseEther('490')
+      .mul(ethers.BigNumber.from(12e8))
+      .mul(10_000)
+      .div(parseEther('1'));
+
+    expect(await dinero.balanceOf(treasury.address)).to.be.equal(0);
+    expect((await cakeMarket.totalLoan()).elastic).to.be.equal(
+      parseEther('490')
+    );
+
+    await expect(cakeMarket.getEarnings())
+      .to.emit(cakeMarket, 'Accrue')
+      .withArgs(debt)
+      .to.emit(cakeMarket, 'GetEarnings')
+      .withArgs(treasury.address, debt);
+
+    expect((await cakeMarket.loan()).feesEarned).to.be.equal(0);
+    expect(await dinero.balanceOf(treasury.address)).to.be.equal(debt);
+    expect((await cakeMarket.totalLoan()).elastic).to.be.equal(
+      parseEther('490').add(debt)
+    );
+  });
+  describe('function: accrue', () => {
+    it('does not update the state if there is no debt', async () => {
+      const loan = await cakeMarket.loan();
+      await expect(cakeMarket.accrue()).not.emit(cakeMarket, 'Accrue');
+      expect(
+        loan.lastAccrued.lt((await cakeMarket.loan()).lastAccrued)
+      ).to.be.equal(true);
+    });
+    it('accrues the interest rate', async () => {
+      // Add 50 CAKE as collateral
+      await cakeMarket.connect(alice).addCollateral(parseEther('50'));
+
+      // Borrow 490 DINERO
+      await cakeMarket.connect(alice).borrow(alice.address, parseEther('490'));
+      const [loan, totalLoan] = await Promise.all([
+        cakeMarket.loan(),
+        cakeMarket.totalLoan(),
+      ]);
+
+      // Pass time to accrue fees
+      await advanceTime(10_000, ethers); // advance 10_000 milliseconds
+      const debt = parseEther('490')
+        .mul(ethers.BigNumber.from(12e8))
+        .mul(10_000)
+        .div(parseEther('1'));
+
+      await expect(cakeMarket.accrue())
+        .to.emit(cakeMarket, 'Accrue')
+        .withArgs(debt);
+
+      const [loan2, totalLoan2] = await Promise.all([
+        cakeMarket.loan(),
+        cakeMarket.totalLoan(),
+      ]);
+
+      expect(loan2.lastAccrued.gt(loan.lastAccrued)).to.be.equal(true);
+      expect(loan2.feesEarned).to.be.equal(debt);
+      expect(totalLoan2.base).to.be.equal(totalLoan.base);
+      expect(totalLoan2.elastic).to.be.equal(totalLoan.elastic.add(debt));
+    });
+  });
+  it('updates the exchange rate', async () => {
+    expect(await cakeMarket.exchangeRate()).to.be.equal(
+      CAKE_USD_PRICE.mul(1e10)
+    );
+
+    await expect(cakeMarket.updateExchangeRate()).to.not.emit(
+      cakeMarket,
+      'ExchangeRate'
+    );
+
+    expect(await cakeMarket.exchangeRate()).to.be.equal(
+      CAKE_USD_PRICE.mul(1e10)
+    );
+
+    // Update the exchange rate
+    await mockCakeUsdFeed.setAnswer(ethers.BigNumber.from('1500000000'));
+
+    await expect(cakeMarket.updateExchangeRate())
+      .to.emit(cakeMarket, 'ExchangeRate')
+      .withArgs(ethers.BigNumber.from('1500000000').mul(1e10));
+
+    expect(await cakeMarket.exchangeRate()).to.be.equal(
+      ethers.BigNumber.from('1500000000').mul(1e10)
+    );
+  });
 });
