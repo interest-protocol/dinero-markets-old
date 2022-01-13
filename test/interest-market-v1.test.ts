@@ -211,7 +211,7 @@ describe('InterestMarketV1', () => {
     it('reverts if you initialize the master contract', async () => {
       await expect(
         masterMarket.initialize(defaultAbiCoder.encode(['string'], ['random']))
-      ).to.revertedWith('IMV1: not allowed');
+      ).to.revertedWith('MKT: not allowed');
     });
     it('reverts if you try to initialize more than once in the clone contract', async () => {
       await expect(
