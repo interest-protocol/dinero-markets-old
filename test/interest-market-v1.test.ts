@@ -250,7 +250,7 @@ describe('InterestMarketV1', () => {
       await cake.allowance(cakeMarket.address, router.address)
     ).to.be.equal(currentAllowance.add(5));
   });
-  it('sends the feesEarned ot the treasury', async () => {
+  it('sends the feesEarned to the treasury', async () => {
     // Add 50 CAKE as collateral
     await cakeMarket.connect(alice).addCollateral(parseEther('50'));
 
@@ -347,5 +347,118 @@ describe('InterestMarketV1', () => {
     expect(await cakeMarket.exchangeRate()).to.be.equal(
       ethers.BigNumber.from('1500000000').mul(1e10)
     );
+  });
+  describe('function: addCollateral', () => {
+    it('accepts collateral and deposits to the vault', async () => {
+      expect(await cakeMarket.totalCollateral()).to.be.equal(0);
+
+      expect(await cakeMarket.userCollateral(alice.address)).to.be.equal(0);
+
+      const amount = parseEther('10');
+
+      await expect(cakeMarket.connect(alice).addCollateral(amount))
+        .to.emit(cakeMarket, 'AddCollateral')
+        .withArgs(alice.address, amount)
+        .to.emit(cakeVault, 'Deposit')
+        .withArgs(alice.address, amount)
+        .to.emit(cake, 'Transfer')
+        .withArgs(alice.address, cakeVault.address, amount);
+
+      expect(await cakeMarket.totalCollateral()).to.be.equal(amount);
+
+      expect(await cakeMarket.userCollateral(alice.address)).to.be.equal(
+        amount
+      );
+
+      await expect(cakeMarket.connect(bob).addCollateral(amount))
+        .to.emit(cakeMarket, 'AddCollateral')
+        .withArgs(bob.address, amount)
+        .to.emit(cakeVault, 'Deposit')
+        .withArgs(bob.address, amount)
+        .to.emit(cake, 'Transfer')
+        .withArgs(bob.address, cakeVault.address, amount);
+
+      expect(await cakeMarket.totalCollateral()).to.be.equal(
+        amount.add(amount)
+      );
+
+      expect(await cakeMarket.userCollateral(alice.address)).to.be.equal(
+        amount
+      );
+      expect(await cakeMarket.userCollateral(bob.address)).to.be.equal(amount);
+      expect(await cake.balanceOf(cakeMarket.address)).to.be.equal(0); // Cake is in the masterChef
+    });
+    it('accepts collateral without a vault', async () => {
+      const data = defaultAbiCoder.encode(
+        ['address', 'address', 'uint64', 'uint256', 'uint256'],
+        [
+          cake.address,
+          ethers.constants.AddressZero,
+          ethers.BigNumber.from(12e8),
+          ethers.BigNumber.from(5e5),
+          ethers.BigNumber.from(10e4),
+        ]
+      );
+
+      const [cakeMarketAddress] = await Promise.all([
+        governor.predictMarketAddress(masterMarket.address, keccak256(data)),
+        governor
+          .connect(owner)
+          .createMarket(masterMarket.address, cake.address, data),
+      ]);
+
+      const cakeMarket2 = (
+        await ethers.getContractFactory('InterestMarketV1')
+      ).attach(cakeMarketAddress);
+
+      await Promise.all([
+        cake
+          .connect(alice)
+          .approve(cakeMarket2.address, ethers.constants.MaxUint256),
+        cake
+          .connect(bob)
+          .approve(cakeMarket2.address, ethers.constants.MaxUint256),
+      ]);
+
+      expect(await cakeMarket2.totalCollateral()).to.be.equal(0);
+
+      expect(await cakeMarket2.userCollateral(alice.address)).to.be.equal(0);
+
+      const amount = parseEther('25');
+
+      await expect(cakeMarket2.connect(alice).addCollateral(amount))
+        .to.emit(cakeMarket2, 'AddCollateral')
+        .withArgs(alice.address, amount)
+        .to.emit(cake, 'Transfer')
+        .withArgs(alice.address, cakeMarket2.address, amount)
+        .to.not.emit(cakeVault, 'Deposit')
+        .withArgs(alice.address, amount);
+
+      expect(await cakeMarket2.totalCollateral()).to.be.equal(amount);
+
+      expect(await cakeMarket2.userCollateral(alice.address)).to.be.equal(
+        amount
+      );
+
+      await expect(cakeMarket2.connect(bob).addCollateral(amount))
+        .to.emit(cakeMarket2, 'AddCollateral')
+        .withArgs(bob.address, amount)
+        .to.emit(cake, 'Transfer')
+        .withArgs(bob.address, cakeMarket2.address, amount)
+        .to.not.emit(cakeVault, 'Deposit')
+        .withArgs(bob.address, amount);
+
+      expect(await cakeMarket2.totalCollateral()).to.be.equal(
+        amount.add(amount)
+      );
+
+      expect(await cakeMarket2.userCollateral(alice.address)).to.be.equal(
+        amount
+      );
+      expect(await cakeMarket2.userCollateral(bob.address)).to.be.equal(amount);
+      expect(await cake.balanceOf(cakeMarket2.address)).to.be.equal(
+        amount.add(amount)
+      );
+    });
   });
 });

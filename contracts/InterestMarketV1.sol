@@ -508,7 +508,7 @@ contract InterestMarketV1 is InterestMarketV1Interface, Initializable, Ownable {
      */
     function _depositCollateral(address account, uint256 amount) private {
         if (Vault(address(0)) == VAULT) {
-            COLLATERAL.transferFrom(account, address(this), amount);
+            COLLATERAL.safeTransferFrom(account, address(this), amount);
         } else {
             VAULT.deposit(account, amount);
         }
