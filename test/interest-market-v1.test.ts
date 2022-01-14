@@ -692,4 +692,9 @@ describe('InterestMarketV1', () => {
       );
     });
   });
+  it('returns the governor owner', async () => {
+    expect(await cakeMarket.governorOwner()).to.be.equal(
+      await governor.owner()
+    );
+  });
 });

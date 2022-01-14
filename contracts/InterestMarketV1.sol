@@ -184,6 +184,15 @@ contract InterestMarketV1 is Initializable, Context {
         _;
     }
 
+    /**************************** VIEW PUBLIC FUNCTIONS ****************************/
+
+    /**
+     * View function to easily find who the governor owner is. Since it is the address that can call the owner functions
+     */
+    function governorOwner() external view returns (address) {
+        return GOVERNOR.owner();
+    }
+
     /**************************** MUTATIVE PUBLIC FUNCTIONS ****************************/
 
     /**
