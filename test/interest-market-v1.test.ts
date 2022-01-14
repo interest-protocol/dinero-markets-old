@@ -697,4 +697,80 @@ describe('InterestMarketV1', () => {
       await governor.owner()
     );
   });
+  describe('function: borrow', () => {
+    it('reverts if the user is insolvent', async () => {
+      await expect(
+        cakeMarket.connect(alice).borrow(alice.address, 1)
+      ).to.revertedWith('MKT: sender is insolvent');
+
+      await cakeMarket.connect(alice).addCollateral(parseEther('10')); // 200 USD of collateral
+
+      // @notice the collateral ratio is 49.9%
+      await expect(
+        cakeMarket.connect(alice).borrow(alice.address, parseEther('100')) // Borrow 100 USD
+      ).to.revertedWith('MKT: sender is insolvent');
+    });
+    it('reverts if the recipient is the zero address', async () => {
+      await cakeMarket.connect(alice).addCollateral(parseEther('10')); // 200 USD of collateral
+
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .borrow(ethers.constants.AddressZero, parseEther('50'))
+      ).to.revertedWith('MKT: no zero address');
+    });
+    it('allows borrowing', async () => {
+      await cakeMarket.connect(alice).addCollateral(parseEther('10')); // 200 USD of collateral
+
+      const totalLoan = await cakeMarket.totalLoan();
+
+      expect(await cakeMarket.userLoan(alice.address)).to.be.equal(0);
+      expect(await dinero.balanceOf(alice.address)).to.be.equal(0);
+      expect(totalLoan.base).to.be.equal(0);
+      expect(totalLoan.elastic).to.be.equal(0);
+
+      await expect(
+        cakeMarket.connect(alice).borrow(alice.address, parseEther('50'))
+      )
+        .to.emit(dinero, 'Transfer')
+        .withArgs(ethers.constants.AddressZero, alice.address, parseEther('50'))
+        .to.emit(cakeMarket, 'Borrow')
+        .withArgs(alice.address, alice.address, parseEther('50'))
+        .to.not.emit(cakeMarket, 'Accrue');
+
+      const totalLoan2 = await cakeMarket.totalLoan();
+
+      expect(await cakeMarket.userLoan(alice.address)).to.be.equal(
+        parseEther('50')
+      );
+      expect(await dinero.balanceOf(alice.address)).to.be.equal(
+        parseEther('50')
+      );
+      expect(totalLoan2.base).to.be.equal(parseEther('50'));
+      expect(totalLoan2.elastic).to.be.equal(parseEther('50'));
+      expect(await dinero.balanceOf(bob.address)).to.be.equal(0);
+
+      await expect(
+        cakeMarket.connect(alice).borrow(bob.address, parseEther('30'))
+      )
+        .to.emit(cakeMarket, 'Accrue')
+        .to.emit(dinero, 'Transfer')
+        .withArgs(ethers.constants.AddressZero, bob.address, parseEther('30'))
+        .to.emit(cakeMarket, 'Borrow')
+        .withArgs(alice.address, bob.address, parseEther('30'));
+
+      const totalLoan3 = await cakeMarket.totalLoan();
+
+      expect(await cakeMarket.userLoan(alice.address)).to.be.equal(
+        parseEther('80')
+      );
+      expect(await cakeMarket.userLoan(bob.address)).to.be.equal(0);
+      expect(await dinero.balanceOf(alice.address)).to.be.equal(
+        parseEther('50')
+      );
+      expect(await dinero.balanceOf(bob.address)).to.be.equal(parseEther('30'));
+      expect(totalLoan3.base).to.be.equal(parseEther('80'));
+      expect(totalLoan3.elastic.gt(parseEther('80'))).to.be.equal(true); // includes fees
+    });
+  });
 });

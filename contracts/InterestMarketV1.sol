@@ -187,7 +187,7 @@ contract InterestMarketV1 is Initializable, Context {
     /**************************** VIEW PUBLIC FUNCTIONS ****************************/
 
     /**
-     * View function to easily find who the governor owner is. Since it is the address that can call the owner functions
+     * View function to easily find who the governor owner is. Since it is the address that can call the governor owner functions
      */
     function governorOwner() external view returns (address) {
         return GOVERNOR.owner();
@@ -327,7 +327,7 @@ contract InterestMarketV1 is Initializable, Context {
         accrue();
 
         // Update global state
-        (totalLoan, ) = totalLoan.add(amount, true);
+        totalLoan = totalLoan.add(amount, amount);
         userLoan[_msgSender()] += amount;
 
         // Note the `msg.sender` can use his collateral to lend to someone else
@@ -557,8 +557,8 @@ contract InterestMarketV1 is Initializable, Context {
      * @param amount The new collateralRatio. Be mindful that it has a precision of 1e6
      *
      * Requirements:
-     * Collateral Ratio cannot be higher than 90% for security reasons
-     * It can only be called by the owner to avoid griefing
+     * Collateral Ratio cannot be higher than 90% due to the high volatility of crypto assets
+     * It can only be called by the governor owner to avoid griefing
      *
      */
     function setCollateralRatio(uint256 amount) external onlyGovernorOwner {
@@ -571,7 +571,7 @@ contract InterestMarketV1 is Initializable, Context {
      *
      * Requirements:
      * It cannot be higher than 15%
-     * It can only be called by the owner to avoid griefing
+     * It can only be called by the governor owner to avoid griefing
      *
      */
     function setLiquidationFee(uint256 amount) external onlyGovernorOwner {
@@ -584,7 +584,7 @@ contract InterestMarketV1 is Initializable, Context {
      *
      * Requirements:
      *
-     * This function is guarded by the {onlyOwner} modifier to disallow users from arbitrarly changing the interest rate of borrowing
+     * This function is guarded by the {onlyGovernorOwner} modifier to disallow users from arbitrarly changing the interest rate of borrowing
      * It also requires the new interest rate to be lower than 4% annually. Please note that the value is boosted by 1e18
      *
      */
