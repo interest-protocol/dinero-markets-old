@@ -50,7 +50,12 @@ contract InterestMarketV1 is Initializable, Context {
 
     event RemoveCollateral(address indexed account, uint256 amount);
 
-    event Borrow(address indexed from, address indexed to, uint256 amount);
+    event Borrow(
+        address indexed from,
+        address indexed to,
+        uint256 principal,
+        uint256 amount
+    );
 
     event Repay(
         address indexed payer,
@@ -326,14 +331,16 @@ contract InterestMarketV1 is Initializable, Context {
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
 
+        uint256 principal;
+
         // Update global state
-        totalLoan = totalLoan.add(amount, amount);
-        userLoan[_msgSender()] += amount;
+        (totalLoan, principal) = totalLoan.add(amount, true);
+        userLoan[_msgSender()] += principal;
 
         // Note the `msg.sender` can use his collateral to lend to someone else
         DINERO.mint(to, amount);
 
-        emit Borrow(_msgSender(), to, amount);
+        emit Borrow(_msgSender(), to, principal, amount);
     }
 
     /**

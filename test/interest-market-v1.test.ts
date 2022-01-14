@@ -735,7 +735,12 @@ describe('InterestMarketV1', () => {
         .to.emit(dinero, 'Transfer')
         .withArgs(ethers.constants.AddressZero, alice.address, parseEther('50'))
         .to.emit(cakeMarket, 'Borrow')
-        .withArgs(alice.address, alice.address, parseEther('50'))
+        .withArgs(
+          alice.address,
+          alice.address,
+          parseEther('50'),
+          parseEther('50')
+        )
         .to.not.emit(cakeMarket, 'Accrue');
 
       const totalLoan2 = await cakeMarket.totalLoan();
@@ -756,20 +761,20 @@ describe('InterestMarketV1', () => {
         .to.emit(cakeMarket, 'Accrue')
         .to.emit(dinero, 'Transfer')
         .withArgs(ethers.constants.AddressZero, bob.address, parseEther('30'))
-        .to.emit(cakeMarket, 'Borrow')
-        .withArgs(alice.address, bob.address, parseEther('30'));
+        .to.emit(cakeMarket, 'Borrow');
 
       const totalLoan3 = await cakeMarket.totalLoan();
 
       expect(await cakeMarket.userLoan(alice.address)).to.be.equal(
-        parseEther('80')
+        totalLoan3.base
       );
       expect(await cakeMarket.userLoan(bob.address)).to.be.equal(0);
       expect(await dinero.balanceOf(alice.address)).to.be.equal(
         parseEther('50')
       );
       expect(await dinero.balanceOf(bob.address)).to.be.equal(parseEther('30'));
-      expect(totalLoan3.base).to.be.equal(parseEther('80'));
+      expect(totalLoan3.base.gt(parseEther('78'))).to.be.equal(true); // Due to fees this value is not easy to estimate
+      expect(totalLoan3.base.lt(parseEther('80'))).to.be.equal(true); // Due to fees this value is not easy to estimate
       expect(totalLoan3.elastic.gt(parseEther('80'))).to.be.equal(true); // includes fees
     });
   });
