@@ -279,7 +279,7 @@ contract InterestMarketV1 is Initializable, Context {
      */
     function updateExchangeRate() public returns (uint256 rate) {
         // Get USD price for 1 Token (18 decimals). The USD price also has 18 decimals. We need to reduc
-        rate = ORACLE.getTokenUSDPrice(address(COLLATERAL), 1 ether);
+        rate = ORACLE.getUSDPrice(address(COLLATERAL), 1 ether);
 
         // if the exchange rate is different we need to update the global state
         if (rate != exchangeRate) {
