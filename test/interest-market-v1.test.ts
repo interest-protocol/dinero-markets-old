@@ -178,9 +178,9 @@ describe('InterestMarketV1', () => {
           bnb.address,
           cake.address,
           parseEther('10000'),
-          parseEther('200000'),
+          parseEther('250000'),
           parseEther('10000'),
-          parseEther('200000'),
+          parseEther('250000'),
           owner.address,
           ethers.constants.MaxUint256
         ),
@@ -883,7 +883,187 @@ describe('InterestMarketV1', () => {
           )
       ).to.revertedWith('MKT: no liquidations');
     });
-    it('liquidates a market with a vault without using the router', async () => {
+    it('liquidates accounts on a market without a vault and using the router', async () => {
+      // Deploy a market without a vault
+      const data = defaultAbiCoder.encode(
+        ['address', 'address', 'uint64', 'uint256', 'uint256'],
+        [
+          cake.address,
+          ethers.constants.AddressZero,
+          ethers.BigNumber.from(12e8),
+          ethers.BigNumber.from(5e5),
+          ethers.BigNumber.from(10e4),
+        ]
+      );
+
+      const [cakeMarketAddress] = await Promise.all([
+        governor.predictMarketAddress(masterMarket.address, keccak256(data)),
+        governor
+          .connect(owner)
+          .createMarket(masterMarket.address, cake.address, data),
+      ]);
+
+      const cakeMarket2 = (
+        await ethers.getContractFactory('InterestMarketV1')
+      ).attach(cakeMarketAddress);
+
+      // Approve the market to spend the funds of the users
+      await Promise.all([
+        cake
+          .connect(alice)
+          .approve(cakeMarket2.address, ethers.constants.MaxUint256),
+        cake
+          .connect(jose)
+          .approve(cakeMarket2.address, ethers.constants.MaxUint256),
+        cakeMarket2.updateExchangeRate(),
+      ]);
+
+      // Add Collateral
+      await Promise.all([
+        cakeMarket2.connect(alice).addCollateral(parseEther('10')),
+        cakeMarket2.connect(jose).addCollateral(parseEther('10')),
+      ]);
+
+      // Borrow the maximum amount of 49.9%
+      await Promise.all([
+        cakeMarket2.connect(alice).borrow(alice.address, parseEther('99')),
+        cakeMarket2.connect(jose).borrow(jose.address, parseEther('99')),
+      ]);
+
+      // Drop CAKE to 15 USD. Alice and Jose can now be liquidated
+      await mockCakeUsdFeed.setAnswer(ethers.BigNumber.from('1500000000'));
+
+      const [
+        totalCollateral,
+        aliceLoan,
+        joseLoan,
+        aliceCollateral,
+        joseCollateral,
+        loan,
+        pair,
+        dineroRecipientBalance,
+      ] = await Promise.all([
+        cakeMarket2.totalCollateral(),
+        cakeMarket2.userLoan(alice.address),
+        cakeMarket2.userLoan(jose.address),
+        cakeMarket2.userCollateral(alice.address),
+        cakeMarket2.userCollateral(jose.address),
+        cakeMarket2.loan(),
+        factory.allPairs(0),
+        dinero.balanceOf(recipient.address),
+      ]);
+
+      expect(totalCollateral).to.be.equal(parseEther('20'));
+      expect(aliceLoan).to.be.equal(parseEther('99'));
+      // Due to fees paid by alice their principal is lower than 99
+      expect(joseLoan.gt(parseEther('95'))).to.be.equal(true);
+
+      expect(dineroRecipientBalance).to.be.equal(0);
+
+      const pairContract = (
+        await ethers.getContractFactory('PancakePair')
+      ).attach(pair);
+
+      // Pass time to accrue fees
+      await advanceTime(63_113_904, ethers); // advance 2 years
+
+      // The recipient can liquidate all because he does not need to have `Dinero` he will use the collateral to cover
+      await expect(
+        cakeMarket2.connect(recipient).liquidate(
+          [alice.address, jose.address],
+          [parseEther('99'), parseEther('99')],
+          recipient.address,
+          [cake.address, bnb.address, dinero.address] // Enables the user of the router
+        )
+      )
+        .to.emit(cakeMarket2, 'RemoveCollateral')
+        .to.emit(cakeMarket2, 'Repay')
+        .to.emit(cakeMarket2, 'Accrue')
+        .to.emit(cakeMarket2, 'ExchangeRate')
+        .to.emit(dinero, 'Transfer')
+        // Router is being used
+        .to.emit(pairContract, 'Swap')
+        // Vault is not used
+        .to.not.emit(cakeVault, 'Withdraw');
+
+      const [
+        totalLoan,
+        totalCollateral2,
+        aliceLoan2,
+        joseLoan2,
+        aliceCollateral2,
+        joseCollateral2,
+        loan2,
+        dineroRecipientBalance2,
+      ] = await Promise.all([
+        cakeMarket2.totalLoan(),
+        cakeMarket2.totalCollateral(),
+        cakeMarket2.userLoan(alice.address),
+        cakeMarket2.userLoan(jose.address),
+        cakeMarket2.userCollateral(alice.address),
+        cakeMarket2.userCollateral(jose.address),
+        cakeMarket2.loan(),
+        dinero.balanceOf(recipient.address),
+      ]);
+
+      const allCollateral = aliceCollateral
+        .sub(aliceCollateral2)
+        .add(joseCollateral.sub(joseCollateral2));
+
+      // We calculate the debt by re-engineering the formula
+      const aliceDebt = aliceCollateral
+        .sub(aliceCollateral2)
+        .mul(ethers.BigNumber.from(15).mul(parseEther('1')))
+        .mul(ethers.BigNumber.from(1e6))
+        .div(
+          ethers.BigNumber.from(1e6)
+            .add(ethers.BigNumber.from(10e4))
+            .mul(parseEther('1'))
+        );
+
+      // We calculate the debt by re-engineering the formula
+      const joseDebt = joseCollateral
+        .sub(joseCollateral2)
+        .mul(ethers.BigNumber.from(15).mul(parseEther('1')))
+        .mul(ethers.BigNumber.from(1e6))
+        .div(
+          ethers.BigNumber.from(1e6)
+            .add(ethers.BigNumber.from(10e4))
+            .mul(parseEther('1'))
+        );
+
+      const allDebt = aliceDebt.add(joseDebt);
+
+      const allFee = allDebt.mul(ethers.BigNumber.from(10e4)).div(1e6);
+
+      const protocolFee = allFee
+        .mul(ethers.BigNumber.from(100))
+        .div(ethers.BigNumber.from(1000));
+
+      // Alice loan  gets fully repaid
+      expect(aliceLoan2).to.be.equal(0);
+      // Jose loan gets fully repaid
+      expect(joseLoan2).to.be.equal(0);
+
+      // Alice and Jose got liquidated
+      expect(totalCollateral.sub(totalCollateral2)).to.be.eq(allCollateral);
+
+      // recipient does not get any collateral
+      expect(await cake.balanceOf(recipient.address)).to.be.equal(0);
+
+      // Means loan2 feesEarned includes accrued + protocol fee
+      expect(loan2.feesEarned.sub(protocolFee).gt(loan.feesEarned)).to.be.equal(
+        true
+      );
+
+      // There should be no open loan at the moment
+      expect(totalLoan.base).to.be.equal(0);
+      expect(totalLoan.elastic).to.be.equal(0);
+
+      // Recipient receives the liquidation fee - slippage
+      expect(dineroRecipientBalance2.gt(0)).to.be.equal(true);
+    });
+    it('liquidates accounts on a market with a vault and without using the router', async () => {
       await Promise.all([
         cakeMarket.connect(alice).addCollateral(parseEther('10')),
         cakeMarket.connect(bob).addCollateral(parseEther('100')),

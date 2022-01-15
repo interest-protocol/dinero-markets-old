@@ -424,7 +424,7 @@ contract InterestMarketV1 is Initializable, Context {
             }
 
             // How much is the owed principal + accrued fees
-            uint256 debt = _totalLoan.toElastic(principal, true);
+            uint256 debt = _totalLoan.toElastic(principal, false);
 
             // Calculate the collateralFee (for the liquidator and the protocol)
             uint256 fee = (debt * _liquidationFee) / 1e6;
@@ -453,11 +453,16 @@ contract InterestMarketV1 is Initializable, Context {
         // There must have liquidations or we throw an error;
         require(liquidationInfo.allPrincipal > 0, "MKT: no liquidations");
 
+        // Clean up dust
+        if (liquidationInfo.allPrincipal == _totalLoan.base)
+            liquidationInfo.allDebt = _totalLoan.elastic;
+
         // Update Global state
         totalLoan = _totalLoan.sub(
             liquidationInfo.allPrincipal,
             liquidationInfo.allDebt
         );
+
         totalCollateral -= liquidationInfo.allCollateral;
 
         // 10% of the liquidation fee to be given to the protocol
