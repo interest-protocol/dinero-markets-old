@@ -36,9 +36,8 @@ contract LPVault is Vault {
         IMasterChef cakeMasterChef,
         IERC20 cake,
         IERC20 stakingToken,
-        uint256 _poolId,
-        address market
-    ) Vault(cakeMasterChef, cake, market) {
+        uint256 _poolId
+    ) Vault(cakeMasterChef, cake) {
         require(_poolId != 0, "LPVault: this is a LP vault");
         STAKING_TOKEN = stakingToken;
         POOL_ID = _poolId;
@@ -237,8 +236,8 @@ contract LPVault is Vault {
             CAKE_MASTER_CHEF.leaveStaking(rewards - cakeBalance);
         }
 
-        // Send the rewards to the recipient
-        CAKE.safeTransfer(recipient, rewards);
+        // Send the rewards to the account
+        CAKE.safeTransfer(account, rewards);
 
         // Only restake if there is at least 1 `CAKE` in the contract after sending the rewards
         // If there are no `STAKING TOKENS` left, we do not need to restake

@@ -37,11 +37,7 @@ describe('CakeVault', () => {
       START_BLOCK,
     ]);
 
-    cakeVault = await deploy('CakeVault', [
-      masterChef.address,
-      cake.address,
-      market.address,
-    ]);
+    cakeVault = await deploy('CakeVault', [masterChef.address, cake.address]);
 
     await Promise.all([
       cake
@@ -57,8 +53,23 @@ describe('CakeVault', () => {
         ['mint(address,uint256)'](bob.address, parseEther('100')),
       syrup.connect(owner).transferOwnership(masterChef.address),
       cake.connect(owner).transferOwnership(masterChef.address),
+      cakeVault.connect(owner).setMarket(market.address),
     ]);
   });
+
+  describe('function: setMarket', () => {
+    it('reverts if it is not called byt he owner', async () => {
+      await expect(
+        cakeVault.connect(alice).setMarket(bob.address)
+      ).to.revertedWith('Ownable: caller is not the owner');
+    });
+    it('reverts if the market is already set', async () => {
+      await expect(
+        cakeVault.connect(owner).setMarket(bob.address)
+      ).to.revertedWith('Vault: already set');
+    });
+  });
+
   it('shows the pending rewards in the CAKE pool', async () => {
     expect(await cakeVault.getPendingRewards()).to.be.equal(0);
 
@@ -419,12 +430,14 @@ describe('CakeVault', () => {
         totalRewardsPerAmount,
         masterChefCakePool,
         recipientCakeBalance,
+        aliceCakeBalance,
       ] = await Promise.all([
         cakeVault.userInfo(alice.address),
         cakeVault.totalAmount(),
         cakeVault.totalRewardsPerAmount(),
         masterChef.userInfo(0, cakeVault.address),
         cake.balanceOf(recipient.address),
+        cake.balanceOf(alice.address),
       ]);
 
       expect(aliceInfo.amount).to.be.equal(parseEther('20'));
@@ -450,12 +463,14 @@ describe('CakeVault', () => {
         totalRewardsPerAmount2,
         masterChefCakePool2,
         recipientCakeBalance2,
+        aliceCakeBalance2,
       ] = await Promise.all([
         cakeVault.userInfo(alice.address),
         cakeVault.totalAmount(),
         cakeVault.totalRewardsPerAmount(),
         masterChef.userInfo(0, cakeVault.address),
         cake.balanceOf(recipient.address),
+        cake.balanceOf(alice.address),
       ]);
 
       expect(aliceInfo2.amount).to.be.equal(parseEther('10'));
@@ -471,7 +486,9 @@ describe('CakeVault', () => {
       expect(masterChefCakePool2.amount.gt(totalAmount2)).to.be.equal(true);
       expect(totalAmount2).to.be.equal(parseEther('40'));
       // Means recipient got the cake amount + rewards
-      expect(recipientCakeBalance2.gt(parseEther('10'))).to.be.equal(true);
+      expect(recipientCakeBalance2.eq(parseEther('10'))).to.be.equal(true);
+      // Alice cake balance increase after withdraw it means she got the rewards
+      expect(aliceCakeBalance2.gt(aliceCakeBalance)).to.be.equal(true);
 
       await Promise.all([
         cakeVault
