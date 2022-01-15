@@ -849,6 +849,16 @@ describe('InterestMarketV1', () => {
     expect(totalLoan3.elastic).to.be.equal(0);
   });
   describe('function: liquidate', () => {
+    it('reverts if the path exists and does not need in dinero', async () => {
+      await expect(
+        cakeMarket
+          .connect(owner)
+          .liquidate([alice.address], [parseEther('1')], recipient.address, [
+            dinero.address,
+            cake.address,
+          ])
+      ).to.revertedWith('MKT: no dinero at last index');
+    });
     it('reverts if there are no accounts to liquidate', async () => {
       await Promise.all([
         cakeMarket.connect(alice).addCollateral(parseEther('10')),
@@ -886,7 +896,7 @@ describe('InterestMarketV1', () => {
         cakeMarket.connect(jose).borrow(jose.address, parseEther('99')),
       ]);
 
-      // Drop CAKE to 15 USD. Alice can now be liquidated
+      // Drop CAKE to 15 USD. Alice and Jose can now be liquidated
       await mockCakeUsdFeed.setAnswer(ethers.BigNumber.from('1500000000'));
 
       const [

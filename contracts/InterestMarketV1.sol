@@ -27,7 +27,7 @@ import "./OracleV1.sol";
 import "./InterestGovernorV1.sol";
 
 /**
- * @notice If the market has a vault. `ms.sender` has to approve the vault if not it has to approve the market
+ * @dev notice If the market has a vault. `ms.sender` has to approve the vault if not it has to approve the market
  * INTEREST_RATE has a precision of 1e8
  * exchange rate has 18 decimals
  * collateralRatio precision is 1e6
@@ -235,9 +235,13 @@ contract InterestMarketV1 is Initializable, Context {
         // Save gas save accrueInfo to memory
         Loan memory _loan = loan;
 
-        // Check how much time passed since the last we accrued interest
-        // solhint-disable-next-line not-rely-on-time
-        uint256 elapsedTime = block.timestamp - _loan.lastAccrued;
+        uint256 elapsedTime;
+
+        unchecked {
+            // Check how much time passed since the last we accrued interest
+            // solhint-disable-next-line not-rely-on-time
+            elapsedTime = block.timestamp - _loan.lastAccrued;
+        }
 
         // If no time has passed. There is nothing to do;
         if (elapsedTime == 0) return;
@@ -262,8 +266,10 @@ contract InterestMarketV1 is Initializable, Context {
             _loan.INTEREST_RATE *
             elapsedTime) / 1e18;
 
-        // Debt will eventually be paid to treasury so we update the information here
-        _loan.feesEarned += debt.toUint128();
+        unchecked {
+            // Debt will eventually be paid to treasury so we update the information here
+            _loan.feesEarned += debt.toUint128();
+        }
 
         // Update the total debt owed to the protocol
         totalLoan.addElastic(debt);
@@ -380,6 +386,10 @@ contract InterestMarketV1 is Initializable, Context {
         address recipient,
         address[] calldata path
     ) external {
+        require(
+            path.length == 0 || path[path.length - 1] == address(DINERO),
+            "MKT: no dinero at last index"
+        );
         // Liquidations must be based on the current exchange rate
         uint256 _exchangeRate = updateExchangeRate();
 
@@ -452,34 +462,32 @@ contract InterestMarketV1 is Initializable, Context {
 
         // 10% of the liquidation fee to be given to the protocol
         uint256 protocolFee = (liquidationInfo.allFee * 100) / 1000;
-        // Pay the fee to the protocol
-        loan.feesEarned += protocolFee.toUint128();
+
+        unchecked {
+            // Pay the fee to the protocol
+            loan.feesEarned += protocolFee.toUint128();
+        }
 
         // If a path is provided, we will use the collateral to cover the debt
         if (path.length >= 2) {
             // We need to get enough `DINERO` to cover outstanding debt + protocol fee. This means the liquidator will pay for the slippage
             uint256 minAmount = liquidationInfo.allDebt + protocolFee;
 
-            uint256[] memory amounts = ROUTER.swapExactTokensForTokens(
+            ROUTER.swapExactTokensForTokens(
                 // Sell all collateral for this liquidation
                 liquidationInfo.allCollateral,
                 minAmount,
                 // Sell COLLATERAL -> DINERO
                 path,
-                // Send DINERO to this address
-                address(this),
+                // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
+                recipient,
                 // This to suceed in this block
                 //solhint-disable-next-line not-rely-on-time
                 block.timestamp
             );
 
             // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee
-            DINERO.burn(address(this), minAmount);
-            // We send to the `recipient` what is left after paying the outstanding debt + protocol fee
-            IERC20(DINERO).safeTransfer(
-                recipient,
-                amounts[amounts.length - 1] - minAmount
-            );
+            DINERO.burn(recipient, minAmount);
         } else {
             // Liquidator will be paid in `COLLATERAL`
             // Liquidator needs to cover the whole loan + fees

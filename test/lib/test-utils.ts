@@ -1,5 +1,5 @@
 // eslint-disable-next-line node/no-unpublished-import
-import { BigNumber, BigNumberish } from 'ethers';
+import { BigNumber } from 'ethers';
 import { ethers } from 'hardhat';
 
 export const multiDeploy = async (
@@ -25,7 +25,7 @@ export const deploy = async (
   return await factory.deploy(...parameters);
 };
 
-export const advanceTime = (time: BigNumberish, _ethers: typeof ethers) =>
+export const advanceTime = (time: number, _ethers: typeof ethers) =>
   _ethers.provider.send('evm_increaseTime', [time]);
 
 export const advanceBlock = (_ethers: typeof ethers) =>
