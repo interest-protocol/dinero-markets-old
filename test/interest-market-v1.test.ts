@@ -873,7 +873,7 @@ describe('InterestMarketV1', () => {
           )
       ).to.revertedWith('MKT: no liquidations');
     });
-    it.only('liquidates a market with a vault without using the router', async () => {
+    it('liquidates a market with a vault without using the router', async () => {
       await Promise.all([
         cakeMarket.connect(alice).addCollateral(parseEther('10')),
         cakeMarket.connect(bob).addCollateral(parseEther('100')),
