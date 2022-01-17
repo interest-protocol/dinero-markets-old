@@ -1,7 +1,12 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-// Taken from Uniswap https://github.com/Uniswap/v2-core/blob/master/contracts/libraries/Math.sol
+/**
+ *
+ * @notice This was copied from Uniswap without any modifications.
+ * https://github.com/Uniswap/v2-core/blob/master/contracts/libraries/Math.sol
+ *
+ */
 library Math {
     // babylonian method (https://en.wikipedia.org/wiki/Methods_of_computing_square_roots#Babylonian_method)
     function sqrt(uint256 y) internal pure returns (uint256 z) {

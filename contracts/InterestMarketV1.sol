@@ -171,9 +171,9 @@ contract InterestMarketV1 is Initializable, Context {
 
     modifier isSolvent() {
         _;
-        // `msg.sender` has to be solvent after he performed all operations not before
+        // `msg.sender` has to be solvent after he performed all operations not
         require(
-            _isSolvent(_msgSender(), exchangeRate),
+            _isSolvent(_msgSender(), updateExchangeRate()),
             "MKT: sender is insolvent"
         );
     }
