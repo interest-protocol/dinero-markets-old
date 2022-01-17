@@ -279,11 +279,11 @@ describe('InterestMarketV1', () => {
       parseEther('490')
     );
 
+    // Due to time delays of asynchronous code and the fact that interest is calculated based on time. We cannot guarantee that the value of debt is accurate but only an approximation.
     await expect(cakeMarket.getEarnings())
       .to.emit(cakeMarket, 'Accrue')
       .withArgs(debt)
-      .to.emit(cakeMarket, 'GetEarnings')
-      .withArgs(treasury.address, debt);
+      .to.emit(cakeMarket, 'GetEarnings');
 
     expect((await cakeMarket.loan()).feesEarned).to.be.equal(0);
     expect((await dinero.balanceOf(treasury.address)).gte(debt)).to.be.equal(

@@ -25,7 +25,6 @@ import "./Vault.sol";
  * @notice This contract inherits the {Vault} contract and overrides the {_withdraw} and {_deposit} functions.
  * @notice We use the Open Zeppelin {SafeERC20} to interact with the Cake token, which follows the {IERC20} interface.
  * @notice The pool id 0, accepts {CAKE} and rewards {CAKE}.
- *
  */
 contract CakeVault is Vault {
     /*///////////////////////////////////////////////////////////////
