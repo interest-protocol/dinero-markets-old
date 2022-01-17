@@ -21,7 +21,7 @@ import "./Vault.sol";
  * @dev This vault is designed to work with PCS {MasterChef} contract, 0x73feaa1eE314F8c655E354234017bE2193C9E24E, pool id 0.
  * The pool 0 is designed to stake the {CakeToken}, 0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82.
  *
- * @notice This contract is meant to work in conjunction with the {InterestMarketV1} to stake the collateral uses will deposit to get loans.
+ * @notice This contract is meant to work in conjunction with the {InterestMarketV1} to stake the collateral users provide when opening loans.
  * @notice This contract inherits the {Vault} contract and overrides the {_withdraw} and {_deposit} functions.
  * @notice We use the Open Zeppelin {SafeERC20} to interact with the Cake token, which follows the {IERC20} interface.
  * @notice The pool id 0, accepts {CAKE} and rewards {CAKE}.
@@ -174,7 +174,7 @@ contract CakeVault is Vault {
      *
      * @notice The base unit for {totalRewardsPerAmount} is 1e12.
      * @notice The {user.rewards} is sent to the `recipient` and not to the `account`.
-     * This is because during liquidations, the rewards will go to the account who opened the  * loan but some of the deposited
+     * This is because during liquidations, the rewards will go to the account that opened the loan, but some of the deposited
      * tokens will go to the liquidator or the {InterestMarketV1} contract.
      *
      * @param account The account that has deposited `CAKE` in the {_deposit} function.
