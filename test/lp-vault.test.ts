@@ -91,6 +91,11 @@ describe('LPVault', () => {
         lpVault.connect(alice).setMarket(bob.address)
       ).to.revertedWith('Ownable: caller is not the owner');
     });
+    it('reverts if we pass the address zero', async () => {
+      await expect(
+        lpVault.connect(owner).setMarket(ethers.constants.AddressZero)
+      ).to.revertedWith('Vault: no zero address');
+    });
     it('reverts if the market is already set', async () => {
       await expect(
         lpVault.connect(owner).setMarket(bob.address)
@@ -428,6 +433,11 @@ describe('LPVault', () => {
           .connect(market)
           .withdraw(alice.address, ethers.constants.AddressZero, 10)
       ).to.revertedWith('Vault: no zero address');
+    });
+    it('reverts if there are no tokens deposited in the vault', async () => {
+      await expect(
+        lpVault.connect(market).withdraw(alice.address, alice.address, 10)
+      ).to.revertedWith('Vault: no tokens');
     });
     it('reverts if the msg.sender is not the market', async () => {
       await expect(

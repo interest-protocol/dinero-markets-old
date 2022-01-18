@@ -172,13 +172,18 @@ contract CakeVault is Vault {
      * @dev The objective of this function is to allow the `account` to withdraw some of his previously deposited tokens from the {CAKE_MASTER_CHEF}.
      *
      * @notice The base unit for {totalRewardsPerAmount} is 1e12.
-     * @notice The {user.rewards} is sent to the `recipient` and not to the `account`.
-     * This is because during liquidations, the rewards will go to the account that opened the loan, but some of the deposited
+     * @notice The {user.rewards} is sent to the `account` and not the `recipient`.
+     * During liquidations, the rewards will go to the `account1` that opened the loan, but some of the deposited
      * tokens will go to the liquidator or the {InterestMarketV1} contract.
      *
-     * @param account The account that has deposited `CAKE` in the {_deposit} function.
+     * @param account The account that has deposited {CAKE} in the {_deposit} function.
      * @param recipient the account which will get the rewards accrued by the deposit from `account`.
      * @param amount The number of {CAKE} tokens to withdraw.
+     *
+     * Requirements:
+     *
+     * - `account` must have enough tokens in the `user.amount` to withdraw the desited `amount`.
+     *
      */
     function _withdraw(
         address account,
@@ -196,6 +201,8 @@ contract CakeVault is Vault {
 
         // Collect the current rewards from {CAKE} pool to properly calculate rewards.
         // And withdraw the requested amount of {CAKE} from the pool.
+        // The {Vault} contract ensures that the `amount` is greater than 0.
+        // It also ensured that the {totalAmount} is greater than 0.
         _totalRewardsPerAmount += (_unStakeCake(amount) * 1e12) / _totalAmount;
 
         // Calculate how many rewards the `account` has acrrued up to this block.

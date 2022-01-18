@@ -17,39 +17,66 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "./Vault.sol";
 
+/**
+ * @dev This vault is designed to work with PCS {MasterChef} contract, 0x73feaa1eE314F8c655E354234017bE2193C9E24E, PancakePairs pools.
+ *
+ * @notice the PancakePairs have 18 decimals, which is vital to work with the {ORACLE} in the {VAULT}.
+ * An example of a {PancakePair} contract can be found here: 0xA527a61703D82139F8a06Bc30097cC9CAA2df5A6
+ * @notice We can not use the pool id 0 and the burn pool as they are not for Pancake Pairs.
+ * @notice This contract is meant to work in conjunction with the {InterestMarketV1} to stake the collateral users provide when opening loans.
+ * @notice This contract inherits the {Vault} contract and overrides the {_withdraw} and {_deposit} functions.
+ * @notice We use the Open Zeppelin {SafeERC20} to interact with the {CAKE} token and the {PancakePair} tokens, which follow the {IERC20} interface.
+ */
 contract LPVault is Vault {
-    /**************************** LIBRARIES ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                 LIBRARIES
+    //////////////////////////////////////////////////////////////*/
 
     using SafeERC20 for IERC20;
 
-    /****************************  CONSTANTS ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                 CONSTANTS
+    //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line
-    IERC20 public immutable STAKING_TOKEN; // The current token being farmed
+    IERC20 public immutable STAKING_TOKEN; // The current {PancakePair} token being farmed.
 
     // solhint-disable-next-line var-name-mixedcase
-    uint256 public immutable POOL_ID; // The current master chef farm being used
+    uint256 public immutable POOL_ID; // The current master chef farm being used.
 
-    /**************************** CONSTRUCTOR ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
+    /**
+     * @dev We need to approve the {CAKE_MASTER_CHEF} to have full access to the {CAKE} and {STAKING_TOKEN} (PancakePair) tokens.
+     *
+     * @param cakeMasterChef The address of the PancakeSwap master chef.
+     * @param cake The address of the {CAKE} token.
+     * @param stakingToken The address of the {PancakePair} token.
+     * @param poolId The id of the {PancakePair} token in the {CAKE_MASTER_CHEF}.
+     */
     constructor(
         IMasterChef cakeMasterChef,
         IERC20 cake,
         IERC20 stakingToken,
-        uint256 _poolId
+        uint256 poolId
     ) Vault(cakeMasterChef, cake) {
-        require(_poolId != 0, "LPVault: this is a LP vault");
+        require(poolId != 0, "LPVault: this is a LP vault");
         STAKING_TOKEN = stakingToken;
-        POOL_ID = _poolId;
-        // Master chef needs full approval. {safeApprove} is fine to be used for the initial allowance
+        POOL_ID = poolId;
         stakingToken.safeApprove(address(cakeMasterChef), type(uint256).max);
         cake.safeApprove(address(cakeMasterChef), type(uint256).max);
     }
 
-    /**************************** VIEW FUNCTIONS ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /**
-     * It checks the pending `CAKE` the farm and the CAKE pool which is always Id 0
-     * @return The number of `CAKE` the contract has as rewards in the farm
+     * @dev It returns the pending {CAKE} rewards in the {CAKE_MASTER_CHEF} for the {CAKE} pool, the id 0, and the {STAKING_TOKEN} pool.
+     *
+     * @return The number of {CAKE} this contract has accrued as rewards in the {CAKE_MASTER_CHEF}.
      */
     function getPendingRewards() public view override(Vault) returns (uint256) {
         return
@@ -57,10 +84,15 @@ contract LPVault is Vault {
             CAKE_MASTER_CHEF.pendingCake(0, address(this));
     }
 
-    /**************************** MUTATIVE FUNCTIONS ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                MUTATIVE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /**
-     * This function gives the `CAKE_MASTER_CHEF` maximum approval of the underlying token and the `CAKE` token
+     * @dev IT increases the allowance of {CAKE_MASTER_CHEF} for {CAKE} and the {STAKING_TOKEN}.
+     *
+     * @param stakingAmount The number of tokens to increase the allowance of the {CAKE_MASTER_CHEF} for the {STAKING_TOKEN}.
+     * @param cakeAmount The number of tokens to increase the allowance of the {CAKE_MASTER_CHEF} for the {CAKE} token.
      */
     function approve(uint256 stakingAmount, uint256 cakeAmount) external {
         STAKING_TOKEN.safeIncreaseAllowance(
@@ -71,29 +103,37 @@ contract LPVault is Vault {
     }
 
     /**
-     * This function compounds the `CAKE` rewards in the farm to the `CAKE` pool and pays the caller a small fee as reward
+     * @dev This function compounds the {CAKE} rewards in the pool id 0 and rewards the caller with 2% of the pending rewards.
+     *
+     * @notice The compounding fee base unit is 1e6.
+     * @notice The {totalRewardsPerAmount} has a base unit of 1e12.
      */
     function compound() external {
+        // Variable to keep track of the {CAKE} rewards we will get by depositing and unstaking.
         uint256 cakeRewards;
 
+        // Save storage state in memory to save gas.
         uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
         uint256 _totalAmount = totalAmount;
 
-        // Get rewards from the `STAKING_TOKEN` farm
+        // Get rewards from the {STAKING_TOKEN} pool.
         cakeRewards += _depositFarm(0);
-        // Get rewards from the `CAKE` pool
+        // Get rewards from the {CAKE} pool.
         cakeRewards += _unStakeCake(0);
 
-        // Calculate fee to reward the `msg.sender`
-        uint256 fee = (cakeRewards * 2e4) / 1e6; // 2% of the rewards obtained
+        // Calculate the fee to reward the `msg.sender`.
+        // The fee amounts to 2% of all the rewards harvested in this block.
+        uint256 fee = (cakeRewards * 2e4) / 1e6;
 
-        // update state
+        // Update the state
         _totalRewardsPerAmount += ((cakeRewards - fee) * 1e12) / _totalAmount;
 
-        // Pay the `msg.sender`
+        // Pay the `msg.sender` the fee.
         CAKE.safeTransfer(_msgSender(), fee);
 
-        // Compound the rewards. We already took the rewards up to this block. So the `CAKE` pool rewards should be 0.
+        // Compound the remaining rewards in the {CAKE} pool.
+        // We already got the rewards up to this block. So the {CAKE} pool rewards should be 0.
+        // Therefore, we do not need to update the {_totalRewardsPerAmount} variable.
         CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
 
         // Update global state
@@ -102,66 +142,82 @@ contract LPVault is Vault {
         emit Compound(cakeRewards - fee, fee, block.number);
     }
 
-    /**************************** PRIVATE FUNCTIONS ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                PRIVATE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /**
-     * This function removes `STAKING_TOKEN` from the farm and returns the amount of `CAKE` farmed
-     * @param amount The number of `STAKING_TOKEN` to be withdrawn from the `CAKE_MASTER_CHEF`
-     * @return cakeHarvested It returns how many `CAKE` we got as reward
+     * @dev It withdraws an `amount` of {STAKING_TOKEN} from the pool. And it keeps track of the rewards obtained by using the {_getBalance} function.
+     *
+     * @param amount The number of {STAKING_TOKEN} to be withdrawn from the {CAKE_MASTER_CHEF}.
+     * @return cakeHarvested It returns how many {CAKE} we got as reward.
      */
     function _withdrawFarm(uint256 amount)
         private
         returns (uint256 cakeHarvested)
     {
+        // Save the current {CAKE} balance before calling the withdraw function because it will give us rewards.
         uint256 preBalance = _getCakeBalance();
         CAKE_MASTER_CHEF.withdraw(POOL_ID, amount);
-        // Find how much cake we earned after withdrawing as it always gives the rewards
+        // The difference between the previous {CAKE} balance and the current balance is the rewards obtained via the withdraw function.
         cakeHarvested = _getCakeBalance() - preBalance;
     }
 
     /**
-     * This function deposits `STAKING_TOKEN` in the farm and returns the amount of `CAKE` farmed
-     * @param amount The number of `STAKING_TOKEN` to deposit in the `CAKE_MASTER_CHEF`
-     * @return cakeHarvested It returns how many `CAKE` we got as reward
+     * @dev This function deposits {STAKING_TOKEN} in the pool and calculates/returns the rewards obtained via the deposit function.
+     *
+     * @param amount The number of {STAKING_TOKEN} to deposit in the {CAKE_MASTER_CHEF}.
+     * @return cakeHarvested It returns how many {CAKE} we got as reward from the depsit function.
      */
     function _depositFarm(uint256 amount)
         private
         returns (uint256 cakeHarvested)
     {
+        // Need to save the {balanceOf} {CAKE} before the deposit function to calculate the rewards.
         uint256 preBalance = _getCakeBalance();
         CAKE_MASTER_CHEF.deposit(POOL_ID, amount);
-        // Find how much cake we earned after depositing as it always gives the rewards
+        // Find how much cake we earned after depositing as the deposit functions always {transfer} the pending {CAKE} rewards.
         cakeHarvested = _getCakeBalance() - preBalance;
     }
 
-    /**************************** INTERNAL OVERRIDE FUNCTIONS ****************************/
+    /*///////////////////////////////////////////////////////////////
+                        INTERNAL OVERRIDE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /**
-     * This function takes `STAKING_TOKEN` from the `msg.sender` and puts it in the `CAKE_MASTER_CHEF`
-     * This function will update the global state and recalculate the `totalAmount`, `totalRewards` and `userInfo` accordingly
-     * This function does not send the current rewards accrued to the user
-     * @param account The account that is depositing `STAKING_TOKEN`
-     * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
+     * @dev We update the rewards for all users with the {_totalRewardsPerAccount} variable.
+     * Then we use the {transferFrom} function to get the {STAKING_TOKEN} from the `account`.
+     * We keep track of the amounts and rewards and deposit the acquired {STAKING_TOKEN} in the {CAKE_MASTER_CHEF}.
+     * We also compound any {CAKE} tokens in this contract int he {CAKE} pool.
+     *
+     * @notice It assumes the `account` has given enough approval to this contract.
+     * @notice The variable {_totalRewardsPerAmount} has a base unit of 1e12.
+     * @notice This function does not send the current rewards accrued to the `account`.
+     *
+     * @param account The address that is depositing the {STAKING_TOKEN}.
+     * @param amount The number of {STAKING_TOKEN} that the `account` wishes to deposit.
      */
     function _deposit(address account, uint256 amount)
         internal
         override(Vault)
     {
+        // Save storage state in memory to save gas.
         User memory user = userInfo[account];
         uint256 _totalAmount = totalAmount;
         uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
 
-        // If there are no tokens deposited, we do not need to run these operations
+        // If there are no tokens deposited, we do not have to update the current rewards.
         if (_totalAmount > 0) {
-            // Get rewards currently in the farm
+            // Get rewards currently in the {STAKING_TOKEN} pool.
             _totalRewardsPerAmount += (_depositFarm(0) * 1e12) / _totalAmount;
-            // Reinvest all cake into the CAKE pool and get the current rewards
+            // Reinvest all {CAKE} rewards into the CAKE pool.
+            // The functions on this block send pending {CAKE} to this contract. Therefore, we need to update the {_totalRewardsPerAccount}.
             _totalRewardsPerAmount += (_stakeCake() * 1e12) / _totalAmount;
         }
 
-        // No need to calculate rewards if the user has no deposit
+        // We do not need to calculate rewards if the user has no open deposits in this contract.
         if (user.amount > 0) {
-            // Calculate and add how many rewards the user accrued
+            // Calculate and add how many rewards the user accrued.
             user.rewards +=
                 ((_totalRewardsPerAmount * user.amount) / 1e12) -
                 user.rewardDebt;
@@ -171,17 +227,18 @@ contract LPVault is Vault {
         _totalAmount += amount;
         user.amount += amount;
 
-        // Get Tokens from `account`
-        // This is to save gas. `account` has to approve the vault
+        // Get {STAKING_TOKEN} from `account`.
+        // This is to save gas. `account` has to approve this vault and not the market.
         STAKING_TOKEN.safeTransferFrom(account, address(this), amount);
 
-        // Deposit the new acquired tokens in the farm
-        // Since we already got the rewards in this block. There should be no rewards right now to harvest.
+        // Deposit the new acquired tokens in the pool.
+        // Since we already got the rewards up to this block. There should be no rewards right now to harvest.
+        // Therefore, we do not need to update the {_totalRewardsPerAmount}.
         CAKE_MASTER_CHEF.deposit(POOL_ID, amount);
-        // Compound the rewards
+        // Compound the rewards. Deposit any current {CAKE} in the cake pool.
         CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
 
-        // Update State to tell us that user has been completed paid up to this point
+        // Update State to tell us that user has been completed paid up to this point.
         user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
 
         // Update Global state
@@ -193,12 +250,21 @@ contract LPVault is Vault {
     }
 
     /**
-     * This function withdraws `STAKING_TOKEN` from the `CAKE_MASTER_CHEF` and sends to the `recipient`
-     * This function will update the global state and recalculate the `totalAmount`, `totalRewards` and `userInfo` accordingly
-     * This function will send the current accrued rewards to the `recipient`
-     * @param account The account that is depositing `STAKING_TOKEN`
-     * @param recipient the account which will get the `STAKING_TOKEN` and `CAKE` rewards
-     * @param amount The number of `STAKING_TOKEN` that he/she wishes to withdraw
+     * @dev We withdraw an `amount` of tokens from the `account` stored in the {CAKE_MASTER_CHEF}.
+     *
+     * @notice The base unit for {totalRewardsPerAmount} is 1e12.
+     * @notice The {user.rewards} is sent to the `account` and not the `recipient`.
+     * During liquidations, the rewards will go to the `account1` that opened the loan, but some of the deposited
+     * tokens will go to the liquidator or the {InterestMarketV1} contract.
+     *
+     * @param account The address that we are withdrawing the {STAKING_TOKEN} from.
+     * @param recipient the address which will get the {STAKING_TOKEN}.
+     * @param amount The number of {STAKING_TOKEN} that will be withdrawn from the `account`.
+     *
+     * Requirements:
+     *
+     * - `account` must have enough tokens in the `user.amount` to withdraw the desited `amount`.
+     *
      */
     function _withdraw(
         address account,
@@ -207,59 +273,67 @@ contract LPVault is Vault {
     ) internal override(Vault) {
         User memory user = userInfo[account];
 
+        // Illogical to allow `amount` to be higher than the amount the `account` has deposited in the contract.
         require(user.amount >= amount, "Vault: not enough tokens");
 
+        // Save storage state in memory to save gas.
         uint256 _totalAmount = totalAmount;
         uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
 
+        // The {Vault} contract ensures that the `amount` is greater than 0.
+        // It also ensured that the {totalAmount} is greater than 0.
+        // We withdraw from the {CAKE_MASTER_CHEF} the desired `amount`.
         _totalRewardsPerAmount += (_withdrawFarm(amount) * 1e12) / _totalAmount;
-        // Collect the current rewards in the `CAKE` pool to properly calculate rewards
+        // Collect the current rewards in the {CAKE} pool to properly update {_totalRewardsPerAmount}.
         _totalRewardsPerAmount += (_unStakeCake(0) * 1e12) / _totalAmount;
 
         // Calculate how many rewards the user is entitled before this deposit
         uint256 rewards = ((_totalRewardsPerAmount * user.amount) / 1e12) -
             user.rewardDebt;
 
+        // Update the state
         _totalAmount -= amount;
         user.amount -= amount;
 
-        // Send all accrued rewards
+        // Add all accrued rewards. As this contract only sends the rewards on withdraw.
         rewards += user.rewards;
 
         // Set rewards to 0
         user.rewards = 0;
 
+        // Get the current {CAKE} balance to make sure we have enough to cover the {CAKE} the rewards.
         uint256 cakeBalance = _getCakeBalance();
 
         if (cakeBalance < rewards) {
-            // Already took the rewards up to this block. So the poo should be empty
+            // Already took the rewards up to this block. So we do not need to update the {_totalRewardsPerAmount}.
             CAKE_MASTER_CHEF.leaveStaking(rewards - cakeBalance);
         }
 
-        // Send the rewards to the account
+        // Send the rewards to the `account`.
         CAKE.safeTransfer(account, rewards);
 
-        // Only restake if there is at least 1 `CAKE` in the contract after sending the rewards
-        // If there are no `STAKING TOKENS` left, we do not need to restake
+        // Only restake if there is at least 1 {CAKE} in the contract after sending the rewards.
+        // If there are no {STAKING TOKENS} left, we do not need to restake. Because it means the vault is empty.
         if (_totalAmount > 0 && _getCakeBalance() >= 1 ether) {
-            // Already took the rewards up to this block. So the poo should be empty
+            // Already took the rewards up to this block. So we do not need to update the {_totalRewardsPerAmount}.
             CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
         }
 
-        // If the Vault still has assets update the state as usual
+        // If the Vault still has assets, we need to update the global  state as usual.
         if (_totalAmount > 0) {
             // Reset totalRewardsPerAmount if the pool is totally empty
             totalRewardsPerAmount = _totalRewardsPerAmount;
             user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
             totalAmount = _totalAmount;
         } else {
-            // If the Vault does not have any `STAKING_TOKEN`, reset the whole state.
+            // If the Vault does not have any {STAKING_TOKEN}, reset the global state.
             totalAmount = 0;
             totalRewardsPerAmount = 0;
             user.rewardDebt = 0;
             user.amount = 0;
         }
 
+        // We always need to update the `account` info.
         userInfo[account] = user;
 
         // Send the underlying token to the recipient
