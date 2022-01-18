@@ -252,11 +252,11 @@ abstract contract Vault is IVault, Ownable {
         uint256 amount
     ) external onlyMarket {
         require(amount > 0, "Vault: no zero amount");
-        require(totalAmount > 0, "Vault: no tokens");
         require(
             account != address(0) && recipient != address(0),
             "Vault: no zero address"
         );
+        require(totalAmount > 0, "Vault: no tokens");
 
         _withdraw(account, recipient, amount);
     }
