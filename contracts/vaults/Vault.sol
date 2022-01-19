@@ -20,7 +20,7 @@ import "../interfaces/IVault.sol";
 
 /**
  * @dev It provides the events, state variables and an interface for the {InterestMarketV1} to interact with the Pancake Swap Master Chef.
- * This can be seen as part of the{InterestMarketV1}.
+ * This can be seen as part of the {InterestMarketV1}.
  *
  * @notice Vault contracts are part of the {InterestMarketV1}. Therefore, they never interact with the end user directly. That is why the {deposit} and {withdraw} functions are guarded by the {onlyMarket} modifier. As security logic sits on the {InterestMarketV1}.
  * @notice contract is not meant to be deployed without a child contract to implement the core logic.
