@@ -90,7 +90,7 @@ describe('CakeVault', () => {
       await masterChef.pendingCake(0, cakeVault.address)
     );
   });
-  it('increases allowance to masterchef for cake', async () => {
+  it('gives full approval to the master chef', async () => {
     await cakeVault.connect(market).deposit(alice.address, parseEther('10'));
 
     // accrue some cake
@@ -109,9 +109,19 @@ describe('CakeVault', () => {
       masterChef.address
     );
 
-    await expect(cakeVault.approve(5))
+    expect(cakeAllowance.lt(ethers.constants.MaxUint256)).to.be.equal(true);
+
+    await expect(cakeVault.approve())
       .to.emit(cake, 'Approval')
-      .withArgs(cakeVault.address, masterChef.address, cakeAllowance.add(5));
+      .withArgs(
+        cakeVault.address,
+        masterChef.address,
+        ethers.constants.MaxUint256
+      );
+
+    expect(
+      await cake.allowance(cakeVault.address, masterChef.address)
+    ).to.be.equal(ethers.constants.MaxUint256);
   });
   it('allows to see how many pending rewards a user has', async () => {
     expect(await cakeVault.getUserPendingRewards(alice.address)).to.be.equal(0);

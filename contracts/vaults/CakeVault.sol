@@ -66,12 +66,16 @@ contract CakeVault is Vault {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev This function will increase the allowance of the {CAKE_MASTER_CHEF} for the {CAKE} token.
+     * @dev It gives maximum allowance to {CAKE_MASTER_CHEF} for {CAKE}.
      *
-     * @param amount The additional number of {CAKE} tokens in the {CAKE_MASTER_CHEF} allowance.
+     * @notice Front-running is not an issue as we trust {CAKE_MASTER_CHEF}. It is an non-upgradeable contract.
      */
-    function approve(uint256 amount) external {
-        CAKE.safeIncreaseAllowance(address(CAKE_MASTER_CHEF), amount);
+    function approve() external {
+        CAKE.safeIncreaseAllowance(
+            address(CAKE_MASTER_CHEF),
+            type(uint256).max -
+                CAKE.allowance(address(this), address(CAKE_MASTER_CHEF))
+        );
     }
 
     /**

@@ -89,17 +89,24 @@ contract LPVault is Vault {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev IT increases the allowance of {CAKE_MASTER_CHEF} for {CAKE} and the {STAKING_TOKEN}.
+     * @dev It gives maximum allowance to {CAKE_MASTER_CHEF} for {CAKE} and the {STAKING_TOKEN}.
      *
-     * @param stakingAmount The number of tokens to increase the allowance of the {CAKE_MASTER_CHEF} for the {STAKING_TOKEN}.
-     * @param cakeAmount The number of tokens to increase the allowance of the {CAKE_MASTER_CHEF} for the {CAKE} token.
+     * @notice Front-running is not an issue as we trust {CAKE_MASTER_CHEF}. It is an non-upgradeable contract.
      */
-    function approve(uint256 stakingAmount, uint256 cakeAmount) external {
+    function approve() external {
         STAKING_TOKEN.safeIncreaseAllowance(
             address(CAKE_MASTER_CHEF),
-            stakingAmount
+            type(uint256).max -
+                STAKING_TOKEN.allowance(
+                    address(this),
+                    address(CAKE_MASTER_CHEF)
+                )
         );
-        CAKE.safeIncreaseAllowance(address(CAKE_MASTER_CHEF), cakeAmount);
+        CAKE.safeIncreaseAllowance(
+            address(CAKE_MASTER_CHEF),
+            type(uint256).max -
+                CAKE.allowance(address(this), address(CAKE_MASTER_CHEF))
+        );
     }
 
     /**
