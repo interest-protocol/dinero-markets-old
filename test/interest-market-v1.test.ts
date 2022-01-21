@@ -203,7 +203,7 @@ describe('InterestMarketV1', () => {
       governor.predictMarketAddress(masterMarket.address, keccak256(data)),
       governor
         .connect(owner)
-        .createMarket(masterMarket.address, cake.address, data),
+        .createDineroMarket(masterMarket.address, cake.address, data),
     ]);
 
     cakeMarket = (await ethers.getContractFactory('InterestMarketV1')).attach(
@@ -242,7 +242,7 @@ describe('InterestMarketV1', () => {
       await expect(
         governor
           .connect(owner)
-          .createMarket(masterMarket.address, cake.address, data)
+          .createDineroMarket(masterMarket.address, cake.address, data)
       ).to.revertedWith('MKT: no zero address');
     });
     it('reverts if the maxLTVRatio is out of bounds', async () => {
@@ -271,13 +271,13 @@ describe('InterestMarketV1', () => {
       await expect(
         governor
           .connect(owner)
-          .createMarket(masterMarket.address, cake.address, data)
+          .createDineroMarket(masterMarket.address, cake.address, data)
       ).to.revertedWith('MKT: ltc ratio out of bounds');
 
       await expect(
         governor
           .connect(owner)
-          .createMarket(masterMarket.address, cake.address, data2)
+          .createDineroMarket(masterMarket.address, cake.address, data2)
       ).to.revertedWith('MKT: ltc ratio out of bounds');
     });
   });
@@ -486,7 +486,7 @@ describe('InterestMarketV1', () => {
         governor.predictMarketAddress(masterMarket.address, keccak256(data)),
         governor
           .connect(owner)
-          .createMarket(masterMarket.address, cake.address, data),
+          .createDineroMarket(masterMarket.address, cake.address, data),
       ]);
 
       const cakeMarket2 = (
@@ -617,7 +617,7 @@ describe('InterestMarketV1', () => {
         governor.predictMarketAddress(masterMarket.address, keccak256(data)),
         governor
           .connect(owner)
-          .createMarket(masterMarket.address, cake.address, data),
+          .createDineroMarket(masterMarket.address, cake.address, data),
       ]);
 
       const cakeMarket2 = (
@@ -969,7 +969,7 @@ describe('InterestMarketV1', () => {
         governor.predictMarketAddress(masterMarket.address, keccak256(data)),
         governor
           .connect(owner)
-          .createMarket(masterMarket.address, cake.address, data),
+          .createDineroMarket(masterMarket.address, cake.address, data),
       ]);
 
       const cakeMarket2 = (

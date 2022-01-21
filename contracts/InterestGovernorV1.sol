@@ -44,11 +44,13 @@ contract InterestGovernorV1 is Ownable {
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event MarketCreated(
+    event DineroMarketCreated(
         address indexed collateralToken,
         address indexed market,
         uint256 id
     );
+
+    event DineroMarketAdded(address indexed market, uint256 id);
 
     event StakerUpdated(address indexed market, address indexed staker);
 
@@ -71,11 +73,14 @@ contract InterestGovernorV1 is Ownable {
     address public feeTo;
 
     /**
-     *  @notice stores all markets created by this contract.
+     *  @notice stores all dinero markets.
      */
-    address[] public allMarkets;
+    address[] public allDineroMarkets;
 
-    mapping(address => bool) public isMarket;
+    /**
+     * @notice Quick way to verify if a market is Dinero roles.
+     */
+    mapping(address => bool) public isDineroMarket;
 
     /*///////////////////////////////////////////////////////////////
                             CONSTRUCTOR
@@ -93,10 +98,10 @@ contract InterestGovernorV1 is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @return The number of markets created by this factory.
+     * @return The number of all dinero markets.
      */
-    function getAllMarketsLength() external view returns (uint256) {
-        return allMarkets.length;
+    function getAllDineroMarketsLength() external view returns (uint256) {
+        return allDineroMarkets.length;
     }
 
     /**
@@ -112,6 +117,22 @@ contract InterestGovernorV1 is Ownable {
         returns (address)
     {
         return Clones.predictDeterministicAddress(masterMarketContract, salt);
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                            PRIVATE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev A helper function to add {DINERO} roles to a market.
+     *
+     * @param market The address of the market that will get the roles.
+     */
+    function _grantDineroRoles(address market) private {
+        DINERO.grantRole(DINERO.MINTER_ROLE(), market);
+        DINERO.grantRole(DINERO.BURNER_ROLE(), market);
+        isDineroMarket[market] = true;
+        allDineroMarkets.push(market);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -137,6 +158,8 @@ contract InterestGovernorV1 is Ownable {
     /**
      * @dev This function allows for the creation of new markets via cloning using a master contract for gas optimization.
      *
+     * @notice It gives minting and burning power to the clones.
+     *
      * @param masterMarketContract The master implementation of a market contract.
      * @param collateralToken The {ERC20} that this market will support.
      * @param data The data required to initialize the clone contract.
@@ -146,7 +169,7 @@ contract InterestGovernorV1 is Ownable {
      * - It is guarded by the modifier {onlyOwner} to make sure that only secure markets have power to mint and burn Dinero.
      *
      */
-    function createMarket(
+    function createDineroMarket(
         address masterMarketContract,
         address collateralToken,
         bytes calldata data
@@ -160,12 +183,30 @@ contract InterestGovernorV1 is Ownable {
 
         InterestMarketV1(market).initialize(data);
 
-        DINERO.grantRole(DINERO.MINTER_ROLE(), market);
-        DINERO.grantRole(DINERO.BURNER_ROLE(), market);
-        isMarket[market] = true;
-        allMarkets.push(market);
+        _grantDineroRoles(market);
 
-        emit MarketCreated(collateralToken, market, allMarkets.length - 1);
+        emit DineroMarketCreated(
+            collateralToken,
+            market,
+            allDineroMarkets.length - 1
+        );
+    }
+
+    /**
+     * @dev It grants the {DINERO} roles to an already deployed market.
+     *
+     * @param market Address that will be granted both {DINERO} roles.
+     *
+     * Requirements:
+     *
+     * - caller must be the {owner} due to the immense power the roles have over the protocol.
+     */
+    function addDineroMarket(address market) external onlyOwner {
+        require(market != address(0), "IFV1: not zero address");
+
+        _grantDineroRoles(market);
+
+        emit DineroMarketAdded(market, allDineroMarkets.length - 1);
     }
 
     /**
@@ -199,7 +240,7 @@ contract InterestGovernorV1 is Ownable {
      *
      */
     function openMarket(address market) external onlyOwner {
-        require(isMarket[market], "IFV1: not a market");
+        require(isDineroMarket[market], "IFV1: not a dinero market");
         DINERO.grantRole(DINERO.MINTER_ROLE(), market);
         emit OpenMarket(market);
     }

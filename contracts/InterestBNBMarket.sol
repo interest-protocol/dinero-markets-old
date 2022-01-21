@@ -422,6 +422,7 @@ contract InterestBNBMarketV1 is Context {
 
     /**
      * @dev This function closes underwater positions. It charges the borrower a fee and rewards the liquidator for keeping the integrity of the protocol
+     *
      * @notice Liquidator can use collateral to close the position or must have enough dinero in this account.
      * @notice Liquidators can only close a portion of an underwater position.
      * @notice {liquidationFee} has a base unit of 6.
