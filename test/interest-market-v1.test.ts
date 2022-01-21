@@ -227,8 +227,61 @@ describe('InterestMarketV1', () => {
         cakeMarket.initialize(defaultAbiCoder.encode(['string'], ['random']))
       ).to.revertedWith('Initializable: contract is already initialized');
     });
+    it('reverts if the collateral is the zero address', async () => {
+      const data = defaultAbiCoder.encode(
+        ['address', 'address', 'uint64', 'uint256', 'uint256'],
+        [
+          ethers.constants.AddressZero,
+          ethers.constants.AddressZero,
+          ethers.BigNumber.from(12e8),
+          ethers.BigNumber.from(5e5),
+          ethers.BigNumber.from(10e4),
+        ]
+      );
+
+      await expect(
+        governor
+          .connect(owner)
+          .createMarket(masterMarket.address, cake.address, data)
+      ).to.revertedWith('MKT: no zero address');
+    });
+    it('reverts if the maxLTVRatio is out of bounds', async () => {
+      const data = defaultAbiCoder.encode(
+        ['address', 'address', 'uint64', 'uint256', 'uint256'],
+        [
+          cake.address,
+          ethers.constants.AddressZero,
+          ethers.BigNumber.from(12e8),
+          ethers.BigNumber.from(4e5),
+          ethers.BigNumber.from(10e4),
+        ]
+      );
+
+      const data2 = defaultAbiCoder.encode(
+        ['address', 'address', 'uint64', 'uint256', 'uint256'],
+        [
+          cake.address,
+          ethers.constants.AddressZero,
+          ethers.BigNumber.from(12e8),
+          ethers.BigNumber.from(91e4),
+          ethers.BigNumber.from(10e4),
+        ]
+      );
+
+      await expect(
+        governor
+          .connect(owner)
+          .createMarket(masterMarket.address, cake.address, data)
+      ).to.revertedWith('MKT: ltc ratio out of bounds');
+
+      await expect(
+        governor
+          .connect(owner)
+          .createMarket(masterMarket.address, cake.address, data2)
+      ).to.revertedWith('MKT: ltc ratio out of bounds');
+    });
   });
-  it('allows the router allowance to be incremented', async () => {
+  it('allows the router allowance to be maxed out', async () => {
     await cakeMarket.connect(alice).addCollateral(parseEther('51'));
 
     // We need to borrow and then liquidate in order to use some of router allowance to increase it
@@ -251,13 +304,20 @@ describe('InterestMarketV1', () => {
       router.address
     );
 
-    await expect(cakeMarket.approve(5))
+    // Make sure that current allowance is not maxed out
+    expect(ethers.constants.MaxUint256.gt(currentAllowance)).to.be.equal(true);
+
+    await expect(cakeMarket.approve())
       .to.emit(cake, 'Approval')
-      .withArgs(cakeMarket.address, router.address, currentAllowance.add(5));
+      .withArgs(
+        cakeMarket.address,
+        router.address,
+        ethers.constants.MaxUint256
+      );
 
     expect(
       await cake.allowance(cakeMarket.address, router.address)
-    ).to.be.equal(currentAllowance.add(5));
+    ).to.be.equal(ethers.constants.MaxUint256);
   });
   it('sends the feesEarned to the treasury', async () => {
     // Add 50 CAKE as collateral
@@ -336,31 +396,40 @@ describe('InterestMarketV1', () => {
       );
     });
   });
-  it('updates the exchange rate', async () => {
-    expect(await cakeMarket.exchangeRate()).to.be.equal(
-      CAKE_USD_PRICE.mul(1e10)
-    );
+  describe('function: updateExchangeRate', () => {
+    it('reverts if the exchange rate is 0', async () => {
+      await mockCakeUsdFeed.setAnswer(0);
+      await expect(cakeMarket.updateExchangeRate()).to.revertedWith(
+        'MKT: invalid exchange rate'
+      );
+    });
+    it('updates the exchange rate', async () => {
+      expect(await cakeMarket.exchangeRate()).to.be.equal(
+        CAKE_USD_PRICE.mul(1e10)
+      );
 
-    await expect(cakeMarket.updateExchangeRate()).to.not.emit(
-      cakeMarket,
-      'ExchangeRate'
-    );
+      await expect(cakeMarket.updateExchangeRate()).to.not.emit(
+        cakeMarket,
+        'ExchangeRate'
+      );
 
-    expect(await cakeMarket.exchangeRate()).to.be.equal(
-      CAKE_USD_PRICE.mul(1e10)
-    );
+      expect(await cakeMarket.exchangeRate()).to.be.equal(
+        CAKE_USD_PRICE.mul(1e10)
+      );
 
-    // Update the exchange rate
-    await mockCakeUsdFeed.setAnswer(ethers.BigNumber.from('1500000000'));
+      // Update the exchange rate
+      await mockCakeUsdFeed.setAnswer(ethers.BigNumber.from('1500000000'));
 
-    await expect(cakeMarket.updateExchangeRate())
-      .to.emit(cakeMarket, 'ExchangeRate')
-      .withArgs(ethers.BigNumber.from('1500000000').mul(1e10));
+      await expect(cakeMarket.updateExchangeRate())
+        .to.emit(cakeMarket, 'ExchangeRate')
+        .withArgs(ethers.BigNumber.from('1500000000').mul(1e10));
 
-    expect(await cakeMarket.exchangeRate()).to.be.equal(
-      ethers.BigNumber.from('1500000000').mul(1e10)
-    );
+      expect(await cakeMarket.exchangeRate()).to.be.equal(
+        ethers.BigNumber.from('1500000000').mul(1e10)
+      );
+    });
   });
+
   describe('function: addCollateral', () => {
     it('accepts collateral and deposits to the vault', async () => {
       expect(await cakeMarket.totalCollateral()).to.be.equal(0);
@@ -620,29 +689,29 @@ describe('InterestMarketV1', () => {
       );
     });
   });
-  describe('function: setCollateralRatio', () => {
+  describe('function: setMaxLTVRatio', () => {
     it('reverts if it is not called by the owner', async () => {
-      await expect(
-        cakeMarket.connect(alice).setCollateralRatio(0)
-      ).to.revertedWith('MKT: caller is not the owner');
+      await expect(cakeMarket.connect(alice).setMaxLTVRatio(0)).to.revertedWith(
+        'MKT: caller is not the owner'
+      );
     });
     it('reverts if we set a collateral higher than 9e5', async () => {
       await expect(
         cakeMarket
           .connect(owner)
-          .setCollateralRatio(ethers.BigNumber.from(9e5).add(1))
+          .setMaxLTVRatio(ethers.BigNumber.from(9e5).add(1))
       ).to.revertedWith('MKT: too high');
     });
-    it('updates the collateralRatio', async () => {
-      expect(await cakeMarket.collateralRatio()).to.be.equal(
+    it('updates the max tvl ratio', async () => {
+      expect(await cakeMarket.maxLTVRatio()).to.be.equal(
         ethers.BigNumber.from(5e5)
       );
 
       await cakeMarket
         .connect(owner)
-        .setCollateralRatio(ethers.BigNumber.from(9e5));
+        .setMaxLTVRatio(ethers.BigNumber.from(9e5));
 
-      expect(await cakeMarket.collateralRatio()).to.be.equal(
+      expect(await cakeMarket.maxLTVRatio()).to.be.equal(
         ethers.BigNumber.from(9e5)
       );
     });

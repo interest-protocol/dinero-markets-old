@@ -216,10 +216,47 @@ describe('InterestGovernorV1', () => {
       expect(await marketContract.initialized()).to.be.equal(true);
     });
   });
-  describe('function: close Market', () => {
+  describe('function: open market', () => {
     it('reverts if it is not called by the owner', async () => {
       await expect(
         interestGovernorV1.connect(alice).openMarket(unregisteredMarketAddress)
+      ).to.revertedWith('Ownable: caller is not the owner');
+    });
+    it('reverts if you pass a non registered market', async () => {
+      await expect(
+        interestGovernorV1.connect(owner).openMarket(alice.address)
+      ).to.revertedWith('IFV1: not a market');
+    });
+    it('opens a market after being closed', async () => {
+      await interestGovernorV1
+        .connect(owner)
+        .createMarket(
+          mockInterestMarketV1.address,
+          stakerContractAddress,
+          makeData('data1')
+        );
+
+      const marketClone = await interestGovernorV1.allMarkets(0);
+
+      await interestGovernorV1.connect(owner).closeMarket(marketClone);
+
+      expect(
+        await dinero.hasRole(await dinero.MINTER_ROLE(), marketClone)
+      ).to.be.equal(false);
+
+      await expect(interestGovernorV1.connect(owner).openMarket(marketClone))
+        .to.emit(interestGovernorV1, 'OpenMarket')
+        .withArgs(marketClone);
+
+      expect(
+        await dinero.hasRole(await dinero.MINTER_ROLE(), marketClone)
+      ).to.be.equal(true);
+    });
+  });
+  describe('function: close Market', () => {
+    it('reverts if it is not called by the owner', async () => {
+      await expect(
+        interestGovernorV1.connect(alice).closeMarket(unregisteredMarketAddress)
       ).to.revertedWith('Ownable: caller is not the owner');
     });
     it('closes a market, removing the MINTER_ROLE', async () => {
@@ -247,38 +284,6 @@ describe('InterestGovernorV1', () => {
 
       expect(
         await dinero.hasRole(await dinero.BURNER_ROLE(), marketClone)
-      ).to.be.equal(true);
-    });
-  });
-  describe('function: close Market', () => {
-    it('reverts if it is not called by the owner', async () => {
-      await expect(
-        interestGovernorV1.connect(alice).closeMarket(unregisteredMarketAddress)
-      ).to.revertedWith('Ownable: caller is not the owner');
-    });
-    it('opens a market after being closed', async () => {
-      await interestGovernorV1
-        .connect(owner)
-        .createMarket(
-          mockInterestMarketV1.address,
-          stakerContractAddress,
-          makeData('data1')
-        );
-
-      const marketClone = await interestGovernorV1.allMarkets(0);
-
-      await interestGovernorV1.connect(owner).closeMarket(marketClone);
-
-      expect(
-        await dinero.hasRole(await dinero.MINTER_ROLE(), marketClone)
-      ).to.be.equal(false);
-
-      await expect(interestGovernorV1.connect(owner).openMarket(marketClone))
-        .to.emit(interestGovernorV1, 'OpenMarket')
-        .withArgs(marketClone);
-
-      expect(
-        await dinero.hasRole(await dinero.MINTER_ROLE(), marketClone)
       ).to.be.equal(true);
     });
   });
