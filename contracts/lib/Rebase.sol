@@ -8,15 +8,29 @@ struct Rebase {
     uint128 base;
 }
 
-// Thank you for this~
+/**
+ *
+ * @dev This library provides a collection of functions to manipulate a base and elastic values saved in a Rebase struct.
+ * In a pool context, the base represents the amount of tokens deposited or withdrawn from an investor.
+ * The elastic value represents how the pool tokens performed over time by incurring losses or profits.
+ * With this library, one can easily calculate how much loss or profit each investor incurred based on their tokens
+ * invested.
+ *
+ * @notice We use the {SafeCast} Open Zeppelin library for safely converting from uint256 to uint128 memory storage efficiency.
+ * Therefore, it is important to keep in mind of the upperbound limit number this library supports.
+ *
+ */
 library RebaseLibrary {
     using SafeCast for uint256;
 
-    /*@dev calculates a new base based on a new elastic keeping the ratio from a base/elastic pair
-     *@param total -> Rebase struct which represents a base/elastic pair
-     *@param elastic -> the new elastic in which the new base will be based on
-     *@param roundUp -> rounding logic due to solidity always rounding down
-     *@returns base -> the new calculated base
+    /**
+     * @dev Calculates a base value from an elastic value using the ratio of a {Rebase} struct.
+     *
+     * @param total {Rebase} struct, which represents a base/elastic pair.
+     * @param elastic The new base is calculated from this elastic.
+     * @param roundUp Rounding logic due to solidity always rounding down.
+     * @return base The calculated base.
+     *
      */
     function toBase(
         Rebase memory total,
@@ -33,11 +47,14 @@ library RebaseLibrary {
         }
     }
 
-    /*@dev calculates a new elastic based on a new base keeping the ratio from a base/elastic pair
-     *@param total -> Rebase struct which represents a base/elastic pair
-     *@param base -> the new base in which the new elastic will be based on
-     *@param roundUp -> rounding logic due to solidity always rounding down
-     *@returns elastic -> the new calculated elastic
+    /**
+     * @dev Calculates the elastic value from a base value using the ratio of a {Rebase} struct.
+     *
+     * @param total {Rebase} struct, which represents a base/elastic pair.
+     * @param base The new base, which the new elastic will be calculated from.
+     * @param roundUp Rounding logic due to solidity always rounding down.
+     * @return elastic The calculated elastic.
+     *
      */
     function toElastic(
         Rebase memory total,
@@ -54,11 +71,16 @@ library RebaseLibrary {
         }
     }
 
-    /*@dev calculates new values to a Rebase pair by adding a new elastic, this function maintains the ratio of the current pair
-     *@param total -> Rebase struct which represents a base/elastic pair
-     *@param elastic -> the new elastic to be added to the  pair and be used to find the how much base to substract
-     *@param roundUp -> rounding logic due to solidity always rounding down
-     *@returns (total, base) -> pair of the new Rebase pair values and the added base value
+    /**
+     * @dev Calculates new values to a {Rebase} pair by incrementing the elastic value.
+     * This function maintains the ratio of the current pair.
+     *
+     * @param total {Rebase} struct which represents a base/elastic pair.
+     * @param elastic The new elastic to be added to the pair.
+     * A new base will be calculated based on the new elastic using {toBase} function.
+     * @param roundUp Rounding logic due to solidity always rounding down.
+     * @return (total, base) A pair of the new {Rebase} pair values and new calculated base.
+     *
      */
     function add(
         Rebase memory total,
@@ -71,11 +93,16 @@ library RebaseLibrary {
         return (total, base);
     }
 
-    /*@dev calculates new values to a Rebase pair by subtracting a new base, this function maintains the ratio of the current pair
-     *@param total -> Rebase struct which represents a base/elastic pair
-     *@param base -> the base to be subtracted to the pair and be used to find how much elastic to subtract
-     *@param roundUp -> rounding logic due to solidity always rounding down
-     *@returns (total, elastic) -> pair of the new Rebase pair values and the how much elastic was removed from the total
+    /**
+     * @dev Calculates new values to a {Rebase} pair by reducing the base.
+     * This function maintains the ratio of the current pair.
+     *
+     * @param total {Rebase} struct, which represents a base/elastic pair.
+     * @param base The number to be subtracted from the base.
+     * The new elastic will be calculated based on the new base value via the {toElastic} function.
+     * @param roundUp Rounding logic due to solidity always rounding down.
+     * @return (total, elastic) A pair of the new {Rebase} pair values and the new elastic based on the updated base.
+     *
      */
     function sub(
         Rebase memory total,
@@ -88,11 +115,14 @@ library RebaseLibrary {
         return (total, elastic);
     }
 
-    /*@dev add base and elastic to a Rebase pair changing the ratio
-     *@param total -> Rebase struct which represents a base/elastic pair
-     *@param base -> the base to be added
-     *@param elastic -> the elastic to be added
-     *@returns total -> new Rebase pair modified with the addition of the base and elastic
+    /**
+     * @dev Increases the base and elastic from a {Rebase} pair without keeping a specific ratio.
+     *
+     * @param total {Rebase} struct which represents a base/elastic pair that will be updated.
+     * @param base The value to be added to the `total.base`.
+     * @param elastic The value to be added to the `total.elastic`.
+     * @return total The new {Rebase} pair calculated by adding the `base` and `elastic` values.
+     *
      */
     function add(
         Rebase memory total,
@@ -104,11 +134,14 @@ library RebaseLibrary {
         return total;
     }
 
-    /*@dev substracts base and elastic to a Rebase pair changing the ratio
-     *@param total -> Rebase struct which represents a base/elastic pair
-     *@param base -> the base to be substracted
-     *@param elastic -> the elastic to be substracted
-     *@returns total -> new Rebase pair modified with the addition of the base and elastic
+    /**
+     * @dev Decreases the base and elastic from a {Rebase} pair without keeping a specific ratio.
+     *
+     * @param total The base/elastic pair that will be updated.
+     * @param base The value to be decreased from the `total.base`.
+     * @param elastic The value to be decreased from the `total.elastic`.
+     * @return total The new {Rebase} calculated by decreasing the base and pair from `total`.
+     *
      */
     function sub(
         Rebase memory total,
@@ -120,11 +153,15 @@ library RebaseLibrary {
         return total;
     }
 
-    /*@dev adds elastic to a Rebase pair
-     *@important THIS UPDATES THE STORAGE OF THE CALLING CONTRACT (total)
-     *@param total -> Rebase struct which represents a base/elastic pair, it will be updated
-     *@param elastic -> the base to be added
-     *@returns total -> new Rebase pair modified with the addition of the base and elastic
+    /**
+     * @dev Adds elastic to a {Rebase} pair.
+     *
+     * @notice The `total` parameter is saved in storage. This will update the global state of the caller contract.
+     *
+     * @param total The {Rebase} struct, which will have its' elastic increased.
+     * @param elastic The value to be added to the elastic of `total`.
+     * @return newElastic The new elastic value after reducing `elastic` from `total.elastic`.
+     *
      */
     function addElastic(Rebase storage total, uint256 elastic)
         internal
@@ -133,11 +170,15 @@ library RebaseLibrary {
         newElastic = total.elastic += elastic.toUint128();
     }
 
-    /*@dev subtracts elastic to a Rebase pair
-     *@important THIS UPDATES THE STORAGE OF THE CALLING CONTRACT (total)
-     *@param total -> Rebase struct which represents a base/elastic pair, it will be updated
-     *@param elastic -> the base to be substracted
-     *@returns total -> new Rebase pair modified with the addition of the base and elastic
+    /**
+     * @dev Reduces the elastic of a {Rebase} pair.
+     *
+     * @notice The `total` parameter is saved in storage. The caller contract will have its' storage updated.
+     *
+     * @param total The {Rebase} struct to be updated.
+     * @param elastic The value to be removed from the `total` elastic.
+     * @return newElastic The new elastic after decreasing `elastic` from `total.elastic`.
+     *
      */
     function subElastic(Rebase storage total, uint256 elastic)
         internal

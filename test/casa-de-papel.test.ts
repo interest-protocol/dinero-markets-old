@@ -367,10 +367,27 @@ describe('Case de Papel', () => {
   describe('function: unstake', () => {
     it('reverts if the user tries to withdraw more than he deposited', async () => {
       await casaDePapel.connect(alice).stake(parseEther('1'));
-      await expect(casaDePapel.unstake(parseEther('1.1'))).to.revertedWith(
-        'CP: not enough tokens'
-      );
+      await expect(
+        casaDePapel
+          .connect(alice)
+          .unstake(alice.address, alice.address, parseEther('1.1'))
+      ).to.revertedWith('CP: not enough tokens');
     });
+    it('reverts if the account is not the msg.sender and does not have max uint256 allowance', async () => {
+      await casaDePapel.connect(alice).stake(parseEther('10'));
+
+      await expect(
+        casaDePapel.connect(jose).unstake(alice.address, jose.address, 1)
+      ).to.revertedWith('CP: no max allowance');
+
+      await interestToken
+        .connect(alice)
+        .approve(jose.address, parseEther('999999999'));
+      await expect(
+        casaDePapel.connect(jose).unstake(alice.address, alice.address, 1)
+      ).to.revertedWith('CP: no max allowance');
+    });
+
     it('returns only the rewards if the user chooses to', async () => {
       await casaDePapel.connect(alice).stake(parseEther('10'));
 
@@ -383,9 +400,11 @@ describe('Case de Papel', () => {
         casaDePapel.pools(0),
       ]);
 
-      await expect(casaDePapel.connect(alice).unstake(0))
+      await expect(
+        casaDePapel.connect(alice).unstake(alice.address, alice.address, 0)
+      )
         .to.emit(casaDePapel, 'Withdraw')
-        .withArgs(alice.address, 0, 0);
+        .withArgs(alice.address, alice.address, 0, 0);
 
       const [user1, pool1] = await Promise.all([
         casaDePapel.userInfo(0, alice.address),
@@ -412,6 +431,58 @@ describe('Case de Papel', () => {
         parseEther('10')
       );
     });
+    it('allows an user with max allowance to withdraw in behalf of an account', async () => {
+      await casaDePapel.connect(alice).stake(parseEther('10'));
+      // Mint some blocks to accrue rewards
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      await sInterestToken
+        .connect(alice)
+        .transfer(jose.address, parseEther('10'));
+
+      const [user, sInterestTokenBalance] = await Promise.all([
+        casaDePapel.userInfo(0, alice.address),
+        sInterestToken.balanceOf(jose.address),
+        interestToken
+          .connect(alice)
+          .approve(jose.address, constants.MaxUint256),
+      ]);
+
+      await expect(
+        casaDePapel
+          .connect(jose)
+          .unstake(alice.address, jose.address, parseEther('4'))
+      )
+        .to.emit(casaDePapel, 'Withdraw')
+        .withArgs(alice.address, jose.address, 0, parseEther('4'));
+
+      const [user1, pool] = await Promise.all([
+        casaDePapel.userInfo(0, alice.address),
+        casaDePapel.pools(0),
+      ]);
+
+      expect(user.rewardsPaid).to.be.equal(0);
+      expect(sInterestTokenBalance).to.be.equal(parseEther('10'));
+      expect(await sInterestToken.balanceOf(jose.address)).to.be.equal(
+        parseEther('6')
+      );
+      expect(user1.amount).to.be.equal(parseEther('6'));
+      expect(pool.totalSupply).to.be.equal(parseEther('6'));
+      // Only one user so he was paid all rewards
+      expect(user1.rewardsPaid).to.be.equal(
+        // accruedIntPerShare has more decimal houses for precision
+        pool.accruedIntPerShare.mul(pool.totalSupply).div(1e12)
+      );
+      expect(await interestToken.balanceOf(jose.address)).to.be.equal(
+        calculateUserPendingRewards(
+          parseEther('10'),
+          pool.accruedIntPerShare,
+          BigNumber.from(0)
+          // Amount he just unstaked
+        ).add(parseEther('4'))
+      );
+    });
     it('returns the rewards and the amounts', async () => {
       await casaDePapel.connect(alice).stake(parseEther('10'));
       // Spend some blocks to accrue rewards
@@ -423,9 +494,13 @@ describe('Case de Papel', () => {
         sInterestToken.balanceOf(alice.address),
       ]);
 
-      await expect(casaDePapel.connect(alice).unstake(parseEther('4')))
+      await expect(
+        casaDePapel
+          .connect(alice)
+          .unstake(alice.address, alice.address, parseEther('4'))
+      )
         .to.emit(casaDePapel, 'Withdraw')
-        .withArgs(alice.address, 0, parseEther('4'));
+        .withArgs(alice.address, alice.address, 0, parseEther('4'));
 
       const [user1, pool] = await Promise.all([
         casaDePapel.userInfo(0, alice.address),
@@ -454,87 +529,7 @@ describe('Case de Papel', () => {
       );
     });
   });
-  describe('function: liquidate', () => {
-    it('reverts if the from did not authorize the msg sender', async () => {
-      await expect(
-        casaDePapel.connect(alice).liquidate(bob.address, parseEther('1'))
-      ).to.revertedWith('CP: no permission');
-    });
-    it('reverts if the msg sender does not pass an amount greater than 0', async () => {
-      await expect(
-        casaDePapel.connect(alice).liquidate(bob.address, 0)
-      ).to.revertedWith('CP: no 0 amount');
-    });
-    it('reverts if the user does not have enough tokens to transfer', async () => {
-      await casaDePapel.connect(bob).givePermission(alice.address);
-      await expect(
-        casaDePapel.connect(alice).liquidate(bob.address, parseEther('1'))
-      ).to.revertedWith('CP: not enough tokens');
-    });
-    it('reverts if the msg.sender does not have enough staked interest tokens', async () => {
-      await Promise.all([
-        casaDePapel.connect(bob).givePermission(alice.address),
-        casaDePapel.connect(bob).stake(parseEther('10')),
-      ]);
 
-      await expect(
-        casaDePapel.connect(alice).liquidate(bob.address, parseEther('10'))
-      ).to.revertedWith('ERC20: burn amount exceeds balance');
-    });
-    it('liquidates the debtor returning the rewards and Int to the msg.sender', async () => {
-      await casaDePapel.connect(alice).stake(parseEther('10'));
-      await Promise.all([
-        sInterestToken.connect(alice).transfer(jose.address, parseEther('10')),
-        casaDePapel.connect(alice).givePermission(jose.address),
-      ]);
-
-      const [aliceInfo, joseInfo, pool, joseIntBalance] = await Promise.all([
-        casaDePapel.userInfo(0, alice.address),
-        casaDePapel.userInfo(0, jose.address),
-        casaDePapel.pools(0),
-        interestToken.balanceOf(jose.address),
-      ]);
-
-      expect(aliceInfo.rewardsPaid).to.be.equal(0);
-      expect(aliceInfo.amount).to.be.equal(parseEther('10'));
-      expect(joseInfo.rewardsPaid).to.be.equal(0);
-      expect(joseInfo.amount).to.be.equal(0);
-      expect(joseIntBalance).to.be.equal(0);
-      expect(pool.totalSupply).to.be.equal(parseEther('10'));
-
-      await expect(
-        casaDePapel.connect(jose).liquidate(alice.address, parseEther('10'))
-      )
-        .to.emit(casaDePapel, 'Liquidate')
-        .withArgs(jose.address, alice.address, parseEther('10'));
-
-      const [aliceInfo1, joseInfo1, pool1, joseIntBalance1, joseSIntBalance] =
-        await Promise.all([
-          casaDePapel.userInfo(0, alice.address),
-          casaDePapel.userInfo(0, jose.address),
-          casaDePapel.pools(0),
-          interestToken.balanceOf(jose.address),
-          sInterestToken.balanceOf(jose.address),
-        ]);
-      expect(pool1.totalSupply).to.be.equal(0);
-      // Alice lost her rewards
-      expect(aliceInfo1.rewardsPaid).to.be.equal(0);
-      // Alice no longer has any staked tokens
-      expect(aliceInfo1.amount).to.be.equal(0);
-      expect(joseSIntBalance).to.be.equal(0);
-      // Liquidator never staked or got rewards so his profile remains unchanged
-      expect(joseInfo1.rewardsPaid).to.be.equal(0);
-      expect(joseInfo.amount).to.be.equal(0);
-      // Liquidator gets Alice staked tokens + rewards
-      expect(joseIntBalance1).to.be.equal(
-        calculateUserPendingRewards(
-          parseEther('10'),
-          pool1.accruedIntPerShare,
-          BigNumber.from(0)
-        ).add(parseEther('10'))
-      );
-    });
-  });
   describe('function: emergencyWithdraw', () => {
     it('allows a user to withdraw tokens from a pool without getting any rewards', async () => {
       await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
@@ -736,7 +731,7 @@ describe('Case de Papel', () => {
   describe('function: withdraw', () => {
     it('reverts if  you try to withdraw from pool 0', async () => {
       await expect(casaDePapel.connect(alice).withdraw(0, 1)).to.revertedWith(
-        'CP: not allowed'
+        'CP: use the unstake function'
       );
     });
     it('reverts if the user tries to withdraw more than what he has deposited', async () => {
@@ -763,7 +758,7 @@ describe('Case de Papel', () => {
 
       await expect(casaDePapel.connect(alice).withdraw(1, 0))
         .to.emit(casaDePapel, 'Withdraw')
-        .withArgs(alice.address, 1, 0);
+        .withArgs(alice.address, alice.address, 1, 0);
 
       const [pool1, user1, balance1] = await Promise.all([
         casaDePapel.pools(1),
@@ -804,7 +799,7 @@ describe('Case de Papel', () => {
 
       await expect(casaDePapel.connect(alice).withdraw(1, parseEther('3')))
         .to.emit(casaDePapel, 'Withdraw')
-        .withArgs(alice.address, 1, parseEther('3'));
+        .withArgs(alice.address, alice.address, 1, parseEther('3'));
 
       const [pool1, user1, balance1, lpBalance1] = await Promise.all([
         casaDePapel.pools(1),
@@ -829,7 +824,7 @@ describe('Case de Papel', () => {
   describe('function: deposit', () => {
     it('reverts if the user tries to deposit to the pool 0', async () => {
       await expect(casaDePapel.connect(alice).deposit(0, 1)).to.revertedWith(
-        'CP: not allowed'
+        'CP: use the staking function'
       );
     });
     it('allows the user to only get the rewards', async () => {
@@ -1031,30 +1026,5 @@ describe('Case de Papel', () => {
         pool2.totalSupply
       )
     );
-  });
-  it('allows a user to give and revoke permission', async () => {
-    expect(
-      await casaDePapel.permission(alice.address, bob.address)
-    ).to.be.equal(false);
-
-    await expect(
-      casaDePapel.connect(alice).givePermission(constants.AddressZero)
-    ).to.revertedWith('CP: zero address');
-
-    await casaDePapel.connect(alice).givePermission(bob.address);
-
-    expect(
-      await casaDePapel.permission(alice.address, bob.address)
-    ).to.be.equal(true);
-
-    await expect(
-      casaDePapel.connect(alice).revokePermission(constants.AddressZero)
-    ).to.revertedWith('CP: zero address');
-
-    await casaDePapel.connect(alice).revokePermission(bob.address);
-
-    expect(
-      await casaDePapel.permission(alice.address, bob.address)
-    ).to.be.equal(false);
   });
 });

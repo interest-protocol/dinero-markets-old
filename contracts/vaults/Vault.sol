@@ -19,11 +19,19 @@ import "../interfaces/IMasterChef.sol";
 import "../interfaces/IVault.sol";
 
 /**
- * @dev This contract is not meant to be deployed without a child contract to implement the core logic.
- * It relies on all it's virtual functions to be overriden to have any use!
+ * @dev It provides the events, state variables and an interface for the {InterestMarketV1} to interact with the Pancake Swap Master Chef.
+ * This can be seen as part of the {InterestMarketV1}.
+ *
+ * @notice Vault contracts are part of the {InterestMarketV1}. Therefore, they never interact with the end user directly. That is why the {deposit} and {withdraw} functions are guarded by the {onlyMarket} modifier. As security logic sits on the {InterestMarketV1}.
+ * @notice contract is not meant to be deployed without a child contract to implement the core logic.
+ * @notice It relies on all it's virtual functions to be overriden to have any use!
+ * @notice It is meant to work with the {CAKE_MASTER_CHEF} deployed at 0x73feaa1eE314F8c655E354234017bE2193C9E24E.
+ * @notice It is meant to be used only with tokens supported by tge {CAKE_MASTER_CHEF}.
  */
 abstract contract Vault is IVault, Ownable {
-    /****************************  EVENTS ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
 
     event Deposit(address indexed account, uint256 amount);
 
@@ -35,7 +43,9 @@ abstract contract Vault is IVault, Ownable {
 
     event Compound(uint256 rewards, uint256 fee, uint256 indexed blockNumber);
 
-    /****************************  STRUCT ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                STRUCTS
+    //////////////////////////////////////////////////////////////*/
 
     struct User {
         uint256 amount;
@@ -43,7 +53,9 @@ abstract contract Vault is IVault, Ownable {
         uint256 rewards;
     }
 
-    /****************************  CONSTANTS ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////*/
 
     //solhint-disable-next-line var-name-mixedcase
     IMasterChef public immutable CAKE_MASTER_CHEF; // The cake masterchef. He is an honest Cooker!
@@ -52,9 +64,11 @@ abstract contract Vault is IVault, Ownable {
     IERC20 public immutable CAKE; // The famous Cake token!!
 
     // solhint-disable-next-line var-name-mixedcase
-    address public MARKET; // The market contract that deposits/withdraws from this contract
+    address public MARKET; // The market contract that deposits/withdraws from this contract.
 
-    /**************************** STATE ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                STATE
+    //////////////////////////////////////////////////////////////*/
 
     mapping(address => User) public userInfo; // Account Address => Account Info
 
@@ -62,34 +76,52 @@ abstract contract Vault is IVault, Ownable {
 
     uint256 public totalRewardsPerAmount; // is boosted by 1e12
 
-    /**************************** CONSTRUCTOR ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
+    /**
+     * @param cakeMasterChef The address of the Pancake Swap master chef.
+     * @param cake The address of the Pancake Swap cake token.
+     */
     constructor(IMasterChef cakeMasterChef, IERC20 cake) {
         CAKE_MASTER_CHEF = cakeMasterChef;
         CAKE = cake;
     }
 
-    /**************************** MODIFIER ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                MODIFIER
+    //////////////////////////////////////////////////////////////*/
 
-    // Make sure that only the Market has access to certain functionality
+    /**
+     * @notice Only the {MARKET} should be able to deposit and withdraw from this contract.
+     */
     modifier onlyMarket() {
         require(_msgSender() == MARKET, "Vault: only market");
         _;
     }
 
-    /**************************** VIEW FUNCTIONS ****************************/
+    /*///////////////////////////////////////////////////////////////
+                               VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /**
-     * The logic of this function is supposed to be implemented by the child contract
+     * @dev It is meant to return the total pending {CAKE} rewards.
+     *
+     * @notice The implementation of this function is supposed to be implemented by the child contract.
      */
     function getPendingRewards() public view virtual returns (uint256) {
         return 0;
     }
 
     /**
-     * It checks how many pending `CAKE` a user is entitled to by calculating how much `CAKE` they have accrued + pending `CAKE` in `CAKE_MASTER_CHEF`
-     * @param account The address to check how much pending `CAKE` he will get
-     * @return rewards The number of `CAKE`
+     * @dev It checks how many pending {CAKE] an `account` is entitled to by calculating
+     * how much {CAKE} they have accrued + pending {CAKE} in {CAKE_MASTER_CHEF}.
+     *
+     * @notice {totalRewardsPerAmount} has a base unit of 1e12.
+     *
+     * @param account The address, which we will return how much pending {CAKE} it current has.
+     * @return rewards The number of pending {CAKE} rewards.
      */
     function getUserPendingRewards(address account)
         external
@@ -97,40 +129,47 @@ abstract contract Vault is IVault, Ownable {
         returns (uint256 rewards)
     {
         uint256 _totalAmount = totalAmount;
-        // No need to calculate rewards if there are no tokens deposited in this contract;
-        // Also add this condition to avoid dividing by 0 when calculating the rewards
+        // We do not need to calculate the pending rewards, if there are no tokens deposited in this contract.
         if (_totalAmount <= 0) return 0;
 
+        // Save storage in memory to save gas.
         uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
         User memory user = userInfo[account];
 
+        // Get all current pending rewards.
         uint256 pendingRewardsPerAmount = (getPendingRewards() * 1e12) /
             _totalAmount;
 
+        // Calculates how many of {CAKE} rewards the user has accrued since his last deposit/withdraw.
         rewards +=
             (((_totalRewardsPerAmount + pendingRewardsPerAmount) *
                 user.amount) / 1e12) -
             user.rewardDebt;
 
+        // This contract only sends the rewards on withdraw. So in case the user never withdraw, we need to add the `user.rewards`.
         return rewards + user.rewards;
     }
 
-    /**************************** INTERNAL FUNCTIONS ****************************/
+    /*///////////////////////////////////////////////////////////////
+                            INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /**
-     * This function stakes the current `CAKE` in this vault in the farm
-     * @return cakeHarvested it returns the amount of `CAKE` farmed
+     * @dev It deposits all {CAKE} stored in the contract in the {CAKE} pool in the {CAKE_MASTER_CHEF} and returns the rewards obtained.
+     *
+     * @return cakeHarvested The reward acrrued up to this block in {CAKE}.
      */
     function _stakeCake() internal returns (uint256 cakeHarvested) {
         CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
-        // Current Balance of Cake are extra rewards because we just staked our entire CAKE balance
+        // Current {balanceOf} Cake are all rewards because we just staked our entire {CAKE} balance.
         cakeHarvested = _getCakeBalance();
     }
 
     /**
-     * This function withdraws `CAKE` from the cake staking pool and returns the amount of rewards `CAKE`
-     * @param amount The number of `CAKE` to be unstaked
-     * @return cakeHarvested The number of `CAKE` that was farmed as reward
+     * @dev It withdraws an `amount` of {CAKE} from the {CAKE_MASTER_CHEF} and returns the arewards obtained.
+     *
+     * @param amount The number of {CAKE} to be unstaked.
+     * @return cakeHarvested The number of {CAKE} that was obtained as reward.
      */
     function _unStakeCake(uint256 amount)
         internal
@@ -139,24 +178,28 @@ abstract contract Vault is IVault, Ownable {
         uint256 preBalance = _getCakeBalance();
 
         CAKE_MASTER_CHEF.leaveStaking(amount);
+        // Need to subtract the previous balance and withdrawn amount from the current {balanceOf} to know many reward {CAKE} we got.
         cakeHarvested = _getCakeBalance() - preBalance - amount;
     }
 
     /**
-     * A helper function to get the current `CAKE` balance in this vault
+     * @dev A helper function to get the current {CAKE} balance in this vault.
      */
     function _getCakeBalance() internal view returns (uint256) {
         return CAKE.balanceOf(address(this));
     }
 
     /**
-     * The logic for this function is to be implemented by the child contract
+     * @dev The logic for this function is to be implemented by the child contract.
+     * It needs to {transferFrom} a token from an account and correctly keep track of the amounts and rewards.
      */
     //solhint-disable-next-line no-empty-blocks
     function _deposit(address, uint256) internal virtual {}
 
     /**
-     * This function is to be implemented by the child contract
+     * @dev The logic for this function is to be implemented by the child contract.
+     * It needs to send the underlying token and rewards correctly.
+     * The rewards are always sent to the first address and the underlying token to the second address.
      */
     function _withdraw(
         address,
@@ -164,14 +207,20 @@ abstract contract Vault is IVault, Ownable {
         uint256 //solhint-disable-next-line no-empty-blocks
     ) internal virtual {}
 
-    /**************************** ONLY MARKET ****************************/
+    /*///////////////////////////////////////////////////////////////
+                            ONLY MARKET FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /**
-     * @param account The account that is depositing `STAKING_TOKEN`
-     * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
+     * @dev This function acts as a guard wrapper for the {_deposit} function.
      *
-     * This function disallows 0 values as they are applicable in the context. Cannot deposit 0 `amount` as we do not send rewards on deposit
-     * This function uses the {_deposit} function and is protected by the modifier {onlyMarket} to disallow funds mismanegement
+     * @param account The account that is depositing {STAKING_TOKEN}.
+     * @param amount The number of {STAKING_TOKEN} the `account` wishes to deposit.
+     *
+     * Requirements:
+     * - `amount` has to be greater than 0. Since rewards are not send on deposit. It does not make sense to allow an amount of 0.
+     * - `account` cannot be the zero address. That is an impossibility and is here to avoid bad UI.
+     * - {onlyMarket} on deposit is here because even if we allow deposits by anyone, they would never be able to withdraw.
      *
      */
     function deposit(address account, uint256 amount) external onlyMarket {
@@ -182,12 +231,19 @@ abstract contract Vault is IVault, Ownable {
     }
 
     /**
-     * @param account The account that is depositing `STAKING_TOKEN`
-     * @param recipient The account which will get the `CAKE` rewards and `STAKING_TOKEN`
-     * @param amount The number of `STAKING_TOKEN` that he/she wishes to deposit
+     * @dev this fuction acts as a guard wrapper for the {_withdraw} function.
      *
-     * This function disallows 0 values as they are applicable in the context. Cannot withdraw 0 `amount` as rewards are only paid for liquidators or on repayment.
-     * This function uses the {_withdraw} function and is protected by the modifier {onlyMarket} to disallow funds mismanegement
+     * @notice we need an `account` and `recipient` because on liquidations the {STAKING_TOKEN} will go to the liquidator or market to cover the collateral. However, the `account` still gets the rewards.
+     *
+     * @param account The address that the {STAKING_TOKEN} will be withdrawn from. It will also receive the rewards accrued.
+     * @param recipient The address, which will get the {STAKING_TOKEN}.
+     * @param amount The number of {STAKING_TOKEN} that will be withdrawn.
+     *
+     * Requirements:
+     * - `amount` has to be greater than 0.
+     * - `totalAmount` has to be greater than 0. Makes no sense to withdraw from an empty vault.
+     * - `account` and `recipient` cannot be the zero address. This is to avoid accidently burning tokens and bad UI.
+     * - {onlyMarket} modifier is needed. Otherwise, anyone could steal tokens from this contract.
      *
      */
     function withdraw(
@@ -200,21 +256,31 @@ abstract contract Vault is IVault, Ownable {
             account != address(0) && recipient != address(0),
             "Vault: no zero address"
         );
+        require(totalAmount > 0, "Vault: no tokens");
 
         _withdraw(account, recipient, amount);
     }
 
-    /**************************** ONLY MARKET ****************************/
+    /*///////////////////////////////////////////////////////////////
+                        ONLY OWNER FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /**
-     * This function can only be set once for security reasons. Otherwise, user funds could be at risk.
-     * @param market The address of the MARKET
+     * @dev This function is required due to the deployment order. We need to deploy Vaults before the {InterestMarketV1}.
+     *
+     * @notice This function can only be called once for security reasons. Otherwise, the owner could change the {MARKET} and have access to the user funds.
+     *
+     * @param market The address of the {MARKET}.
      *
      * Requirements:
-     * Only the {owner} can call this function to avoid griefing.
+     *
+     * - Only the {owner} can call this function to avoid griefing.
+     * - {MARKET} must be the zero address. This guarantees that this function can only be called once.
+     * - ` market` cannot be the zero address. This combined with the previous requirement makes sure that it is only callable once.
      *
      */
     function setMarket(address market) external onlyOwner {
+        require(market != address(0), "Vault: no zero address");
         require(address(0) == MARKET, "Vault: already set");
         MARKET = market;
     }

@@ -30,8 +30,19 @@ import "./InterestMarketV1.sol";
 
 import "./Dinero.sol";
 
+/**
+ * @dev The governor will manage the contracts by being able to grant and revoke the {MINTER_ROLE}.
+ * It also allows new markets to be created by the {owner} via cloning to save gas.
+ *
+ * @notice The governor contracts apart from deployer will have the Dinero {DEFAULT_ADMIN_ROLE} to grant the correct roles to the markets.
+ * @notice It uses the minimal clone proxy pattern.
+ * @notice It needs to receive the {DEFAULT_ADMIN_ROLE} from the Dinero deployer.
+ * @notice It controls the address that all markets fees will be sent to. The {owner} can upgrade it.
+ */
 contract InterestGovernorV1 is Ownable {
-    /**************************** EVENTS ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
 
     event MarketCreated(
         address indexed collateralToken,
@@ -47,26 +58,39 @@ contract InterestGovernorV1 is Ownable {
 
     event OpenMarket(address indexed market);
 
-    /**************************** STATE ****************************/
+    /*///////////////////////////////////////////////////////////////
+                                STATE
+    //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line var-name-mixedcase
-    Dinero public immutable DINERO;
+    Dinero public immutable DINERO; // Stable coin of the Interest Protocol ecosystem.
 
-    // @notice The address that will get all fees accrued by the market contracts.
+    /**
+     * @notice The address that will get all fees accrued by the market contracts.
+     */
     address public feeTo;
 
-    // @notice stores all markets created by this contract.
+    /**
+     *  @notice stores all markets created by this contract.
+     */
     address[] public allMarkets;
 
     mapping(address => bool) public isMarket;
 
-    /**************************** CONSTRUCTOR ****************************/
+    /*///////////////////////////////////////////////////////////////
+                            CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
 
-    constructor(Dinero _dinero) {
-        DINERO = _dinero;
+    /**
+     * @param dinero The address of the Dinero stable coin.
+     */
+    constructor(Dinero dinero) {
+        DINERO = dinero;
     }
 
-    /**************************** EXTERNAL FUNCTIONS ****************************/
+    /*///////////////////////////////////////////////////////////////
+                            VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /**
      * @return The number of markets created by this factory.
@@ -76,9 +100,10 @@ contract InterestGovernorV1 is Ownable {
     }
 
     /**
-     * @dev this allows you to know the address of a clone before/after deployment for offchain purposes
-     * @param masterMarketContract the implementation contract
-     * @param salt the keccak256 hash of the data to be passed to the initialize function
+     * @dev This allows you to know the address of a clone before/after deployment for offchain purposes.
+     *
+     * @param masterMarketContract The address of the implementation contract.
+     * @param salt The keccak256 hash of the data to be passed to the initialize function.
      * @return the address of the clone
      */
     function predictMarketAddress(address masterMarketContract, bytes32 salt)
@@ -89,14 +114,18 @@ contract InterestGovernorV1 is Ownable {
         return Clones.predictDeterministicAddress(masterMarketContract, salt);
     }
 
-    /**************************** ONLY OWNER FUNCTIONS ****************************/
+    /*///////////////////////////////////////////////////////////////
+                            ONLY OWNER FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev It assigns a new address to receive the accrued fees from the markets.
+     * @dev It assigns a new address to receive the accrued fees from  all the markets.
+     *
      * @param _feeTo The new address that will receive the fees.
      *
-     * This function is guarded by the modifier {onlyOwner} to make sure funds are not mishandled.
-     * It emits the event {FeeToUpdated} with the new address `_feeTo`.
+     * Requirements:
+     *
+     * - It is guarded by the modifier {onlyOwner} to make sure funds are not mishandled.
      *
      */
     function setFeeTo(address _feeTo) external onlyOwner {
@@ -107,13 +136,14 @@ contract InterestGovernorV1 is Ownable {
 
     /**
      * @dev This function allows for the creation of new markets via cloning using a master contract for gas optimization.
+     *
      * @param masterMarketContract The master implementation of a market contract.
      * @param collateralToken The {ERC20} that this market will support.
      * @param data The data required to initialize the clone contract.
      * @return market The address of the new market
      *
-     * It emits the event {MarketCreated} with the market collateral token, market address and its id.
-     * It is also guarded by the {onlyOwner} because these markets require trusted oracles and have the power of arbitrarly create and destroy {DINERO}
+     * Requirements:
+     * - It is guarded by the modifier {onlyOwner} to make sure that only secure markets have power to mint and burn Dinero.
      *
      */
     function createMarket(
@@ -139,11 +169,17 @@ contract InterestGovernorV1 is Ownable {
     }
 
     /**
-     * @dev This function will prevent markets to lend funds until they re-open. This is an emergency measure in case of market manipulations
-     * @param market The account that will have it's minter role removed. It will not be able to lend anymore
+     * @dev This function will prevent markets to lend funds until they re-open. This is an emergency measure in case of exploits.
+     *
+     * @notice That markets still have the burn role. So loans can be closed and collaterals recovered by the user.
+     *
+     * @param market The account that will have it's minter role removed. It will not be able to create more Dinero.
      *
      * Important to note that the markets will still be able to burn funds so users can close their positions and get back their collateral.
-     * This function can only be called by the owner to prevent tampering with the markets ability to lend
+     *
+     * Requirements:
+     *
+     * - It is guarded by the modifier {onlyOwner} to prevent griefing.
      *
      */
     function closeMarket(address market) external onlyOwner {
@@ -152,13 +188,18 @@ contract InterestGovernorV1 is Ownable {
     }
 
     /**
-     * @dev This function will re-open markets after being closed
-     * @param market The account that will be granted the minter role again to start lending
+     * @dev This function will re-open markets after being closed. Markets will be able to issue Dinero once again.
      *
-     * This function can only be called by the owner to prevent re-opening closed markets.
+     * @param market The account that will be granted the minter role again to minting Dinero.
+     *
+     * Requirements:
+     *
+     * - It is guarded by the modifier {onlyOwner} to prevent losses of funds.
+     * - `market` has to be registered to prevent unathorized accounts from minting Dinero.
      *
      */
     function openMarket(address market) external onlyOwner {
+        require(isMarket[market], "IFV1: not a market");
         DINERO.grantRole(DINERO.MINTER_ROLE(), market);
         emit OpenMarket(market);
     }

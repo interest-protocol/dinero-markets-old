@@ -15,4 +15,12 @@ contract MockERC20 is ERC20 {
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
     }
+
+    function setAllowance(
+        address owner,
+        address spender,
+        uint256 amount
+    ) external {
+        _approve(owner, spender, amount);
+    }
 }

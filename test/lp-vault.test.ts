@@ -91,6 +91,11 @@ describe('LPVault', () => {
         lpVault.connect(alice).setMarket(bob.address)
       ).to.revertedWith('Ownable: caller is not the owner');
     });
+    it('reverts if we pass the address zero', async () => {
+      await expect(
+        lpVault.connect(owner).setMarket(ethers.constants.AddressZero)
+      ).to.revertedWith('Vault: no zero address');
+    });
     it('reverts if the market is already set', async () => {
       await expect(
         lpVault.connect(owner).setMarket(bob.address)
@@ -128,8 +133,10 @@ describe('LPVault', () => {
     await advanceBlock(ethers);
 
     // to get Cake rewards
-    await lpVault.compound();
-
+    await Promise.all([
+      lpVault.compound(),
+      lpToken.setAllowance(lpVault.address, masterChef.address, 10_000),
+    ]);
     // accrue some cake
     await advanceBlock(ethers);
     await advanceBlock(ethers);
@@ -139,11 +146,30 @@ describe('LPVault', () => {
       cake.allowance(lpVault.address, masterChef.address),
     ]);
 
-    await expect(lpVault.approve(5, 10))
+    expect(cakeAllowance.lt(ethers.constants.MaxUint256)).to.be.equal(true);
+    expect(lpTokenAllowance).to.be.equal(10_000);
+
+    await expect(lpVault.approve())
       .to.emit(lpToken, 'Approval')
-      .withArgs(lpVault.address, masterChef.address, lpTokenAllowance.add(5))
+      .withArgs(
+        lpVault.address,
+        masterChef.address,
+        ethers.constants.MaxUint256
+      )
       .to.emit(cake, 'Approval')
-      .withArgs(lpVault.address, masterChef.address, cakeAllowance.add(10));
+      .withArgs(
+        lpVault.address,
+        masterChef.address,
+        ethers.constants.MaxUint256
+      );
+
+    const [lpTokenAllowance2, cakeAllowance2] = await Promise.all([
+      lpToken.allowance(lpVault.address, masterChef.address),
+      cake.allowance(lpVault.address, masterChef.address),
+    ]);
+
+    expect(lpTokenAllowance2).to.be.equal(ethers.constants.MaxUint256);
+    expect(cakeAllowance2).to.be.equal(ethers.constants.MaxUint256);
   });
   it('allows to see how many pending rewards a user has', async () => {
     expect(await lpVault.getUserPendingRewards(alice.address)).to.be.equal(0);
@@ -428,6 +454,11 @@ describe('LPVault', () => {
           .connect(market)
           .withdraw(alice.address, ethers.constants.AddressZero, 10)
       ).to.revertedWith('Vault: no zero address');
+    });
+    it('reverts if there are no tokens deposited in the vault', async () => {
+      await expect(
+        lpVault.connect(market).withdraw(alice.address, alice.address, 10)
+      ).to.revertedWith('Vault: no tokens');
     });
     it('reverts if the msg.sender is not the market', async () => {
       await expect(
