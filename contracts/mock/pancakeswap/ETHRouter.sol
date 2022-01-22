@@ -10,7 +10,7 @@ import "./interfaces/IWETH.sol";
 
 //solhint-disable
 
-contract PancakeRouter {
+contract ETHRouter {
     address public immutable factory;
     //solhint-disable-next-line
     address public immutable WETH;
@@ -47,22 +47,24 @@ contract PancakeRouter {
         }
     }
 
-    function swapExactTokensForTokens(
-        uint256 amountIn,
+    function swapExactETHForTokens(
         uint256 amountOutMin,
         address[] calldata path,
         address to,
         uint256
-    ) external virtual returns (uint256[] memory amounts) {
-        amounts = PancakeLibrary.getAmountsOut(factory, amountIn, path);
+    ) external payable virtual returns (uint256[] memory amounts) {
+        require(path[0] == WETH, "PancakeRouter: INVALID_PATH");
+        amounts = PancakeLibrary.getAmountsOut(factory, msg.value, path);
         require(
             amounts[amounts.length - 1] >= amountOutMin,
-            "INSUFFICIENT_OUTPUT_AMOUNT"
+            "PancakeRouter: INSUFFICIENT_OUTPUT_AMOUNT"
         );
-        IPancakeERC20(path[0]).transferFrom(
-            msg.sender,
-            PancakeLibrary.pairFor(factory, path[0], path[1]),
-            amounts[0]
+        IWETH(WETH).deposit{value: amounts[0]}();
+        assert(
+            IWETH(WETH).transfer(
+                PancakeLibrary.pairFor(factory, path[0], path[1]),
+                amounts[0]
+            )
         );
         _swap(amounts, path, to);
     }

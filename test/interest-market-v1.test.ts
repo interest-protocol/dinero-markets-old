@@ -327,7 +327,7 @@ describe('InterestMarketV1', () => {
     await cakeMarket.connect(alice).borrow(alice.address, parseEther('490'));
 
     // Pass time to accrue fees
-    await advanceTime(10_000, ethers); // advance 10_000 milliseconds
+    await advanceTime(10_000, ethers); // advance 10_000 seconds
 
     const debt = parseEther('490')
       .mul(ethers.BigNumber.from(12e8))
@@ -373,7 +373,7 @@ describe('InterestMarketV1', () => {
       ]);
 
       // Pass time to accrue fees
-      await advanceTime(10_000, ethers); // advance 10_000 milliseconds
+      await advanceTime(10_000, ethers); // advance 10_000 seconds
       const debt = parseEther('490')
         .mul(ethers.BigNumber.from(12e8))
         .mul(10_000)
