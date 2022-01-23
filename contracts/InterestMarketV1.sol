@@ -433,7 +433,7 @@ contract InterestMarketV1 is Initializable, Context {
      *
      * - `msg.sender` must remain solvent after removing the collateral.
      */
-    function removeCollateral(uint256 amount) external isSolvent {
+    function withdrawCollateral(uint256 amount) external isSolvent {
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
 
@@ -483,8 +483,16 @@ contract InterestMarketV1 is Initializable, Context {
      *
      * @param account The address which will have some of its principal paid back.
      * @param principal How many `DINERO` tokens (princicpal) to be paid back for the `account`
+     *
+     * Requirements:
+     *
+     * - account cannot be the zero address to avoid loss of funds
+     * - principal has to be greater than 0. Otherwise, the user is just wasting gas and congesting the network.
      */
     function repay(address account, uint256 principal) external {
+        require(account != address(0), "MKT: no zero address");
+        require(principal > 0, "MKT: principal cannot be 0");
+
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
 

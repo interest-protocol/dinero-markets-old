@@ -1272,7 +1272,6 @@ describe('InterestMarketV1', () => {
 
       // Bob does not get liquidated
       expect(bobCollateral2).to.be.equal(bobCollateral);
-      expect(bobLoan2).to.be.equal(bobLoan);
 
       // Alice and Jose got liquidated
       expect(totalCollateral.sub(totalCollateral2)).to.be.eq(allCollateral);

@@ -60,9 +60,17 @@ contract InterestBNBMarketV1 is Context {
 
     event Accrue(uint256 accruedAmount);
 
-    event AddCollateral(address indexed account, uint256 amount);
+    event AddCollateral(
+        address indexed from,
+        address indexed to,
+        uint256 amount
+    );
 
-    event RemoveCollateral(address indexed account, uint256 amount);
+    event WithdrawCollateral(
+        address indexed from,
+        address indexed to,
+        uint256 amount
+    );
 
     event Borrow(
         address indexed from,
@@ -327,43 +335,46 @@ contract InterestBNBMarketV1 is Context {
     }
 
     /**
-     * @dev Allows `msg.sender` to add collateral
+     * @dev Allows `msg.sender` to add collateral to a `to` address.
      *
      * @notice This is a payable function.
+     *
+     * @param to The address, which the collateral will be assigned to.
      */
-    function addCollateral() public payable {
+    function addCollateral(address to) public payable {
         // Update Global state
-        userCollateral[_msgSender()] += msg.value;
+        userCollateral[to] += msg.value;
 
-        emit AddCollateral(_msgSender(), msg.value);
+        emit AddCollateral(_msgSender(), to, msg.value);
     }
 
     /**
-     * @dev An alternative to addCollateral.
+     * @dev This a version of {addCollateral} that adds to the `msg.sender`.
      */
     receive() external payable {
-        addCollateral();
+        addCollateral(_msgSender());
     }
 
     /**
      * @dev Function allows the `msg.sender` to remove his collateral as long as he remains solvent.
      *
+     * @param to The address that will receive the collateral being withdrawn.
      * @param amount The number of BNB tokens he wishes to withdraw.
      *
      * Requirements:
      *
      * - `msg.sender` must remain solvent after removing the collateral.
      */
-    function removeCollateral(uint256 amount) external isSolvent {
-        // Update how much is owed to the protocol before allowing collateral to be removed
+    function withdrawCollateral(address to, uint256 amount) external isSolvent {
+        // Update how much is owed to the protocol before allowing collateral to be withdrawn
         accrue();
 
         // Update State
         userCollateral[_msgSender()] -= amount;
 
-        _sendCollateral(payable(_msgSender()), amount);
+        _sendCollateral(payable(to), amount);
 
-        emit RemoveCollateral(_msgSender(), amount);
+        emit WithdrawCollateral(_msgSender(), to, amount);
     }
 
     /**
@@ -402,8 +413,16 @@ contract InterestBNBMarketV1 is Context {
      *
      * @param account The address which will have some of its principal paid back.
      * @param principal How many `DINERO` tokens (princicpal) to be paid back for the `account`
+     *
+     * Requirements:
+     *
+     * - account cannot be the zero address to avoid loss of funds
+     * - principal has to be greater than 0. Otherwise, the user is just wasting gas and congesting the network.
      */
     function repay(address account, uint256 principal) external {
+        require(account != address(0), "MKT: no zero address");
+        require(principal > 0, "MKT: principal cannot be 0");
+
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
 
@@ -502,7 +521,7 @@ contract InterestBNBMarketV1 is Context {
             // Remove the collateral from the account. We can consider the debt paid.
             userCollateral[account] -= collateralToCover;
 
-            emit RemoveCollateral(account, collateralToCover);
+            emit WithdrawCollateral(account, address(this), collateralToCover);
             emit Repay(_msgSender(), account, principal, debt);
 
             // Update local information. It should not overflow max uint128.
