@@ -658,29 +658,23 @@ contract InterestMarketV1 is Initializable, Context {
 
         // If a path is provided, we will use the collateral to cover the debt
         if (path.length >= 2) {
-            // We need to get enough `DINERO` to cover outstanding debt + protocol fees. This means the liquidator will pay for the slippage
-            uint256 minAmount = liquidationInfo.allDebt + protocolFee;
-
             // Sell Collateral and send `DINERO` to recipient
             // Abstracted the logic to a function to avoid; Stack too deep compiler error
             _sellCollateral(
                 liquidationInfo.allCollateral,
-                minAmount,
                 recipient,
                 path,
                 path2
             );
-
-            // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
-            // Liquidator keeps the rest as profit.
-            DINERO.burn(recipient, minAmount);
         } else {
             // Liquidator will be paid in `COLLATERAL`
-            // Liquidator needs to cover the whole loan + fees
-            DINERO.burn(_msgSender(), liquidationInfo.allDebt + protocolFee);
             // Send collateral to the `recipient` (includes liquidator fee + protocol fee)
             COLLATERAL.safeTransfer(recipient, liquidationInfo.allCollateral);
         }
+
+        // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
+        // Liquidator keeps the rest as profit.
+        DINERO.burn(_msgSender(), liquidationInfo.allDebt + protocolFee);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -713,9 +707,9 @@ contract InterestMarketV1 is Initializable, Context {
      *
      * @param collateralAmount The amount of tokens to remove from the liquidity in case of `COLLATERAL` being a PCS pair {IERC20}.
      * Or the amount of collateral to sell if it is a normal {IERC20}.
-     * @param minAmount The min amount of tokens to receive when swapping in case of NOT being a PCS pair {IERC20}.
      * @param recipient The address that will receive the `DINERO` after the swap.
-     * @param path In the case of `COLLATERAL` being a PCS pair {IERC20}. It is the swap path for token0. If not, it will be the path for the `COLLATERAL`.
+     * @param path In the case of `COLLATERAL` being a PCS pair {IERC20}. It is the swap path for token0.
+     * If not, it will be the path for the `COLLATERAL`.
      * @param path2 Can be empty if `COLLATERAL` is not a PCS pair {IERC20}. Otherwise, it needs to be the swap path for token1.
      *
      * Requirements:
@@ -725,7 +719,6 @@ contract InterestMarketV1 is Initializable, Context {
      */
     function _sellCollateral(
         uint256 collateralAmount,
-        uint256 minAmount,
         address recipient,
         address[] calldata path,
         address[] calldata path2
@@ -780,7 +773,8 @@ contract InterestMarketV1 is Initializable, Context {
             ROUTER.swapExactTokensForTokens(
                 // Sell all collateral for this liquidation
                 collateralAmount,
-                minAmount,
+                // Liquidator will pay for slippage
+                0,
                 // Sell COLLATERAL -> ... -> DINERO
                 path,
                 // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
