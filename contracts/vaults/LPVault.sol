@@ -193,23 +193,26 @@ contract LPVault is Vault {
 
     /**
      * @dev We update the rewards for all users with the {_totalRewardsPerAccount} variable.
-     * Then we use the {transferFrom} function to get the {STAKING_TOKEN} from the `account`.
+     * Then we use the {transferFrom} function to get the {STAKING_TOKEN} from the `from`.
      * We keep track of the amounts and rewards and deposit the acquired {STAKING_TOKEN} in the {CAKE_MASTER_CHEF}.
      * We also compound any {CAKE} tokens in this contract int he {CAKE} pool.
+     * It assigns the deposit to the `to` account for composability.
      *
-     * @notice It assumes the `account` has given enough approval to this contract.
+     * @notice It assumes the `from` has given enough approval to this contract.
      * @notice The variable {_totalRewardsPerAmount} has a base unit of 1e12.
-     * @notice This function does not send the current rewards accrued to the `account`.
+     * @notice This function does not send the current rewards accrued to the `to`.
      *
-     * @param account The address that is depositing the {STAKING_TOKEN}.
-     * @param amount The number of {STAKING_TOKEN} that the `account` wishes to deposit.
+     * @param from The address that needs to have {STAKING_TOKEN} and provide approval.
+     * @param to The address, which the deposit will be assigned to
+     * @param amount The number of {STAKING_TOKEN} that the `from` wishes to deposit.
      */
-    function _deposit(address account, uint256 amount)
-        internal
-        override(Vault)
-    {
+    function _deposit(
+        address from,
+        address to,
+        uint256 amount
+    ) internal override(Vault) {
         // Save storage state in memory to save gas.
-        User memory user = userInfo[account];
+        User memory user = userInfo[to];
         uint256 _totalAmount = totalAmount;
         uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
 
@@ -236,7 +239,7 @@ contract LPVault is Vault {
 
         // Get {STAKING_TOKEN} from `account`.
         // This is to save gas. `account` has to approve this vault and not the market.
-        STAKING_TOKEN.safeTransferFrom(account, address(this), amount);
+        STAKING_TOKEN.safeTransferFrom(from, address(this), amount);
 
         // Deposit the new acquired tokens in the pool.
         // Since we already got the rewards up to this block. There should be no rewards right now to harvest.
@@ -249,24 +252,25 @@ contract LPVault is Vault {
         user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
 
         // Update Global state
-        userInfo[account] = user;
+        userInfo[to] = user;
         totalAmount = _totalAmount;
         totalRewardsPerAmount = _totalRewardsPerAmount;
 
-        emit Deposit(account, amount);
+        emit Deposit(from, to, amount);
     }
 
     /**
-     * @dev We withdraw an `amount` of tokens from the `account` stored in the {CAKE_MASTER_CHEF}.
+     * @dev We withdraw an `amount` of tokens from the `from` stored in the {CAKE_MASTER_CHEF}.
      *
      * @notice The base unit for {totalRewardsPerAmount} is 1e12.
-     * @notice The {user.rewards} is sent to the `account` and not the `recipient`.
-     * During liquidations, the rewards will go to the `account1` that opened the loan, but some of the deposited
+     * @notice The Cake rewards always go to the `to` address.
+     * @notice The {user.rewards} is sent to the `from` and not the `recipient`.
+     * During liquidations, the rewards will go to the `from` that opened the loan, but some of the deposited
      * tokens will go to the liquidator or the {InterestMarketV1} contract.
      *
-     * @param account The address that we are withdrawing the {STAKING_TOKEN} from.
-     * @param recipient the address which will get the {STAKING_TOKEN}.
-     * @param amount The number of {STAKING_TOKEN} that will be withdrawn from the `account`.
+     * @param from The address that we are withdrawing the {STAKING_TOKEN} from.
+     * @param to the address which will get the {STAKING_TOKEN}.
+     * @param amount The number of {STAKING_TOKEN} that will be withdrawn from the `from`.
      *
      * Requirements:
      *
@@ -274,11 +278,11 @@ contract LPVault is Vault {
      *
      */
     function _withdraw(
-        address account,
-        address recipient,
+        address from,
+        address to,
         uint256 amount
     ) internal override(Vault) {
-        User memory user = userInfo[account];
+        User memory user = userInfo[from];
 
         // Illogical to allow `amount` to be higher than the amount the `account` has deposited in the contract.
         require(user.amount >= amount, "Vault: not enough tokens");
@@ -316,8 +320,8 @@ contract LPVault is Vault {
             CAKE_MASTER_CHEF.leaveStaking(rewards - cakeBalance);
         }
 
-        // Send the rewards to the `account`.
-        CAKE.safeTransfer(account, rewards);
+        // Send the rewards to the `to`.
+        CAKE.safeTransfer(to, rewards);
 
         // Only restake if there is at least 1 {CAKE} in the contract after sending the rewards.
         // If there are no {STAKING TOKENS} left, we do not need to restake. Because it means the vault is empty.
@@ -340,12 +344,12 @@ contract LPVault is Vault {
             user.amount = 0;
         }
 
-        // We always need to update the `account` info.
-        userInfo[account] = user;
+        // We always need to update the `from` info.
+        userInfo[from] = user;
 
         // Send the underlying token to the recipient
-        STAKING_TOKEN.safeTransfer(recipient, amount);
+        STAKING_TOKEN.safeTransfer(to, amount);
 
-        emit Withdraw(account, recipient, amount);
+        emit Withdraw(from, to, amount);
     }
 }

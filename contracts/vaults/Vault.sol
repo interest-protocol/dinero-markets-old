@@ -33,13 +33,9 @@ abstract contract Vault is IVault, Ownable {
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event Deposit(address indexed account, uint256 amount);
+    event Deposit(address indexed from, address indexed to, uint256 amount);
 
-    event Withdraw(
-        address indexed account,
-        address indexed recipient,
-        uint256 amount
-    );
+    event Withdraw(address indexed from, address indexed to, uint256 amount);
 
     event Compound(uint256 rewards, uint256 fee, uint256 indexed blockNumber);
 
@@ -193,8 +189,11 @@ abstract contract Vault is IVault, Ownable {
      * @dev The logic for this function is to be implemented by the child contract.
      * It needs to {transferFrom} a token from an account and correctly keep track of the amounts and rewards.
      */
-    //solhint-disable-next-line no-empty-blocks
-    function _deposit(address, uint256) internal virtual {}
+    function _deposit(
+        address,
+        address,
+        uint256 //solhint-disable-next-line no-empty-blocks
+    ) internal virtual {}
 
     /**
      * @dev The logic for this function is to be implemented by the child contract.
@@ -214,7 +213,8 @@ abstract contract Vault is IVault, Ownable {
     /**
      * @dev This function acts as a guard wrapper for the {_deposit} function.
      *
-     * @param account The account that is depositing {STAKING_TOKEN}.
+     * @param from The account that needs to have enough {STAKING_TOKEN} and approve the contract.
+     * @param to The account that the deposit will be assigned to.
      * @param amount The number of {STAKING_TOKEN} the `account` wishes to deposit.
      *
      * Requirements:
@@ -223,11 +223,18 @@ abstract contract Vault is IVault, Ownable {
      * - {onlyMarket} on deposit is here because even if we allow deposits by anyone, they would never be able to withdraw.
      *
      */
-    function deposit(address account, uint256 amount) external onlyMarket {
+    function deposit(
+        address from,
+        address to,
+        uint256 amount
+    ) external onlyMarket {
         require(amount > 0, "Vault: no zero amount");
-        require(account != address(0), "Vault: no zero address");
+        require(
+            from != address(0) && to != address(0),
+            "Vault: no zero address"
+        );
 
-        _deposit(account, amount);
+        _deposit(from, to, amount);
     }
 
     /**

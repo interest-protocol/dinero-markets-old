@@ -14,9 +14,11 @@ pragma solidity 0.8.10;
 import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 
 import "./interfaces/IPancakeRouter02.sol";
+import "./interfaces/IPancakePair.sol";
 
 import "./lib/Rebase.sol";
 
@@ -75,9 +77,17 @@ contract InterestMarketV1 is Initializable, Context {
 
     event Accrue(uint256 accruedAmount);
 
-    event AddCollateral(address indexed account, uint256 amount);
+    event AddCollateral(
+        address indexed from,
+        address indexed to,
+        uint256 amount
+    );
 
-    event RemoveCollateral(address indexed account, uint256 amount);
+    event WithdrawCollateral(
+        address indexed from,
+        address indexed to,
+        uint256 amount
+    );
 
     event Borrow(
         address indexed from,
@@ -411,29 +421,31 @@ contract InterestMarketV1 is Initializable, Context {
      *
      * @notice If the contract has a vault `msg.sender` needs to give approval to the vault. If not it needs to give to this contract.
      *
+     * @param to The address, which the `COLLATERAL` will be assigned to.
      * @param amount The number of `COLLATERAL` tokens to be used for collateral
      */
-    function addCollateral(uint256 amount) external {
+    function addCollateral(address to, uint256 amount) external {
         // Get `COLLATERAL` from `msg.sender`
-        _depositCollateral(_msgSender(), amount);
+        _depositCollateral(_msgSender(), to, amount);
 
         // Update Global state
-        userCollateral[_msgSender()] += amount;
+        userCollateral[to] += amount;
         totalCollateral += amount;
 
-        emit AddCollateral(_msgSender(), amount);
+        emit AddCollateral(_msgSender(), to, amount);
     }
 
     /**
      * @dev Functions allows the `msg.sender` to remove his collateral as long as he remains solvent.
      *
+     * @param to The address that will receive the collateral being withdrawn.
      * @param amount The number of `COLLATERAL` tokens he wishes to withdraw
      *
      * Requirements:
      *
      * - `msg.sender` must remain solvent after removing the collateral.
      */
-    function withdrawCollateral(uint256 amount) external isSolvent {
+    function withdrawCollateral(address to, uint256 amount) external isSolvent {
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
 
@@ -442,9 +454,9 @@ contract InterestMarketV1 is Initializable, Context {
         totalCollateral -= amount;
 
         // Return the collateral to the user
-        _withdrawCollateral(_msgSender(), _msgSender(), amount);
+        _withdrawCollateral(_msgSender(), to, amount);
 
-        emit RemoveCollateral(_msgSender(), amount);
+        emit WithdrawCollateral(_msgSender(), to, amount);
     }
 
     /**
@@ -518,11 +530,17 @@ contract InterestMarketV1 is Initializable, Context {
      * @notice We do not require the  liquidator to use the collateral. If there are any "lost" tokens in the contract. Those can be use as well.
      * @notice The liquidator must have more than the sum of principals in Dinero because of the fees accrued over time. Unless he chooses to use the collateral to cover the positions.
      * @notice We assume PCS will remain most liquid exchange in BSC for this version of the contract. We will also add liquidate of BNB/DNR to PCS.
+     * @notice In the case `COLLATERAL` is a PCS pair {IERC20} and the user chooses to use collateral to liquidate he needs to pass a `path` for token0 and `path2` for token1.
+     * @notice If the `COLLATERAL` is NOT a PCS pair {IERC20} and the user chooses to use the collateral to liquidate, the `path2` should be empty, but the `path` has to have a length >= 2.
+     * @notice In the case of `COLLATERAL` being a PCS pair {IERC20} and the liquidator chooses to use the collateral to cover the loan.
+     * The liquidator will have to go to PCS to remove the liquidity afterwards.
      *
      * @param accounts The  list of accounts to be liquidated.
      * @param principals The amount of principal the `msg.sender` wants to liquidate for each account.
      * @param recipient The address that will receive the proceeds gained by liquidating.
      * @param path The list of tokens from collateral to dinero in case the `msg.sender` wishes to use collateral to cover the debt.
+     * Or The list of tokens to sell the token0 if `COLLATERAL` is a PCS pair {IERC20}.
+     * @param path2 The list of tokens to sell the token1 if `COLLATERAL` is a PCS pair {IERC20}.
      *
      * Requirements:
      *
@@ -533,7 +551,8 @@ contract InterestMarketV1 is Initializable, Context {
         address[] calldata accounts,
         uint256[] calldata principals,
         address recipient,
-        address[] calldata path
+        address[] calldata path,
+        address[] calldata path2
     ) external {
         // Make sure token is always exchanged to Dinero as we need to burn at the end.
         // path can be empty if the liquidator has enough dinero in his accounts to close the positions.
@@ -599,7 +618,7 @@ contract InterestMarketV1 is Initializable, Context {
                 VAULT.withdraw(account, address(this), collateralToCover);
             }
 
-            emit RemoveCollateral(account, collateralToCover);
+            emit WithdrawCollateral(account, address(this), collateralToCover);
             emit Repay(_msgSender(), account, principal, debt);
 
             // Update local information. It should not overflow max uint128.
@@ -642,17 +661,14 @@ contract InterestMarketV1 is Initializable, Context {
             // We need to get enough `DINERO` to cover outstanding debt + protocol fees. This means the liquidator will pay for the slippage
             uint256 minAmount = liquidationInfo.allDebt + protocolFee;
 
-            ROUTER.swapExactTokensForTokens(
-                // Sell all collateral for this liquidation
+            // Sell Collateral and send `DINERO` to recipient
+            // Abstracted the logic to a function to avoid; Stack too deep compiler error
+            _sellCollateral(
                 liquidationInfo.allCollateral,
                 minAmount,
-                // Sell COLLATERAL -> DINERO
-                path,
-                // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
                 recipient,
-                // This TX must happen in this block.
-                //solhint-disable-next-line not-rely-on-time
-                block.timestamp
+                path,
+                path2
             );
 
             // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
@@ -670,6 +686,111 @@ contract InterestMarketV1 is Initializable, Context {
     /*///////////////////////////////////////////////////////////////
                             PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev A helper function to check if a token is a Pancake Swap Pair token
+     *
+     * @notice We need to use a try/catch beacuse the {IERC20} interface makes the symbol an optional field.
+     *
+     * @param token The address of the token.
+     * @return bool True if is a pair token.
+     */
+    function _isPair(address token) private view returns (bool) {
+        try IERC20Metadata(token).symbol() returns (string memory symbol) {
+            return keccak256(abi.encodePacked(symbol)) == keccak256("Cake-LP");
+        } catch Error(string memory) {
+            return false;
+        } catch (bytes memory) {
+            return false;
+        }
+    }
+
+    /**
+     * @dev A helper function to sell collateral for dinero.
+     *
+     * @notice It checks if the `COLLATERAL` is a PCS pair token and treats it accordingly.
+     * @notice Slippage is not an issue because on {liquidate} we always burn the necessary amount of `DINERO`.
+     *
+     * @param collateralAmount The amount of tokens to remove from the liquidity in case of `COLLATERAL` being a PCS pair {IERC20}.
+     * Or the amount of collateral to sell if it is a normal {IERC20}.
+     * @param minAmount The min amount of tokens to receive when swapping in case of NOT being a PCS pair {IERC20}.
+     * @param recipient The address that will receive the `DINERO` after the swap.
+     * @param path In the case of `COLLATERAL` being a PCS pair {IERC20}. It is the swap path for token0. If not, it will be the path for the `COLLATERAL`.
+     * @param path2 Can be empty if `COLLATERAL` is not a PCS pair {IERC20}. Otherwise, it needs to be the swap path for token1.
+     *
+     * Requirements:
+     *
+     * - path2 length needs to be >= 2 if `COLLATERAL` is PCS pair {IERC20}.
+     * - path2 last item has to be the `DINERO` token.
+     */
+    function _sellCollateral(
+        uint256 collateralAmount,
+        uint256 minAmount,
+        address recipient,
+        address[] calldata path,
+        address[] calldata path2
+    ) private {
+        if (_isPair(address(COLLATERAL))) {
+            require(path2.length >= 2, "MKT: provide a path for token1");
+            require(
+                path2[path2.length - 1] == address(DINERO),
+                "MKT: no dinero on last index"
+            );
+
+            (uint256 amount0, uint256 amount1) = ROUTER.removeLiquidity(
+                IPancakePair(address(COLLATERAL)).token0(),
+                IPancakePair(address(COLLATERAL)).token1(),
+                collateralAmount,
+                0, // The liquidator will pay for slippage
+                0, // The liquidator will pay for slippage
+                address(this), // The contract needs the tokens to sell them.
+                //solhint-disable-next-line not-rely-on-time
+                block.timestamp
+            );
+
+            ROUTER.swapExactTokensForTokens(
+                // Sell all token0 removed from the liquidity.
+                amount0,
+                // The liquidator will pay for the slippage.
+                0,
+                // Sell token0 -> ... -> DINERO
+                path,
+                // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
+                recipient,
+                // This TX must happen in this block.
+                //solhint-disable-next-line not-rely-on-time
+                block.timestamp
+            );
+
+            ROUTER.swapExactTokensForTokens(
+                // Sell all token1 obtained from removing the liquidity.
+                amount1,
+                // The liquidator will pay for the slippage.
+                0,
+                // Sell token1 -> ... -> DINERO
+                path2,
+                // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
+                recipient,
+                // This TX must happen in this block.
+                //solhint-disable-next-line not-rely-on-time
+                block.timestamp
+            );
+        } else {
+            // If it is not a pair contract, we can swap it on PCS.
+            ROUTER.swapExactTokensForTokens(
+                // Sell all collateral for this liquidation
+                collateralAmount,
+                minAmount,
+                // Sell COLLATERAL -> ... -> DINERO
+                path,
+                // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
+                recipient,
+                // This TX must happen in this block.
+                //solhint-disable-next-line not-rely-on-time
+                block.timestamp
+            );
+        }
+    }
 
     /**
      * @dev Checks if an `account` has enough collateral to back his loan based on the {maxLTVRatio}.
@@ -716,14 +837,18 @@ contract InterestMarketV1 is Initializable, Context {
      * @dev This is a helper function to account for the fact that some contracts have a vault to farm the collateral.
      * It deposits the collateral in the vault if there is a vault. Otherwise, it deposits in this contract.
      *
-     * @param account The address who needs to deposit collateral.
+     * @param from The address that needs to approve the contract and will have tokens transferred to this contract.
      * @param amount The number of tokens it needs to provide as collateral.
      */
-    function _depositCollateral(address account, uint256 amount) private {
+    function _depositCollateral(
+        address from,
+        address to,
+        uint256 amount
+    ) private {
         if (Vault(address(0)) == VAULT) {
-            COLLATERAL.safeTransferFrom(account, address(this), amount);
+            COLLATERAL.safeTransferFrom(from, address(this), amount);
         } else {
-            VAULT.deposit(account, amount);
+            VAULT.deposit(from, to, amount);
         }
     }
 

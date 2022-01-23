@@ -282,7 +282,9 @@ describe('InterestMarketV1', () => {
     });
   });
   it('allows the router allowance to be maxed out', async () => {
-    await cakeMarket.connect(alice).addCollateral(parseEther('51'));
+    await cakeMarket
+      .connect(alice)
+      .addCollateral(alice.address, parseEther('51'));
 
     // We need to borrow and then liquidate in order to use some of router allowance to increase it
     await cakeMarket.connect(alice).borrow(alice.address, parseEther('500'));
@@ -321,7 +323,9 @@ describe('InterestMarketV1', () => {
   });
   it('sends the feesEarned to the treasury', async () => {
     // Add 50 CAKE as collateral
-    await cakeMarket.connect(alice).addCollateral(parseEther('50'));
+    await cakeMarket
+      .connect(alice)
+      .addCollateral(alice.address, parseEther('50'));
 
     // Borrow 490 DINERO
     await cakeMarket.connect(alice).borrow(alice.address, parseEther('490'));
@@ -342,7 +346,6 @@ describe('InterestMarketV1', () => {
     // Due to time delays of asynchronous code and the fact that interest is calculated based on time. We cannot guarantee that the value of debt is accurate but only an approximation.
     await expect(cakeMarket.getEarnings())
       .to.emit(cakeMarket, 'Accrue')
-      .withArgs(debt)
       .to.emit(cakeMarket, 'GetEarnings');
 
     expect((await cakeMarket.loan()).feesEarned).to.be.equal(0);
@@ -363,7 +366,9 @@ describe('InterestMarketV1', () => {
     });
     it('accrues the interest rate', async () => {
       // Add 50 CAKE as collateral
-      await cakeMarket.connect(alice).addCollateral(parseEther('50'));
+      await cakeMarket
+        .connect(alice)
+        .addCollateral(alice.address, parseEther('50'));
 
       // Borrow 490 DINERO
       await cakeMarket.connect(alice).borrow(alice.address, parseEther('490'));
@@ -438,11 +443,13 @@ describe('InterestMarketV1', () => {
 
       const amount = parseEther('10');
 
-      await expect(cakeMarket.connect(alice).addCollateral(amount))
+      await expect(
+        cakeMarket.connect(alice).addCollateral(alice.address, amount)
+      )
         .to.emit(cakeMarket, 'AddCollateral')
-        .withArgs(alice.address, amount)
+        .withArgs(alice.address, alice.address, amount)
         .to.emit(cakeVault, 'Deposit')
-        .withArgs(alice.address, amount)
+        .withArgs(alice.address, alice.address, amount)
         .to.emit(cake, 'Transfer')
         .withArgs(alice.address, cakeVault.address, amount);
 
@@ -452,11 +459,11 @@ describe('InterestMarketV1', () => {
         amount
       );
 
-      await expect(cakeMarket.connect(bob).addCollateral(amount))
+      await expect(cakeMarket.connect(bob).addCollateral(alice.address, amount))
         .to.emit(cakeMarket, 'AddCollateral')
-        .withArgs(bob.address, amount)
+        .withArgs(bob.address, alice.address, amount)
         .to.emit(cakeVault, 'Deposit')
-        .withArgs(bob.address, amount)
+        .withArgs(bob.address, alice.address, amount)
         .to.emit(cake, 'Transfer')
         .withArgs(bob.address, cakeVault.address, amount);
 
@@ -465,9 +472,9 @@ describe('InterestMarketV1', () => {
       );
 
       expect(await cakeMarket.userCollateral(alice.address)).to.be.equal(
-        amount
+        amount.add(amount)
       );
-      expect(await cakeMarket.userCollateral(bob.address)).to.be.equal(amount);
+      expect(await cakeMarket.userCollateral(bob.address)).to.be.equal(0);
       expect(await cake.balanceOf(cakeMarket.address)).to.be.equal(0); // Cake is in the masterChef
     });
     it('accepts collateral without a vault', async () => {
@@ -508,13 +515,15 @@ describe('InterestMarketV1', () => {
 
       const amount = parseEther('25');
 
-      await expect(cakeMarket2.connect(alice).addCollateral(amount))
+      await expect(
+        cakeMarket2.connect(alice).addCollateral(alice.address, amount)
+      )
         .to.emit(cakeMarket2, 'AddCollateral')
-        .withArgs(alice.address, amount)
+        .withArgs(alice.address, alice.address, amount)
         .to.emit(cake, 'Transfer')
         .withArgs(alice.address, cakeMarket2.address, amount)
         .to.not.emit(cakeVault, 'Deposit')
-        .withArgs(alice.address, amount);
+        .withArgs(alice.address, alice.address, amount);
 
       expect(await cakeMarket2.totalCollateral()).to.be.equal(amount);
 
@@ -522,34 +531,36 @@ describe('InterestMarketV1', () => {
         amount
       );
 
-      await expect(cakeMarket2.connect(bob).addCollateral(amount))
+      await expect(
+        cakeMarket2.connect(bob).addCollateral(alice.address, amount)
+      )
         .to.emit(cakeMarket2, 'AddCollateral')
-        .withArgs(bob.address, amount)
+        .withArgs(bob.address, alice.address, amount)
         .to.emit(cake, 'Transfer')
         .withArgs(bob.address, cakeMarket2.address, amount)
         .to.not.emit(cakeVault, 'Deposit')
-        .withArgs(bob.address, amount);
+        .withArgs(bob.address, alice.address, amount);
 
       expect(await cakeMarket2.totalCollateral()).to.be.equal(
         amount.add(amount)
       );
 
       expect(await cakeMarket2.userCollateral(alice.address)).to.be.equal(
-        amount
+        amount.add(amount)
       );
-      expect(await cakeMarket2.userCollateral(bob.address)).to.be.equal(amount);
+      expect(await cakeMarket2.userCollateral(bob.address)).to.be.equal(0);
       expect(await cake.balanceOf(cakeMarket2.address)).to.be.equal(
         amount.add(amount)
       );
     });
   });
-  describe('function: removeCollateral', () => {
+  describe('function: withdrawCollateral', () => {
     it('removes collateral using a vault', async () => {
       const aliceAmount = parseEther('12');
       const bobAmount = parseEther('7');
       await Promise.all([
-        cakeMarket.connect(alice).addCollateral(aliceAmount),
-        cakeMarket.connect(bob).addCollateral(bobAmount),
+        cakeMarket.connect(alice).addCollateral(alice.address, aliceAmount),
+        cakeMarket.connect(bob).addCollateral(bob.address, bobAmount),
       ]);
 
       // We need to borrow to test the Accrue event
@@ -566,9 +577,11 @@ describe('InterestMarketV1', () => {
         bobAmount
       );
 
-      await expect(cakeMarket.connect(alice).removeCollateral(aliceAmount))
-        .to.emit(cakeMarket, 'RemoveCollateral')
-        .withArgs(alice.address, aliceAmount)
+      await expect(
+        cakeMarket.connect(alice).withdrawCollateral(alice.address, aliceAmount)
+      )
+        .to.emit(cakeMarket, 'WithdrawCollateral')
+        .withArgs(alice.address, alice.address, aliceAmount)
         .to.emit(cakeVault, 'Withdraw')
         .withArgs(alice.address, alice.address, aliceAmount)
         .to.emit(cakeMarket, 'Accrue')
@@ -582,11 +595,17 @@ describe('InterestMarketV1', () => {
         bobAmount
       );
 
-      await expect(cakeMarket.connect(bob).removeCollateral(parseEther('3')))
-        .to.emit(cakeMarket, 'RemoveCollateral')
-        .withArgs(bob.address, parseEther('3'))
+      const aliceCakeBalance = await cake.balanceOf(alice.address);
+
+      await expect(
+        cakeMarket
+          .connect(bob)
+          .withdrawCollateral(alice.address, parseEther('3'))
+      )
+        .to.emit(cakeMarket, 'WithdrawCollateral')
+        .withArgs(bob.address, alice.address, parseEther('3'))
         .to.emit(cakeVault, 'Withdraw')
-        .withArgs(bob.address, bob.address, parseEther('3'))
+        .withArgs(bob.address, alice.address, parseEther('3'))
         .to.emit(cakeMarket, 'Accrue')
         .to.emit(cake, 'Transfer');
 
@@ -597,6 +616,11 @@ describe('InterestMarketV1', () => {
       expect(await cakeMarket.userCollateral(bob.address)).to.be.equal(
         bobAmount.sub(parseEther('3'))
       );
+      expect(
+        (await cake.balanceOf(alice.address)).gte(
+          aliceCakeBalance.add(parseEther('3'))
+        )
+      ).to.be.equal(true);
     });
     it('removes collateral without a vault', async () => {
       const aliceAmount = parseEther('12');
@@ -635,8 +659,8 @@ describe('InterestMarketV1', () => {
       ]);
 
       await Promise.all([
-        cakeMarket2.connect(alice).addCollateral(aliceAmount),
-        cakeMarket2.connect(bob).addCollateral(bobAmount),
+        cakeMarket2.connect(alice).addCollateral(alice.address, aliceAmount),
+        cakeMarket2.connect(bob).addCollateral(bob.address, bobAmount),
       ]);
 
       // We need to borrow to test the Accrue event
@@ -653,9 +677,13 @@ describe('InterestMarketV1', () => {
         bobAmount
       );
 
-      await expect(cakeMarket2.connect(alice).removeCollateral(aliceAmount))
-        .to.emit(cakeMarket2, 'RemoveCollateral')
-        .withArgs(alice.address, aliceAmount)
+      await expect(
+        cakeMarket2
+          .connect(alice)
+          .withdrawCollateral(alice.address, aliceAmount)
+      )
+        .to.emit(cakeMarket2, 'WithdrawCollateral')
+        .withArgs(alice.address, alice.address, aliceAmount)
         .to.emit(cakeMarket2, 'Accrue')
         .to.emit(cake, 'Transfer')
         .withArgs(cakeMarket2.address, alice.address, aliceAmount)
@@ -669,12 +697,18 @@ describe('InterestMarketV1', () => {
         bobAmount
       );
 
-      await expect(cakeMarket2.connect(bob).removeCollateral(parseEther('3')))
-        .to.emit(cakeMarket2, 'RemoveCollateral')
-        .withArgs(bob.address, parseEther('3'))
+      const aliceCakeBalance = await cake.balanceOf(alice.address);
+
+      await expect(
+        cakeMarket2
+          .connect(bob)
+          .withdrawCollateral(alice.address, parseEther('3'))
+      )
+        .to.emit(cakeMarket2, 'WithdrawCollateral')
+        .withArgs(bob.address, alice.address, parseEther('3'))
         .to.emit(cakeMarket2, 'Accrue')
         .to.emit(cake, 'Transfer')
-        .withArgs(cakeMarket2.address, bob.address, parseEther('3'))
+        .withArgs(cakeMarket2.address, alice.address, parseEther('3'))
         .to.not.emit(cakeVault, 'Withdraw');
 
       expect(await cakeMarket2.totalCollateral()).to.be.equal(
@@ -686,6 +720,9 @@ describe('InterestMarketV1', () => {
       );
       expect(await cake.balanceOf(cakeMarket2.address)).to.be.equal(
         bobAmount.sub(parseEther('3'))
+      );
+      expect(await cake.balanceOf(alice.address)).to.be.equal(
+        aliceCakeBalance.add(parseEther('3'))
       );
     });
   });
@@ -781,7 +818,9 @@ describe('InterestMarketV1', () => {
         cakeMarket.connect(alice).borrow(alice.address, 1)
       ).to.revertedWith('MKT: sender is insolvent');
 
-      await cakeMarket.connect(alice).addCollateral(parseEther('10')); // 200 USD of collateral
+      await cakeMarket
+        .connect(alice)
+        .addCollateral(alice.address, parseEther('10')); // 200 USD of collateral
 
       // @notice the collateral ratio is 49.9%
       await expect(
@@ -789,7 +828,9 @@ describe('InterestMarketV1', () => {
       ).to.revertedWith('MKT: sender is insolvent');
     });
     it('reverts if the recipient is the zero address', async () => {
-      await cakeMarket.connect(alice).addCollateral(parseEther('10')); // 200 USD of collateral
+      await cakeMarket
+        .connect(alice)
+        .addCollateral(alice.address, parseEther('10')); // 200 USD of collateral
 
       await expect(
         cakeMarket
@@ -798,7 +839,9 @@ describe('InterestMarketV1', () => {
       ).to.revertedWith('MKT: no zero address');
     });
     it('allows borrowing', async () => {
-      await cakeMarket.connect(alice).addCollateral(parseEther('10')); // 200 USD of collateral
+      await cakeMarket
+        .connect(alice)
+        .addCollateral(alice.address, parseEther('10')); // 200 USD of collateral
 
       const totalLoan = await cakeMarket.totalLoan();
 
@@ -808,14 +851,18 @@ describe('InterestMarketV1', () => {
       expect(totalLoan.elastic).to.be.equal(0);
 
       await expect(
-        cakeMarket.connect(alice).borrow(alice.address, parseEther('50'))
+        cakeMarket.connect(alice).borrow(recipient.address, parseEther('50'))
       )
         .to.emit(dinero, 'Transfer')
-        .withArgs(ethers.constants.AddressZero, alice.address, parseEther('50'))
+        .withArgs(
+          ethers.constants.AddressZero,
+          recipient.address,
+          parseEther('50')
+        )
         .to.emit(cakeMarket, 'Borrow')
         .withArgs(
           alice.address,
-          alice.address,
+          recipient.address,
           parseEther('50'),
           parseEther('50')
         )
@@ -826,7 +873,8 @@ describe('InterestMarketV1', () => {
       expect(await cakeMarket.userLoan(alice.address)).to.be.equal(
         parseEther('50')
       );
-      expect(await dinero.balanceOf(alice.address)).to.be.equal(
+      expect(await dinero.balanceOf(alice.address)).to.be.equal(0);
+      expect(await dinero.balanceOf(recipient.address)).to.be.equal(
         parseEther('50')
       );
       expect(totalLoan2.base).to.be.equal(parseEther('50'));
@@ -847,9 +895,10 @@ describe('InterestMarketV1', () => {
         totalLoan3.base
       );
       expect(await cakeMarket.userLoan(bob.address)).to.be.equal(0);
-      expect(await dinero.balanceOf(alice.address)).to.be.equal(
+      expect(await dinero.balanceOf(recipient.address)).to.be.equal(
         parseEther('50')
       );
+      expect(await dinero.balanceOf(alice.address)).to.be.equal(0);
       expect(await dinero.balanceOf(bob.address)).to.be.equal(parseEther('30'));
       expect(totalLoan3.base.gt(parseEther('78'))).to.be.equal(true); // Due to fees this value is not easy to estimate
       expect(totalLoan3.base.lt(parseEther('80'))).to.be.equal(true); // Due to fees this value is not easy to estimate
@@ -857,7 +906,9 @@ describe('InterestMarketV1', () => {
     });
   });
   it('allows loans to be repaid', async () => {
-    await cakeMarket.connect(alice).addCollateral(parseEther('10')); // 200 USD of collateral
+    await cakeMarket
+      .connect(alice)
+      .addCollateral(alice.address, parseEther('10')); // 200 USD of collateral
 
     await cakeMarket.connect(alice).borrow(alice.address, parseEther('30'));
 
@@ -930,9 +981,11 @@ describe('InterestMarketV1', () => {
     });
     it('reverts if there are no accounts to liquidate', async () => {
       await Promise.all([
-        cakeMarket.connect(alice).addCollateral(parseEther('10')),
-        cakeMarket.connect(bob).addCollateral(parseEther('10')),
-        cakeMarket.connect(jose).addCollateral(parseEther('10')),
+        cakeMarket
+          .connect(alice)
+          .addCollateral(alice.address, parseEther('10')),
+        cakeMarket.connect(bob).addCollateral(bob.address, parseEther('10')),
+        cakeMarket.connect(jose).addCollateral(jose.address, parseEther('10')),
       ]);
 
       await Promise.all([
@@ -989,8 +1042,10 @@ describe('InterestMarketV1', () => {
 
       // Add Collateral
       await Promise.all([
-        cakeMarket2.connect(alice).addCollateral(parseEther('10')),
-        cakeMarket2.connect(jose).addCollateral(parseEther('10')),
+        cakeMarket2
+          .connect(alice)
+          .addCollateral(alice.address, parseEther('10')),
+        cakeMarket2.connect(jose).addCollateral(jose.address, parseEther('10')),
       ]);
 
       // Borrow the maximum amount of 49.9%
@@ -1045,7 +1100,7 @@ describe('InterestMarketV1', () => {
           [cake.address, bnb.address, dinero.address] // Enables the user of the router
         )
       )
-        .to.emit(cakeMarket2, 'RemoveCollateral')
+        .to.emit(cakeMarket2, 'WithdrawCollateral')
         .to.emit(cakeMarket2, 'Repay')
         .to.emit(cakeMarket2, 'Accrue')
         .to.emit(cakeMarket2, 'ExchangeRate')
@@ -1134,9 +1189,11 @@ describe('InterestMarketV1', () => {
     });
     it('liquidates accounts on a market with a vault and without using the router', async () => {
       await Promise.all([
-        cakeMarket.connect(alice).addCollateral(parseEther('10')),
-        cakeMarket.connect(bob).addCollateral(parseEther('100')),
-        cakeMarket.connect(jose).addCollateral(parseEther('10')),
+        cakeMarket
+          .connect(alice)
+          .addCollateral(alice.address, parseEther('10')),
+        cakeMarket.connect(bob).addCollateral(bob.address, parseEther('100')),
+        cakeMarket.connect(jose).addCollateral(jose.address, parseEther('10')),
       ]);
 
       await Promise.all([
@@ -1196,7 +1253,7 @@ describe('InterestMarketV1', () => {
             []
           )
       )
-        .to.emit(cakeMarket, 'RemoveCollateral')
+        .to.emit(cakeMarket, 'WithdrawCollateral')
         .to.emit(cakeMarket, 'Repay')
         .to.emit(cakeMarket, 'Accrue')
         .to.emit(cakeMarket, 'ExchangeRate')
