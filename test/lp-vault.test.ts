@@ -106,7 +106,9 @@ describe('LPVault', () => {
   it('shows the pending rewards in the CAKE and lp token pools', async () => {
     expect(await lpVault.getPendingRewards()).to.be.equal(0);
 
-    await lpVault.connect(market).deposit(alice.address, parseEther('10'));
+    await lpVault
+      .connect(market)
+      .deposit(alice.address, alice.address, parseEther('10'));
 
     // accrue some cake
     await advanceBlock(ethers);
@@ -126,7 +128,9 @@ describe('LPVault', () => {
     );
   });
   it('increases allowance to masterchef for cake and staking token', async () => {
-    await lpVault.connect(market).deposit(alice.address, parseEther('10'));
+    await lpVault
+      .connect(market)
+      .deposit(alice.address, alice.address, parseEther('10'));
 
     // accrue some cake
     await advanceBlock(ethers);
@@ -174,7 +178,9 @@ describe('LPVault', () => {
   it('allows to see how many pending rewards a user has', async () => {
     expect(await lpVault.getUserPendingRewards(alice.address)).to.be.equal(0);
 
-    await lpVault.connect(market).deposit(alice.address, parseEther('10'));
+    await lpVault
+      .connect(market)
+      .deposit(alice.address, alice.address, parseEther('10'));
 
     // accrue some cake
     await advanceBlock(ethers);
@@ -183,15 +189,19 @@ describe('LPVault', () => {
     // to get Cake rewards
     await lpVault.compound();
 
-    lpVault.connect(market).deposit(bob.address, parseEther('20'));
+    lpVault.connect(market).deposit(bob.address, bob.address, parseEther('20'));
 
     // accrue some cake
     await advanceBlock(ethers);
     await advanceBlock(ethers);
 
     await Promise.all([
-      lpVault.connect(market).deposit(alice.address, parseEther('20')),
-      lpVault.connect(market).deposit(bob.address, parseEther('15')),
+      lpVault
+        .connect(market)
+        .deposit(alice.address, alice.address, parseEther('20')),
+      lpVault
+        .connect(market)
+        .deposit(bob.address, bob.address, parseEther('15')),
     ]);
 
     // to get Cake rewards
@@ -252,8 +262,12 @@ describe('LPVault', () => {
   });
   it('reinvests the Cake rewards from the farm and Cake pool back in the Cake pool', async () => {
     await Promise.all([
-      lpVault.connect(market).deposit(alice.address, parseEther('10')),
-      lpVault.connect(market).deposit(bob.address, parseEther('30')),
+      lpVault
+        .connect(market)
+        .deposit(alice.address, alice.address, parseEther('10')),
+      lpVault
+        .connect(market)
+        .deposit(bob.address, bob.address, parseEther('30')),
     ]);
 
     // accrue some cake
@@ -312,25 +326,34 @@ describe('LPVault', () => {
     expect((await cake.balanceOf(alice.address)).gt(0)).to.be.equal(true);
   });
   describe('function: deposit', () => {
-    it('reverts if the amount if smaller or 0', async () => {
+    it('reverts if the amount is smaller or 0', async () => {
       await expect(
-        lpVault.connect(market).deposit(alice.address, 0)
+        lpVault.connect(market).deposit(alice.address, alice.address, 0)
       ).to.revertedWith('Vault: no zero amount');
     });
-    it('reverts if the account is the zero address', async () => {
+    it('reverts if the first parameter is the zero address', async () => {
       await expect(
-        lpVault.connect(market).deposit(ethers.constants.AddressZero, 10)
+        lpVault
+          .connect(market)
+          .deposit(ethers.constants.AddressZero, alice.address, 10)
+      ).to.revertedWith('Vault: no zero address');
+    });
+    it('reverts if the second parameter is the zero address', async () => {
+      await expect(
+        lpVault
+          .connect(market)
+          .deposit(alice.address, ethers.constants.AddressZero, 10)
       ).to.revertedWith('Vault: no zero address');
     });
     it('reverts if the msg.sender is not the market', async () => {
       await expect(
-        lpVault.connect(owner).deposit(alice.address, 10)
+        lpVault.connect(owner).deposit(alice.address, alice.address, 10)
       ).to.revertedWith('Vault: only market');
       await expect(
-        lpVault.connect(alice).deposit(alice.address, 10)
+        lpVault.connect(alice).deposit(alice.address, alice.address, 10)
       ).to.revertedWith('Vault: only market');
       await expect(
-        lpVault.connect(bob).deposit(alice.address, 10)
+        lpVault.connect(bob).deposit(alice.address, alice.address, 10)
       ).to.revertedWith('Vault: only market');
     });
     it('allows deposits', async () => {
@@ -357,10 +380,12 @@ describe('LPVault', () => {
       expect(masterChefLpPool.amount).to.be.equal(0);
 
       await expect(
-        lpVault.connect(market).deposit(alice.address, parseEther('20'))
+        lpVault
+          .connect(market)
+          .deposit(alice.address, alice.address, parseEther('20'))
       )
         .to.emit(lpVault, 'Deposit')
-        .withArgs(alice.address, parseEther('20'))
+        .withArgs(alice.address, alice.address, parseEther('20'))
         .to.emit(masterChef, 'Deposit')
         .withArgs(lpVault.address, 1, parseEther('20'))
         .to.emit(lpToken, 'Transfer')
@@ -389,10 +414,12 @@ describe('LPVault', () => {
       expect(masterChefLpPool2.amount).to.be.equal(parseEther('20'));
 
       await expect(
-        lpVault.connect(market).deposit(alice.address, parseEther('10'))
+        lpVault
+          .connect(market)
+          .deposit(alice.address, alice.address, parseEther('10'))
       )
         .to.emit(lpVault, 'Deposit')
-        .withArgs(alice.address, parseEther('10'))
+        .withArgs(alice.address, alice.address, parseEther('10'))
         .to.emit(masterChef, 'Deposit')
         .withArgs(lpVault.address, 1, parseEther('10'))
         // Rewards were reinvested to Cake Pool
@@ -404,12 +431,14 @@ describe('LPVault', () => {
 
       const [
         aliceInfo3,
+        bobInfo,
         totalAmount3,
         totalRewardsPerAmount3,
         masterChefCakePool3,
         masterChefLpPool3,
       ] = await Promise.all([
         lpVault.userInfo(alice.address),
+        lpVault.userInfo(bob.address),
         lpVault.totalAmount(),
         lpVault.totalRewardsPerAmount(),
         masterChef.userInfo(0, lpVault.address),
@@ -433,6 +462,69 @@ describe('LPVault', () => {
       // Hard to calculate precise Cake reward
       expect(masterChefCakePool3.amount.gt(0)).to.be.equal(true);
       expect(masterChefLpPool3.amount).to.be.equal(parseEther('30'));
+
+      expect(bobInfo.amount).to.be.equal(0);
+      expect(bobInfo.rewardDebt).to.be.equal(0);
+      expect(bobInfo.rewards).to.be.equal(0);
+
+      await expect(
+        lpVault
+          .connect(market)
+          .deposit(alice.address, bob.address, parseEther('10'))
+      )
+        .to.emit(lpVault, 'Deposit')
+        .withArgs(alice.address, bob.address, parseEther('10'))
+        .to.emit(masterChef, 'Deposit')
+        .withArgs(lpVault.address, 1, parseEther('10'))
+        // Rewards were reinvested to Cake Pool
+        .to.emit(masterChef, 'Deposit')
+        // Rewards were taken from lpToken Farm
+        .withArgs(lpVault.address, 1, 0)
+        .to.emit(lpToken, 'Transfer')
+        .withArgs(alice.address, lpVault.address, parseEther('10'));
+
+      const [
+        aliceInfo4,
+        bobInfo2,
+        totalAmount4,
+        totalRewardsPerAmount4,
+        masterChefCakePool4,
+        masterChefLpPool4,
+      ] = await Promise.all([
+        lpVault.userInfo(alice.address),
+        lpVault.userInfo(bob.address),
+        lpVault.totalAmount(),
+        lpVault.totalRewardsPerAmount(),
+        masterChef.userInfo(0, lpVault.address),
+        masterChef.userInfo(1, lpVault.address),
+      ]);
+
+      // Alice info does not change
+      expect(aliceInfo3.rewardDebt).to.be.equal(aliceInfo4.rewardDebt);
+      expect(aliceInfo3.rewards).to.be.equal(aliceInfo4.rewards);
+      expect(aliceInfo3.amount).to.be.equal(aliceInfo4.amount);
+
+      // Bob info gets updated
+      expect(bobInfo2.amount).to.be.equal(parseEther('10'));
+      expect(bobInfo2.rewards).to.be.equal(0);
+      expect(bobInfo2.rewardDebt).to.be.equal(
+        totalRewardsPerAmount4.mul(parseEther('10')).div(1e12)
+      );
+      expect(totalAmount4).to.be.equal(totalAmount3.add(parseEther('10')));
+      expect(masterChefLpPool4.amount).to.be.equal(
+        masterChefLpPool3.amount.add(parseEther('10'))
+      );
+      expect(totalRewardsPerAmount4).to.be.equal(
+        totalRewardsPerAmount3.add(
+          masterChefCakePool4.amount
+            .sub(masterChefCakePool3.amount)
+            .mul(1e12)
+            .div(totalAmount3)
+        )
+      );
+      expect(
+        masterChefCakePool4.amount.gt(masterChefLpPool3.amount)
+      ).to.be.equal(true);
     });
   });
   describe('function: withdraw', () => {
@@ -472,7 +564,9 @@ describe('LPVault', () => {
       ).to.revertedWith('Vault: only market');
     });
     it('reverts if the msg.sender tries to withdraw more than the account has', async () => {
-      await lpVault.connect(market).deposit(alice.address, parseEther('20'));
+      await lpVault
+        .connect(market)
+        .deposit(alice.address, alice.address, parseEther('20'));
 
       await expect(
         lpVault
@@ -482,8 +576,12 @@ describe('LPVault', () => {
     });
     it('market to withdraw assets', async () => {
       await Promise.all([
-        lpVault.connect(market).deposit(alice.address, parseEther('20')),
-        lpVault.connect(market).deposit(bob.address, parseEther('30')),
+        lpVault
+          .connect(market)
+          .deposit(alice.address, alice.address, parseEther('20')),
+        lpVault
+          .connect(market)
+          .deposit(bob.address, bob.address, parseEther('30')),
       ]);
 
       // accrue some cake

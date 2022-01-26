@@ -67,4 +67,9 @@ contract WETH9 {
 
         return true;
     }
+
+    // Testing purposes
+    function mint(uint256 amount) external {
+        balanceOf[msg.sender] += amount;
+    }
 }

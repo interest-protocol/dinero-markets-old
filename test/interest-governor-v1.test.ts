@@ -50,8 +50,8 @@ describe('InterestGovernorV1', () => {
     expect(await interestGovernorV1.DINERO()).to.be.equal(dinero.address);
   });
 
-  it('returns the total number of deployed markets', async () => {
-    expect(await interestGovernorV1.getAllMarketsLength()).to.be.equal(0);
+  it('returns the total number of markets that have dinero roles', async () => {
+    expect(await interestGovernorV1.getAllDineroMarketsLength()).to.be.equal(0);
 
     const masterMarketContractAddress = mockInterestMarketV1.address;
 
@@ -66,39 +66,43 @@ describe('InterestGovernorV1', () => {
         interestGovernorV1
           .connect(owner)
           // @notice Since we are using a mock market we can pass any address as the collateral token
-          .createMarket(contract, collateralTokenAddress, data)
+          .createDineroMarket(contract, collateralTokenAddress, data)
       )
     );
-    expect(await interestGovernorV1.getAllMarketsLength()).to.be.equal(
+    expect(await interestGovernorV1.getAllDineroMarketsLength()).to.be.equal(
       contracts.length
     );
   });
 
-  it('tells if a market is registered', async () => {
+  it('tells if a market is a Dinero market', async () => {
     expect(
-      await interestGovernorV1.isMarket(unregisteredMarketAddress)
+      await interestGovernorV1.isDineroMarket(unregisteredMarketAddress)
     ).to.be.equal(false);
 
     await interestGovernorV1
       .connect(owner)
-      .createMarket(
+      .createDineroMarket(
         mockInterestMarketV1.address,
         stakerContractAddress,
         makeData('data1')
       );
 
-    const market = await interestGovernorV1.allMarkets([0]);
+    const market = await interestGovernorV1.allDineroMarkets([0]);
 
-    expect(await interestGovernorV1.isMarket(market)).to.be.equal(true);
+    expect(await interestGovernorV1.isDineroMarket(market)).to.be.equal(true);
   });
 
   it('allows to predict a clone address', async () => {
     const data = makeData('data1');
     await interestGovernorV1
       .connect(owner)
-      .createMarket(mockInterestMarketV1.address, collateralTokenAddress, data);
+      .createDineroMarket(
+        mockInterestMarketV1.address,
+        collateralTokenAddress,
+        data
+      );
 
-    const market = await interestGovernorV1.allMarkets([0]);
+    const market = await interestGovernorV1.allDineroMarkets([0]);
 
     expect(
       await interestGovernorV1.predictMarketAddress(
@@ -127,12 +131,12 @@ describe('InterestGovernorV1', () => {
       expect(await interestGovernorV1.feeTo()).to.be.equal(alice.address);
     });
   });
-  describe('function: createMarket', () => {
+  describe('function: createDineroMarket', () => {
     it('reverts if the caller is not the owner', async () => {
       await expect(
         interestGovernorV1
           .connect(alice)
-          .createMarket(
+          .createDineroMarket(
             unregisteredMarketAddress,
             collateralTokenAddress,
             makeData('data')
@@ -143,14 +147,18 @@ describe('InterestGovernorV1', () => {
       await expect(
         interestGovernorV1
           .connect(owner)
-          .createMarket(AddressZero, collateralTokenAddress, makeData('data'))
+          .createDineroMarket(
+            AddressZero,
+            collateralTokenAddress,
+            makeData('data')
+          )
       ).to.revertedWith('IFV1: not zero address');
     });
     it('reverts if the collateral token is address zero', async () => {
       await expect(
         interestGovernorV1
           .connect(owner)
-          .createMarket(
+          .createDineroMarket(
             unregisteredMarketAddress,
             AddressZero,
             makeData('data')
@@ -160,7 +168,7 @@ describe('InterestGovernorV1', () => {
     it('reverts if you clone the master contract with the same data', async () => {
       await interestGovernorV1
         .connect(owner)
-        .createMarket(
+        .createDineroMarket(
           mockInterestMarketV1.address,
           stakerContractAddress,
           makeData('data1')
@@ -169,39 +177,39 @@ describe('InterestGovernorV1', () => {
       await expect(
         interestGovernorV1
           .connect(owner)
-          .createMarket(
+          .createDineroMarket(
             mockInterestMarketV1.address,
             stakerContractAddress,
             makeData('data1')
           )
       ).to.revertedWith('ERC1167: create2 failed');
     });
-    it('creates a master market contract clone', async () => {
+    it('creates a dinero market based on a master contract', async () => {
       const data = makeData('data1');
 
       // Throws because it has not been instantiated
-      await expect(interestGovernorV1.allMarkets(0)).to.revertedWith('');
+      await expect(interestGovernorV1.allDineroMarkets(0)).to.revertedWith('');
       const predictedAddress = await interestGovernorV1.predictMarketAddress(
         mockInterestMarketV1.address,
         keccak256(data)
       );
-      expect(await interestGovernorV1.isMarket(predictedAddress)).to.be.equal(
-        false
-      );
+      expect(
+        await interestGovernorV1.isDineroMarket(predictedAddress)
+      ).to.be.equal(false);
       await expect(
         interestGovernorV1
           .connect(owner)
-          .createMarket(
+          .createDineroMarket(
             mockInterestMarketV1.address,
             collateralTokenAddress,
             data
           )
       )
-        .to.emit(interestGovernorV1, 'MarketCreated')
+        .to.emit(interestGovernorV1, 'DineroMarketCreated')
         .withArgs(collateralTokenAddress, predictedAddress, 0);
 
-      const market = await interestGovernorV1.allMarkets(0);
-      expect(await interestGovernorV1.isMarket(market)).to.be.equal(true);
+      const market = await interestGovernorV1.allDineroMarkets(0);
+      expect(await interestGovernorV1.isDineroMarket(market)).to.be.equal(true);
       expect(market).to.be.equal(predictedAddress);
 
       expect(
@@ -225,18 +233,18 @@ describe('InterestGovernorV1', () => {
     it('reverts if you pass a non registered market', async () => {
       await expect(
         interestGovernorV1.connect(owner).openMarket(alice.address)
-      ).to.revertedWith('IFV1: not a market');
+      ).to.revertedWith('IFV1: not a dinero market');
     });
-    it('opens a market after being closed', async () => {
+    it('opens a dinero market after being closed', async () => {
       await interestGovernorV1
         .connect(owner)
-        .createMarket(
+        .createDineroMarket(
           mockInterestMarketV1.address,
           stakerContractAddress,
           makeData('data1')
         );
 
-      const marketClone = await interestGovernorV1.allMarkets(0);
+      const marketClone = await interestGovernorV1.allDineroMarkets(0);
 
       await interestGovernorV1.connect(owner).closeMarket(marketClone);
 
@@ -262,13 +270,13 @@ describe('InterestGovernorV1', () => {
     it('closes a market, removing the MINTER_ROLE', async () => {
       await interestGovernorV1
         .connect(owner)
-        .createMarket(
+        .createDineroMarket(
           mockInterestMarketV1.address,
           stakerContractAddress,
           makeData('data1')
         );
 
-      const marketClone = await interestGovernorV1.allMarkets(0);
+      const marketClone = await interestGovernorV1.allDineroMarkets(0);
 
       expect(
         await dinero.hasRole(await dinero.MINTER_ROLE(), marketClone)
@@ -284,6 +292,58 @@ describe('InterestGovernorV1', () => {
 
       expect(
         await dinero.hasRole(await dinero.BURNER_ROLE(), marketClone)
+      ).to.be.equal(true);
+    });
+  });
+  describe('function: addDineroMarket', () => {
+    it('reverts if it is not called by the owner', async () => {
+      await expect(
+        interestGovernorV1.connect(alice).addDineroMarket(alice.address)
+      ).to.revertedWith('Ownable: caller is not the owner');
+    });
+    it('reverts if the market is the zero address', async () => {
+      await expect(
+        interestGovernorV1.connect(owner).addDineroMarket(AddressZero)
+      ).to.revertedWith('IFV1: not zero address');
+    });
+    it('grants dinero role to a market', async () => {
+      expect(
+        await dinero.hasRole(
+          await dinero.BURNER_ROLE(),
+          unregisteredMarketAddress
+        )
+      ).to.be.equal(false);
+      expect(
+        await dinero.hasRole(
+          await dinero.MINTER_ROLE(),
+          unregisteredMarketAddress
+        )
+      ).to.be.equal(false);
+
+      expect(
+        await interestGovernorV1.isDineroMarket(unregisteredMarketAddress)
+      ).to.be.equal(false);
+
+      await expect(
+        interestGovernorV1.addDineroMarket(unregisteredMarketAddress)
+      )
+        .to.emit(interestGovernorV1, 'DineroMarketAdded')
+        .withArgs(unregisteredMarketAddress, 0);
+
+      expect(
+        await dinero.hasRole(
+          await dinero.BURNER_ROLE(),
+          unregisteredMarketAddress
+        )
+      ).to.be.equal(true);
+      expect(
+        await dinero.hasRole(
+          await dinero.MINTER_ROLE(),
+          unregisteredMarketAddress
+        )
+      ).to.be.equal(true);
+      expect(
+        await interestGovernorV1.isDineroMarket(unregisteredMarketAddress)
       ).to.be.equal(true);
     });
   });

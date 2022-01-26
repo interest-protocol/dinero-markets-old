@@ -117,22 +117,25 @@ contract CakeVault is Vault {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev The objective of this function is to deposit the {CAKE} from an `account` to the {CAKE_MASTER_CHEF} and correctly calculate it's rewards and deposit.
-     * It uses the {IERC20} {transferFrom} function to take the {CAKE} token from the `account`.
+     * @dev The objective of this function is to deposit the {CAKE} from an `from` to the {CAKE_MASTER_CHEF} and correctly calculate it's rewards and deposit.
+     * It uses the {IERC20} {transferFrom} function to take the {CAKE} token from the `from`.
+     * It assigns the deposit to the `to` address.
      *
-     * @notice It assumes the `account` has given enough approval to this contract.
+     * @notice It assumes the `from` has given enough approval to this contract.
      * @notice The variable {_totalRewardsPerAmount} has a base unit of 1e12.
-     * @notice This function does not send the current rewards accrued to the `account`.
+     * @notice This function does not send the current rewards accrued to the `to`.
      *
-     * @param account The account that is depositing {CAKE} tokens.
+     * @param from The address that will {transferFrom} {CAKE} tokens.
+     * @param to The address that will get the deposit assigned to.
      * @param amount The number of {CAKE} tokens the `account` wishes to deposit.
      */
-    function _deposit(address account, uint256 amount)
-        internal
-        override(Vault)
-    {
+    function _deposit(
+        address from,
+        address to,
+        uint256 amount
+    ) internal override(Vault) {
         // Save the storage state in memory to save gas.
-        User memory user = userInfo[account];
+        User memory user = userInfo[to];
         uint256 _totalAmount = totalAmount;
         uint256 _totalRewardsPerAmount = totalRewardsPerAmount;
 
@@ -155,7 +158,7 @@ contract CakeVault is Vault {
         user.amount += amount;
 
         // Get Tokens from `account`.
-        CAKE.safeTransferFrom(account, address(this), amount);
+        CAKE.safeTransferFrom(from, address(this), amount);
 
         // Deposit the new acquired {CAKE} tokens, plus any pending rewards  in the {CAKE} pool.
         // Since we already got the rewards up to this block. We do not need to update the {_totalRewardsPerAmount}, because the pool is empty.
@@ -165,36 +168,37 @@ contract CakeVault is Vault {
         user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
 
         // Update Global state
-        userInfo[account] = user;
+        userInfo[to] = user;
         totalAmount = _totalAmount;
         totalRewardsPerAmount = _totalRewardsPerAmount;
 
-        emit Deposit(account, amount);
+        emit Deposit(from, to, amount);
     }
 
     /**
-     * @dev The objective of this function is to allow the `account` to withdraw some of his previously deposited tokens from the {CAKE_MASTER_CHEF}.
+     * @dev The objective of this function is to allow the `from` to withdraw some of his previously deposited tokens from the {CAKE_MASTER_CHEF}.
      *
      * @notice The base unit for {totalRewardsPerAmount} is 1e12.
-     * @notice The {user.rewards} is sent to the `account` and not the `recipient`.
-     * During liquidations, the rewards will go to the `account1` that opened the loan, but some of the deposited
+     * @notice The {user.rewards} is sent to the `from` and not the `recipient`.
+     * @notice The Cake rewards always go to the `to` address.
+     * During liquidations, the rewards will go to the `from` that opened the loan, but some of the deposited
      * tokens will go to the liquidator or the {InterestMarketV1} contract.
      *
-     * @param account The account that has deposited {CAKE} in the {_deposit} function.
-     * @param recipient the account which will get the rewards accrued by the deposit from `account`.
+     * @param from The account that has deposited {CAKE} in the {_deposit} function.
+     * @param to the account which will get the rewards accrued by the deposit from `from`.
      * @param amount The number of {CAKE} tokens to withdraw.
      *
      * Requirements:
      *
-     * - `account` must have enough tokens in the `user.amount` to withdraw the desited `amount`.
+     * - `from` must have enough tokens in the `user.amount` to withdraw the desited `amount`.
      *
      */
     function _withdraw(
-        address account,
-        address recipient,
+        address from,
+        address to,
         uint256 amount
     ) internal override(Vault) {
-        User memory user = userInfo[account];
+        User memory user = userInfo[from];
 
         // It is impossible to withdraw more than what the `account` owns.
         require(user.amount >= amount, "Vault: not enough tokens");
@@ -235,11 +239,11 @@ contract CakeVault is Vault {
 
         // If the `recipient` is also the `account` we only do one {transfer} call to save gas.
         // This happens when the user is removing collateral from the {InterestMarketV1}.
-        if (recipient == account) {
-            CAKE.safeTransfer(account, rewards + amount);
+        if (to == from) {
+            CAKE.safeTransfer(to, rewards + amount);
         } else {
-            CAKE.safeTransfer(recipient, amount);
-            CAKE.safeTransfer(account, rewards);
+            CAKE.safeTransfer(to, amount);
+            CAKE.safeTransfer(from, rewards);
         }
 
         // Only restake if there is at least 1 {CAKE} in the contract after sending the rewards and `amount`.
@@ -261,9 +265,9 @@ contract CakeVault is Vault {
             user.amount = 0;
         }
 
-        // Update the `account` global information.
-        userInfo[account] = user;
+        // Update the `from` global information.
+        userInfo[from] = user;
 
-        emit Withdraw(account, recipient, amount);
+        emit Withdraw(from, to, amount);
     }
 }

@@ -11,30 +11,21 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 //SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 
 import "./interfaces/IPancakeRouter02.sol";
-import "./interfaces/IPancakePair.sol";
 
 import "./lib/Rebase.sol";
-
-import "./vaults/Vault.sol";
 
 import "./Dinero.sol";
 import "./OracleV1.sol";
 import "./InterestGovernorV1.sol";
 
 /**
- * @dev It is an overcollaterized isolated lending market between a collateral token and the synthetic stable coin Dinero.
- * The market supports PancakePair token  farms them in PancakeSwap.
- * The objective is to have the rewards in PCS higher than the interest rate of borrowing.
+ * @dev It is an overcollaterized isolated lending market that accepts BNB as coollateral to back a loan in a synthetic stable coin called Dinero.
  * The idea behind a synthethic stable coin is to allow for a fixed low interest rate to make investment strategies built with Interest Protocol cheaper and predictable.
+ * It has the same logic as the Interest Market V1 but this one is specifically for BNB without a vault.
  *
- * @notice If the market has a vault. `ms.sender` has to approve the vault if not it has to approve the market.
  * @notice There is no deposit fee.
  * @notice There is a liquidation fee.
  * @notice Since Dinero is assumed to always be pegged to USD. Only need an exchange rate from collateral to USD.
@@ -43,8 +34,8 @@ import "./InterestGovernorV1.sol";
  * @notice {maxLTVRatio} has a base unit of 1e6
  * @notice {liquidationFee} has a base unit of 1e6
  * @notice The govenor owner has sole access to critical functions in this contract.
- * @notice Market will only support tokens on BSC with immutable contracts and 18 decimals.
- * @notice We will start by supporting tokens with high liquidity. The {maxLTVRatio} will start at 60% and slow be raised up to 80%.
+ * @notice Market will only supports BNB, which has 18 decimals.
+ * @notice The {maxLTVRatio} will start at 60% and slow be raised up to 80%.
  * @notice It relies on third party liquidators to close loans underwater.
  * @notice It depends on Chainlink price feeds oracles. However, we will add a backup using PCS TWAPS before the live release.
  * @notice The Rebase library is helper library to easily calculate the principal + fees owed by borrowers.
@@ -52,21 +43,13 @@ import "./InterestGovernorV1.sol";
  * @notice This contract enforces that Dinero remains pegged to USD.
  * If Dinero falls below, borrowers that have open  loans and swapped to a different crypto, can buy dinero cheaper and close their loans running a profit. Liquidators can accumulate Dinero to close underwater positions with an arbitrate. As liquidation will always assume 1 Dinero is worth 1 USD. If Dinero goes above a dollar, people are encouraged to borrow more Dinero for arbitrage. We believe this will keep the price pegged at 1 USD.
  *
- * Contracts that will be supported in V1:
- *
- * BTC - 0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c
- * ETH - 0x2170Ed0880ac9A755fd29B2688956BD959F933F8
- * CAKE - 0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82
- * PCS Pairs of all this tokens with WBNB - 0xA527a61703D82139F8a06Bc30097cC9CAA2df5A6
- * ADA - 0x3ee2200efb3400fabb9aacf31297cbdd1d435d47
  */
-contract InterestMarketV1 is Initializable, Context {
+contract InterestBNBMarketV1 is Context {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
 
     using RebaseLibrary for Rebase;
-    using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
     /*///////////////////////////////////////////////////////////////
@@ -135,9 +118,6 @@ contract InterestMarketV1 is Initializable, Context {
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line var-name-mixedcase
-    InterestMarketV1 public immutable MASTER_CONTRACT; // The implementation contract
-
-    // solhint-disable-next-line var-name-mixedcase
     IPancakeRouter02 public immutable ROUTER; // PCS router
 
     // solhint-disable-next-line var-name-mixedcase
@@ -149,108 +129,58 @@ contract InterestMarketV1 is Initializable, Context {
     // solhint-disable-next-line var-name-mixedcase
     OracleV1 public immutable ORACLE; // Oracle contract
 
-    /*///////////////////////////////////////////////////////////////
-                        CLONE CONTRACT VARIABLES
-    //////////////////////////////////////////////////////////////*/
+    // Total amount of princicpal borrowed in Dinero.
+    Rebase public totalLoan;
 
-    // Clone only variable
-    // solhint-disable-next-line var-name-mixedcase
-    IERC20 public COLLATERAL; // Token to be used to cover the loan.
+    // How much collateral an address has deposited.
+    mapping(address => uint256) public userCollateral;
 
-    // solhint-disable-next-line var-name-mixedcase
-    Vault public VAULT; // A vault to interact with PCS master chef.
+    // How much principal an address has borrowed.
+    mapping(address => uint256) public userLoan;
 
-    // Clone only variable
-    uint256 public totalCollateral; // Total amount of collateral in this market.
+    // Current exchange rate between BNB and USD.
+    uint256 public exchangeRate;
 
-    // Clone only variable
-    Rebase public totalLoan; // Total amount of princicpal borrowed in Dinero.
+    // Information about the global loan.
+    Loan public loan;
 
-    // Clone only variable
-    mapping(address => uint256) public userCollateral; // How much collateral an address has deposited.
+    // principal + interest rate / collateral. If it is above this value, the user might get liquidated.
+    uint256 public maxLTVRatio;
 
-    // Clone only variable
-    mapping(address => uint256) public userLoan; // How much principal an address has borrowed.
-
-    // Clone only variable
-    uint256 public exchangeRate; // Current exchange rate between collateral and USD.
-
-    // Clone only variable
-    Loan public loan; // Information about the current loan.
-
-    uint256 public maxLTVRatio; // principal + interest rate / collateral. If it is above this value, the user might get liquidated.
-
-    uint256 public liquidationFee; // A fee that will be charged as a penalty of being liquidated.
+    // A fee that will be charged as a penalty of being liquidated.
+    uint256 public liquidationFee;
 
     /*///////////////////////////////////////////////////////////////
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev This will only be called once in the master contract. Clones will need to call {initialize}.
-     *
-     * @notice We save the address of the master contract to prevent it from being initialized.
+     * @notice `interestRate` has a base unit of 1e18.
      *
      * @param router The address of the PCS router.
      * @param dinero The address of Dinero.
      * @param governor The address of the governor.
      * @param oracle The address of the oracle.
-     *
+     * @param interestRate How much to charge borrowers every second in Dinero
+     * @param _maxLTVRatio Maximum loan to value ratio on loans. Positions above this value can be liquidated.
+     * @param _liquidationFee A fee charged on positions underwater and rewarded to the liquidator and protocol.
      */
     constructor(
         IPancakeRouter02 router,
         Dinero dinero,
         InterestGovernorV1 governor,
-        OracleV1 oracle
+        OracleV1 oracle,
+        uint64 interestRate,
+        uint256 _maxLTVRatio,
+        uint256 _liquidationFee
     ) {
-        MASTER_CONTRACT = this;
         ROUTER = router;
         DINERO = dinero;
         GOVERNOR = governor;
         ORACLE = oracle;
-    }
-
-    /*///////////////////////////////////////////////////////////////
-                            INITIALIZE
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @dev A function to set the initial parameters of the contract. To be called once per market.
-     *
-     * @notice the modifier {initializer}. This can only be called once.
-     * @notice Vault can be the 0 address. All other variables should be set. We assume the owner will set them up properly.
-     *
-     * @param data A collection of all the needed variables to operate this contract.
-     *
-     * Requirements:
-     *
-     * - The master contract should be initialized.
-     * - Collateral token cannot be the zero address.
-     * - {maxLTVRatio} needs to be checked because it can cause a total failure of the system if set up wrongly.
-     *
-     */
-    function initialize(bytes calldata data) external initializer {
-        require(address(MASTER_CONTRACT) != address(this), "MKT: not allowed");
-
-        (
-            COLLATERAL,
-            VAULT, // Note the VAULT can be the address(0). As non  pair addresses will not have a vault in this version.
-            loan.INTEREST_RATE,
-            maxLTVRatio,
-            liquidationFee
-        ) = abi.decode(data, (IERC20, Vault, uint64, uint256, uint256));
-
-        // Collateral must not be zero address.
-        require(address(COLLATERAL) != address(0), "MKT: no zero address");
-        // {maxLTVRatio} must be within the acceptable bounds.
-        require(
-            9e5 >= maxLTVRatio && maxLTVRatio >= 5e5,
-            "MKT: ltc ratio out of bounds"
-        );
-
-        // Also make sure that {COLLATERAL} is a deployed ERC20.
-        // Approve the router to trade the collateral.
-        COLLATERAL.safeApprove(address(ROUTER), type(uint256).max);
+        loan.INTEREST_RATE = interestRate;
+        maxLTVRatio = _maxLTVRatio;
+        liquidationFee = _liquidationFee;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -261,8 +191,7 @@ contract InterestMarketV1 is Initializable, Context {
      * @dev Check if a user loan is below the {maxLTVRatio}.
      *
      * @notice This function requires this contract to be deployed in a blockchain with low TX fees. As calling an oracle can be quite expensive.
-     * @notice That the oracle is called in this function. In case of failure, liquidations, borrowing dinero and removing collateral will be disabled.
-     * Open loans if underwater will not be liquidated, but good news is that borrowing and removing collateral will remain closed.
+     * @notice That the oracle is called in this function. In case of failure, liquidations, borrowing dinero and removing collateral will be disabled. Underwater loans will not be liquidated, but good news is that borrowing and removing collateral will remain closed.
      */
     modifier isSolvent() {
         _;
@@ -302,18 +231,7 @@ contract InterestMarketV1 is Initializable, Context {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev This function is to increase the allowance to the PCS router for liquidation purposes. It will bring it to the maximum.
-     */
-    function approve() external {
-        COLLATERAL.safeIncreaseAllowance(
-            address(ROUTER),
-            type(uint256).max -
-                COLLATERAL.allowance(address(this), address(ROUTER))
-        );
-    }
-
-    /**
-     * @dev This function sends the collected fees by this market to the treasury.
+     * @dev This function sends the collected fees by this market to the governor feeTo address.
      */
     function getEarnings() external {
         // Update the total debt, includes the {loan.feesEarned}.
@@ -392,7 +310,7 @@ contract InterestMarketV1 is Initializable, Context {
     }
 
     /**
-     * @dev This function gets the latest exchange rate between {COLLATERAL} and USD from chainlink.
+     * @dev This function gets the latest exchange rate between BNB and USD from chainlink.
      *
      * @notice Supports for PCS TWAPS will be added before release as a back up.
      * @notice USD price has a base unit of 1e18.
@@ -405,7 +323,7 @@ contract InterestMarketV1 is Initializable, Context {
      */
     function updateExchangeRate() public returns (uint256 rate) {
         // Get USD price for 1 Token (18 decimals). The USD price also has 18 decimals. We need to reduce
-        rate = ORACLE.getUSDPrice(address(COLLATERAL), 1 ether);
+        rate = ORACLE.getBNBUSDPrice(1 ether);
 
         require(rate > 0, "MKT: invalid exchange rate");
 
@@ -417,44 +335,44 @@ contract InterestMarketV1 is Initializable, Context {
     }
 
     /**
-     * @dev Allows `msg.sender` to add collateral
+     * @dev Allows `msg.sender` to add collateral to a `to` address.
      *
-     * @notice If the contract has a vault `msg.sender` needs to give approval to the vault. If not it needs to give to this contract.
+     * @notice This is a payable function.
      *
-     * @param to The address, which the `COLLATERAL` will be assigned to.
-     * @param amount The number of `COLLATERAL` tokens to be used for collateral
+     * @param to The address, which the collateral will be assigned to.
      */
-    function addCollateral(address to, uint256 amount) external {
-        // Get `COLLATERAL` from `msg.sender`
-        _depositCollateral(_msgSender(), to, amount);
-
+    function addCollateral(address to) public payable {
         // Update Global state
-        userCollateral[to] += amount;
-        totalCollateral += amount;
+        userCollateral[to] += msg.value;
 
-        emit AddCollateral(_msgSender(), to, amount);
+        emit AddCollateral(_msgSender(), to, msg.value);
     }
 
     /**
-     * @dev Functions allows the `msg.sender` to remove his collateral as long as he remains solvent.
+     * @dev This a version of {addCollateral} that adds to the `msg.sender`.
+     */
+    receive() external payable {
+        addCollateral(_msgSender());
+    }
+
+    /**
+     * @dev Function allows the `msg.sender` to remove his collateral as long as he remains solvent.
      *
      * @param to The address that will receive the collateral being withdrawn.
-     * @param amount The number of `COLLATERAL` tokens he wishes to withdraw
+     * @param amount The number of BNB tokens he wishes to withdraw.
      *
      * Requirements:
      *
      * - `msg.sender` must remain solvent after removing the collateral.
      */
     function withdrawCollateral(address to, uint256 amount) external isSolvent {
-        // Update how much is owed to the protocol before allowing collateral to be removed
+        // Update how much is owed to the protocol before allowing collateral to be withdrawn
         accrue();
 
         // Update State
         userCollateral[_msgSender()] -= amount;
-        totalCollateral -= amount;
 
-        // Return the collateral to the user
-        _withdrawCollateral(_msgSender(), to, amount);
+        _sendCollateral(payable(to), amount);
 
         emit WithdrawCollateral(_msgSender(), to, amount);
     }
@@ -523,24 +441,18 @@ contract InterestMarketV1 is Initializable, Context {
 
     /**
      * @dev This function closes underwater positions. It charges the borrower a fee and rewards the liquidator for keeping the integrity of the protocol
+     *
      * @notice Liquidator can use collateral to close the position or must have enough dinero in this account.
      * @notice Liquidators can only close a portion of an underwater position.
      * @notice {liquidationFee} has a base unit of 6.
      * @notice {exchangeRate} has a base unit of 1e18.
-     * @notice We do not require the  liquidator to use the collateral. If there are any "lost" tokens in the contract. Those can be use as well.
      * @notice The liquidator must have more than the sum of principals in Dinero because of the fees accrued over time. Unless he chooses to use the collateral to cover the positions.
      * @notice We assume PCS will remain most liquid exchange in BSC for this version of the contract. We will also add liquidate of BNB/DNR to PCS.
-     * @notice In the case `COLLATERAL` is a PCS pair {IERC20} and the user chooses to use collateral to liquidate he needs to pass a `path` for token0 and `path2` for token1.
-     * @notice If the `COLLATERAL` is NOT a PCS pair {IERC20} and the user chooses to use the collateral to liquidate, the `path2` should be empty, but the `path` has to have a length >= 2.
-     * @notice In the case of `COLLATERAL` being a PCS pair {IERC20} and the liquidator chooses to use the collateral to cover the loan.
-     * The liquidator will have to go to PCS to remove the liquidity afterwards.
      *
      * @param accounts The  list of accounts to be liquidated.
      * @param principals The amount of principal the `msg.sender` wants to liquidate for each account.
      * @param recipient The address that will receive the proceeds gained by liquidating.
-     * @param path The list of tokens from collateral to dinero in case the `msg.sender` wishes to use collateral to cover the debt.
-     * Or The list of tokens to sell the token0 if `COLLATERAL` is a PCS pair {IERC20}.
-     * @param path2 The list of tokens to sell the token1 if `COLLATERAL` is a PCS pair {IERC20}.
+     * @param path The list of tokens from BNB to dinero in case the `msg.sender` wishes to use collateral to cover the debt.
      *
      * Requirements:
      *
@@ -550,11 +462,10 @@ contract InterestMarketV1 is Initializable, Context {
     function liquidate(
         address[] calldata accounts,
         uint256[] calldata principals,
-        address recipient,
-        address[] calldata path,
-        address[] calldata path2
+        address payable recipient,
+        address[] calldata path
     ) external {
-        // Make sure the token is always exchanged to Dinero as we need to burn at the end.
+        // Make sure token is always exchanged to Dinero as we need to burn at the end.
         // path can be empty if the liquidator has enough dinero in his accounts to close the positions.
         require(
             path.length == 0 || path[path.length - 1] == address(DINERO),
@@ -597,7 +508,7 @@ contract InterestMarketV1 is Initializable, Context {
                 userLoan[account] -= principal;
             }
 
-            // How much is owed in principal + accrued fees
+            // How much is the owed in principal + accrued fees
             uint256 debt = _totalLoan.toElastic(principal, false);
 
             // Calculate the collateralFee (for the liquidator and the protocol)
@@ -609,14 +520,6 @@ contract InterestMarketV1 is Initializable, Context {
 
             // Remove the collateral from the account. We can consider the debt paid.
             userCollateral[account] -= collateralToCover;
-
-            // Get the Rewards and collateral if they are in a vault to this contract.
-            // The rewards go to the `account`.
-            // The collateral comes to this contract.
-            // If the collateral is in this contract do nothing.
-            if (Vault(address(0)) != VAULT) {
-                VAULT.withdraw(account, address(this), collateralToCover);
-            }
 
             emit WithdrawCollateral(account, address(this), collateralToCover);
             emit Repay(_msgSender(), account, principal, debt);
@@ -644,9 +547,6 @@ contract InterestMarketV1 is Initializable, Context {
             liquidationInfo.allDebt
         );
 
-        // Update the total collateral.
-        totalCollateral -= liquidationInfo.allCollateral;
-
         // 10% of the liquidation fee to be given to the protocol.
         uint256 protocolFee = (liquidationInfo.allFee * 100) / 1000;
 
@@ -658,27 +558,32 @@ contract InterestMarketV1 is Initializable, Context {
 
         // If a path is provided, we will use the collateral to cover the debt
         if (path.length >= 2) {
-            // Sell `COLLATERAL` and send `DINERO` to recipient.
-            // Abstracted the logic to a function to avoid; Stack too deep compiler error.
-            // This function will consider if the `COLLATERAL` is a 'flip' token or not.
-            _sellCollateral(
-                liquidationInfo.allCollateral,
-                recipient,
+            // We need to get enough `DINERO` to cover outstanding debt + protocol fees. This means the liquidator will pay for the slippage.
+            uint256 minAmount = liquidationInfo.allDebt + protocolFee;
+
+            // Sell all collateral for this liquidation
+            ROUTER.swapExactETHForTokens{value: liquidationInfo.allCollateral}(
+                // Minimum amount to cover the collateral
+                minAmount,
+                // Sell COLLATERAL -> DINERO
                 path,
-                path2
+                // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
+                recipient,
+                // This TX must happen in this block.
+                //solhint-disable-next-line not-rely-on-time
+                block.timestamp
             );
+
             // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
             // Liquidator keeps the rest as profit.
-            // Liquidator recipient Dinero from the swap.
-            DINERO.burn(recipient, liquidationInfo.allDebt + protocolFee);
+            DINERO.burn(recipient, minAmount);
         } else {
             // Liquidator will be paid in `COLLATERAL`
-            // Send collateral to the `recipient` (includes liquidator fee + protocol fee)
-            COLLATERAL.safeTransfer(recipient, liquidationInfo.allCollateral);
-            // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
-            // Liquidator keeps the rest as profit.
-            // Liquidator has dinero in this scenario
+            // Liquidator needs to cover the whole loan + fees.
             DINERO.burn(_msgSender(), liquidationInfo.allDebt + protocolFee);
+
+            // Send him the collateral + a portion of liquidation fee.
+            _sendCollateral(recipient, liquidationInfo.allCollateral);
         }
     }
 
@@ -687,119 +592,15 @@ contract InterestMarketV1 is Initializable, Context {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev A helper function to check if a token is a Pancake Swap Pair token
+     * @dev A helper function to send BNB to an address.
      *
-     * @notice We need to use a try/catch beacuse the {IERC20} interface makes the symbol an optional field.
-     *
-     * @param token The address of the token.
-     * @return result A boolean that indicates if `token` is a pair token.
+     * @param to The account that will receive BNB.
+     * @param amount How much BNB to send to the `to` address.
      */
-    function _isPair(address token) private view returns (bool result) {
-        try IERC20Metadata(token).symbol() returns (string memory symbol) {
-            result =
-                keccak256(abi.encodePacked(symbol)) == keccak256("Cake-LP");
-            //solhint-disable-next-line no-empty-blocks
-        } catch Error(string memory) {} catch (bytes memory) {}
-    }
-
-    /**
-     * @dev A helper function to sell collateral for dinero.
-     *
-     * @notice It checks if the `COLLATERAL` is a PCS pair token and treats it accordingly.
-     * @notice Slippage is not an issue because on {liquidate} we always burn the necessary amount of `DINERO`.
-     * @notice We are only  using highly liquid pairs. So slippage should not be an issue. Front-running can be an issue, but the liquidation fee should cover it. It will be between 10%-15% (minus 10% for the protocol) of the debt liquidated.
-     *
-     * @param collateralAmount The amount of tokens to remove from the liquidity in case of `COLLATERAL` being a PCS pair {IERC20}.
-     * Or the amount of collateral to sell if it is a normal {IERC20}.
-     * @param recipient The address that will receive the `DINERO` after the swap.
-     * @param path In the case of `COLLATERAL` being a PCS pair {IERC20}. It is the swap path for token0.
-     * If not, it will be the path for the `COLLATERAL`.
-     * @param path2 Can be empty if `COLLATERAL` is not a PCS pair {IERC20}. Otherwise, it needs to be the swap path for token1.
-     *
-     * Requirements:
-     *
-     * - path2 length needs to be >= 2 if `COLLATERAL` is PCS pair {IERC20}.
-     * - path2 last item has to be the `DINERO` token.
-     */
-    function _sellCollateral(
-        uint256 collateralAmount,
-        address recipient,
-        address[] calldata path,
-        address[] calldata path2
-    ) private {
-        if (_isPair(address(COLLATERAL))) {
-            require(path2.length >= 2, "MKT: provide a path for token1");
-            require(
-                path2[path2.length - 1] == address(DINERO),
-                "MKT: no dinero on last index"
-            );
-
-            address token0 = IPancakePair(address(COLLATERAL)).token0();
-            address token1 = IPancakePair(address(COLLATERAL)).token1();
-            // save gas
-            IPancakeRouter02 router = ROUTER;
-
-            // We need to approve to remove liquidity and swap
-            // We can trust the PCS router
-            IPancakePair(token0).approve(address(router), type(uint256).max);
-            IPancakePair(token1).approve(address(router), type(uint256).max);
-
-            // Even if one of the tokens is WBNB. We dont want BNB because we want to use {swapExactTokensForTokens} for Dinero after.
-            // Avoids unecessary routing through WBNB {deposit} and {withdraw}.
-            (uint256 amount0, uint256 amount1) = router.removeLiquidity(
-                token0,
-                token1,
-                collateralAmount,
-                0, // The liquidator will pay for slippage
-                0, // The liquidator will pay for slippage
-                address(this), // The contract needs the tokens to sell them.
-                //solhint-disable-next-line not-rely-on-time
-                block.timestamp
-            );
-
-            router.swapExactTokensForTokens(
-                // Sell all token0 removed from the liquidity.
-                amount0,
-                // The liquidator will pay for the slippage.
-                0,
-                // Sell token0 -> ... -> DINERO
-                path,
-                // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
-                recipient,
-                // This TX must happen in this block.
-                //solhint-disable-next-line not-rely-on-time
-                block.timestamp
-            );
-
-            router.swapExactTokensForTokens(
-                // Sell all token1 obtained from removing the liquidity.
-                amount1,
-                // The liquidator will pay for the slippage.
-                0,
-                // Sell token1 -> ... -> DINERO
-                path2,
-                // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
-                recipient,
-                // This TX must happen in this block.
-                //solhint-disable-next-line not-rely-on-time
-                block.timestamp
-            );
-        } else {
-            // If it is not a pair contract, we can swap it on PCS.
-            ROUTER.swapExactTokensForTokens(
-                // Sell all collateral for this liquidation
-                collateralAmount,
-                // Liquidator will pay for slippage
-                0,
-                // Sell COLLATERAL -> ... -> DINERO
-                path,
-                // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
-                recipient,
-                // This TX must happen in this block.
-                //solhint-disable-next-line not-rely-on-time
-                block.timestamp
-            );
-        }
+    function _sendCollateral(address payable to, uint256 amount) private {
+        //solhint-disable-next-line avoid-low-level-calls
+        (bool success, ) = to.call{value: amount}("");
+        require(success, "MKT: unable to remove collateral");
     }
 
     /**
@@ -841,46 +642,6 @@ contract InterestMarketV1 is Initializable, Context {
             (collateralInUSD * maxLTVRatio) >
             // Multiply the {maxLTVRatio} this way gives to be more precise.
             _totalLoan.toElastic(principal, true) * 1e6;
-    }
-
-    /**
-     * @dev This is a helper function to account for the fact that some contracts have a vault to farm the collateral.
-     * It deposits the collateral in the vault if there is a vault. Otherwise, it deposits in this contract.
-     *
-     * @param from The address that needs to approve the contract and will have tokens transferred to this contract.
-     * @param amount The number of tokens it needs to provide as collateral.
-     */
-    function _depositCollateral(
-        address from,
-        address to,
-        uint256 amount
-    ) private {
-        if (Vault(address(0)) == VAULT) {
-            COLLATERAL.safeTransferFrom(from, address(this), amount);
-        } else {
-            VAULT.deposit(from, to, amount);
-        }
-    }
-
-    /**
-     * @dev This is a helper function to withdraw the collateral from this contract or the `VAULT`.
-     *
-     * @notice In the case of the vault the rewards will always go to the `account`. The principal may not.
-     *
-     * @param account The address who owns the collateral being withdrawn.
-     * @param recipient The address that will receive the collateral + rewards if applicable.
-     * @param amount The amount of collateral to withdraw.
-     */
-    function _withdrawCollateral(
-        address account,
-        address recipient,
-        uint256 amount
-    ) private {
-        if (Vault(address(0)) == VAULT) {
-            COLLATERAL.safeTransfer(recipient, amount);
-        } else {
-            VAULT.withdraw(account, recipient, amount);
-        }
     }
 
     /*///////////////////////////////////////////////////////////////

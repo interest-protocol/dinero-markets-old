@@ -2,7 +2,11 @@
 pragma solidity 0.8.10;
 
 interface IVault {
-    function deposit(address account, uint256 amount) external;
+    function deposit(
+        address from,
+        address to,
+        uint256 amount
+    ) external;
 
     function withdraw(
         address account,
