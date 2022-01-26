@@ -78,7 +78,9 @@ describe('CakeVault', () => {
   it('shows the pending rewards in the CAKE pool', async () => {
     expect(await cakeVault.getPendingRewards()).to.be.equal(0);
 
-    await cakeVault.connect(market).deposit(alice.address, parseEther('10'));
+    await cakeVault
+      .connect(market)
+      .deposit(alice.address, alice.address, parseEther('10'));
 
     // accrue some cake
     await advanceBlock(ethers);
@@ -91,7 +93,9 @@ describe('CakeVault', () => {
     );
   });
   it('gives full approval to the master chef', async () => {
-    await cakeVault.connect(market).deposit(alice.address, parseEther('10'));
+    await cakeVault
+      .connect(market)
+      .deposit(alice.address, alice.address, parseEther('10'));
 
     // accrue some cake
     await advanceBlock(ethers);
@@ -126,7 +130,9 @@ describe('CakeVault', () => {
   it('allows to see how many pending rewards a user has', async () => {
     expect(await cakeVault.getUserPendingRewards(alice.address)).to.be.equal(0);
 
-    await cakeVault.connect(market).deposit(alice.address, parseEther('10'));
+    await cakeVault
+      .connect(market)
+      .deposit(alice.address, alice.address, parseEther('10'));
 
     // accrue some cake
     await advanceBlock(ethers);
@@ -135,15 +141,21 @@ describe('CakeVault', () => {
     // to get Cake rewards
     await cakeVault.compound();
 
-    cakeVault.connect(market).deposit(bob.address, parseEther('20'));
+    cakeVault
+      .connect(market)
+      .deposit(bob.address, bob.address, parseEther('20'));
 
     // accrue some cake
     await advanceBlock(ethers);
     await advanceBlock(ethers);
 
     await Promise.all([
-      cakeVault.connect(market).deposit(alice.address, parseEther('20')),
-      cakeVault.connect(market).deposit(bob.address, parseEther('15')),
+      cakeVault
+        .connect(market)
+        .deposit(alice.address, alice.address, parseEther('20')),
+      cakeVault
+        .connect(market)
+        .deposit(bob.address, bob.address, parseEther('15')),
     ]);
 
     // to get Cake rewards
@@ -204,8 +216,12 @@ describe('CakeVault', () => {
   });
   it('reinvests the Cake rewards from Cake pool back in the Cake pool', async () => {
     await Promise.all([
-      cakeVault.connect(market).deposit(alice.address, parseEther('10')),
-      cakeVault.connect(market).deposit(bob.address, parseEther('30')),
+      cakeVault
+        .connect(market)
+        .deposit(alice.address, alice.address, parseEther('10')),
+      cakeVault
+        .connect(market)
+        .deposit(bob.address, bob.address, parseEther('30')),
     ]);
 
     // accrue some cake
@@ -274,35 +290,46 @@ describe('CakeVault', () => {
     expect((await cake.balanceOf(market.address)).gt(0)).to.be.equal(true);
   });
   describe('function: deposit', () => {
-    it('reverts if the amount if smaller or 0', async () => {
+    it('reverts if the amount is 0', async () => {
       await expect(
-        cakeVault.connect(market).deposit(alice.address, 0)
+        cakeVault.connect(market).deposit(alice.address, alice.address, 0)
       ).to.revertedWith('Vault: no zero amount');
     });
-    it('reverts if the account is the zero address', async () => {
+    it('reverts if the first parameter is the zero address', async () => {
       await expect(
-        cakeVault.connect(market).deposit(ethers.constants.AddressZero, 10)
+        cakeVault
+          .connect(market)
+          .deposit(ethers.constants.AddressZero, alice.address, 10)
+      ).to.revertedWith('Vault: no zero address');
+    });
+    it('reverts if the second parameter is the zero address', async () => {
+      await expect(
+        cakeVault
+          .connect(market)
+          .deposit(alice.address, ethers.constants.AddressZero, 10)
       ).to.revertedWith('Vault: no zero address');
     });
     it('reverts if the msg.sender is not the market', async () => {
       await expect(
-        cakeVault.connect(owner).deposit(alice.address, 10)
+        cakeVault.connect(owner).deposit(alice.address, alice.address, 10)
       ).to.revertedWith('Vault: only market');
       await expect(
-        cakeVault.connect(alice).deposit(alice.address, 10)
+        cakeVault.connect(alice).deposit(alice.address, alice.address, 10)
       ).to.revertedWith('Vault: only market');
       await expect(
-        cakeVault.connect(bob).deposit(alice.address, 10)
+        cakeVault.connect(bob).deposit(alice.address, alice.address, 10)
       ).to.revertedWith('Vault: only market');
     });
     it('allows deposits', async () => {
       const [
         aliceInfo,
+        bobInfo,
         totalAmount,
         totalRewardsPerAmount,
         masterChefCakePool,
       ] = await Promise.all([
         cakeVault.userInfo(alice.address),
+        cakeVault.userInfo(bob.address),
         cakeVault.totalAmount(),
         cakeVault.totalRewardsPerAmount(),
         masterChef.userInfo(0, cakeVault.address),
@@ -311,15 +338,20 @@ describe('CakeVault', () => {
       expect(aliceInfo.rewardDebt).to.be.equal(0);
       expect(aliceInfo.rewards).to.be.equal(0);
       expect(aliceInfo.amount).to.be.equal(0);
+      expect(bobInfo.rewardDebt).to.be.equal(0);
+      expect(bobInfo.rewards).to.be.equal(0);
+      expect(bobInfo.amount).to.be.equal(0);
       expect(totalAmount).to.be.equal(0);
       expect(totalRewardsPerAmount).to.be.equal(0);
       expect(masterChefCakePool.amount).to.be.equal(0);
 
       await expect(
-        cakeVault.connect(market).deposit(alice.address, parseEther('20'))
+        cakeVault
+          .connect(market)
+          .deposit(alice.address, alice.address, parseEther('20'))
       )
         .to.emit(cakeVault, 'Deposit')
-        .withArgs(alice.address, parseEther('20'))
+        .withArgs(alice.address, alice.address, parseEther('20'))
         .to.emit(masterChef, 'Deposit')
         .withArgs(cakeVault.address, 0, parseEther('20'))
         .to.emit(cake, 'Transfer')
@@ -348,10 +380,13 @@ describe('CakeVault', () => {
       expect(masterChefCakePool2.amount).to.be.equal(parseEther('20'));
 
       await expect(
-        cakeVault.connect(market).deposit(alice.address, parseEther('10'))
+        cakeVault
+          .connect(market)
+          // Here Alice is deposing for Bob
+          .deposit(alice.address, alice.address, parseEther('10'))
       )
         .to.emit(cakeVault, 'Deposit')
-        .withArgs(alice.address, parseEther('10'))
+        .withArgs(alice.address, alice.address, parseEther('10'))
         .to.emit(masterChef, 'Deposit')
         .to.emit(cake, 'Transfer')
         .withArgs(alice.address, cakeVault.address, parseEther('10'));
@@ -383,8 +418,62 @@ describe('CakeVault', () => {
           .mul(1e12)
           .div(totalAmount2)
       );
+
       // Hard to calculate precise Cake reward. if it has more than the total amount it means rewards were compounded
       expect(masterChefCakePool3.amount.gt(parseEther('30'))).to.be.equal(true);
+
+      await expect(
+        cakeVault
+          .connect(market)
+          // Here Alice is deposing for Bob
+          .deposit(alice.address, bob.address, parseEther('10'))
+      )
+        .to.emit(cakeVault, 'Deposit')
+        .withArgs(alice.address, bob.address, parseEther('10'))
+        .to.emit(masterChef, 'Deposit')
+        .to.emit(cake, 'Transfer')
+        .withArgs(alice.address, cakeVault.address, parseEther('10'));
+
+      const [
+        aliceInfo4,
+        bobInfo2,
+        totalAmount4,
+        totalRewardsPerAmount4,
+        masterChefCakePool4,
+      ] = await Promise.all([
+        cakeVault.userInfo(alice.address),
+        cakeVault.userInfo(bob.address),
+        cakeVault.totalAmount(),
+        cakeVault.totalRewardsPerAmount(),
+        masterChef.userInfo(0, cakeVault.address),
+      ]);
+
+      // Nothing changes for alice
+      expect(aliceInfo4.rewardDebt).to.be.equal(aliceInfo3.rewardDebt);
+      expect(aliceInfo4.rewards).to.be.equal(aliceInfo3.rewards);
+      expect(aliceInfo4.amount).to.be.equal(aliceInfo3.amount);
+
+      // Bob user info gets updated
+      expect(bobInfo2.rewardDebt).to.be.equal(
+        totalRewardsPerAmount4.mul(parseEther('10')).div(1e12)
+      );
+      expect(bobInfo2.rewards).to.be.equal(0);
+      expect(bobInfo2.amount).to.be.equal(parseEther('10'));
+
+      expect(totalAmount4).to.be.equal(parseEther('40'));
+
+      expect(totalRewardsPerAmount4).to.be.equal(
+        totalRewardsPerAmount3.add(
+          masterChefCakePool4.amount
+            .sub(masterChefCakePool3.amount)
+            .sub(parseEther('10'))
+            .mul(1e12)
+            .div(totalAmount3)
+        )
+      );
+
+      // Hard to calculate precise Cake reward. if it has more than the total amount it means rewards were compounded
+      expect(masterChefCakePool4.amount.gt(parseEther('40'))).to.be.equal(true);
     });
   });
   describe('function: withdraw', () => {
@@ -424,7 +513,9 @@ describe('CakeVault', () => {
       ).to.revertedWith('Vault: only market');
     });
     it('reverts if the msg.sender tries to withdraw more than the account has', async () => {
-      await cakeVault.connect(market).deposit(alice.address, parseEther('20'));
+      await cakeVault
+        .connect(market)
+        .deposit(alice.address, alice.address, parseEther('20'));
 
       await expect(
         cakeVault
@@ -434,8 +525,12 @@ describe('CakeVault', () => {
     });
     it('market to withdraw assets', async () => {
       await Promise.all([
-        cakeVault.connect(market).deposit(alice.address, parseEther('20')),
-        cakeVault.connect(market).deposit(bob.address, parseEther('30')),
+        cakeVault
+          .connect(market)
+          .deposit(alice.address, alice.address, parseEther('20')),
+        cakeVault
+          .connect(market)
+          .deposit(bob.address, bob.address, parseEther('30')),
       ]);
 
       // accrue some cake

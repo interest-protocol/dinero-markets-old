@@ -554,7 +554,7 @@ contract InterestMarketV1 is Initializable, Context {
         address[] calldata path,
         address[] calldata path2
     ) external {
-        // Make sure token is always exchanged to Dinero as we need to burn at the end.
+        // Make sure the token is always exchanged to Dinero as we need to burn at the end.
         // path can be empty if the liquidator has enough dinero in his accounts to close the positions.
         require(
             path.length == 0 || path[path.length - 1] == address(DINERO),
@@ -597,7 +597,7 @@ contract InterestMarketV1 is Initializable, Context {
                 userLoan[account] -= principal;
             }
 
-            // How much is the owed in principal + accrued fees
+            // How much is owed in principal + accrued fees
             uint256 debt = _totalLoan.toElastic(principal, false);
 
             // Calculate the collateralFee (for the liquidator and the protocol)
@@ -658,8 +658,9 @@ contract InterestMarketV1 is Initializable, Context {
 
         // If a path is provided, we will use the collateral to cover the debt
         if (path.length >= 2) {
-            // Sell Collateral and send `DINERO` to recipient
-            // Abstracted the logic to a function to avoid; Stack too deep compiler error
+            // Sell `COLLATERAL` and send `DINERO` to recipient.
+            // Abstracted the logic to a function to avoid; Stack too deep compiler error.
+            // This function will consider if the `COLLATERAL` is a 'flip' token or not.
             _sellCollateral(
                 liquidationInfo.allCollateral,
                 recipient,
@@ -687,16 +688,14 @@ contract InterestMarketV1 is Initializable, Context {
      * @notice We need to use a try/catch beacuse the {IERC20} interface makes the symbol an optional field.
      *
      * @param token The address of the token.
-     * @return bool True if is a pair token.
+     * @return result A boolean that indicates if `token` is a pair token.
      */
-    function _isPair(address token) private view returns (bool) {
+    function _isPair(address token) private view returns (bool result) {
         try IERC20Metadata(token).symbol() returns (string memory symbol) {
-            return keccak256(abi.encodePacked(symbol)) == keccak256("Cake-LP");
-        } catch Error(string memory) {
-            return false;
-        } catch (bytes memory) {
-            return false;
-        }
+            result =
+                keccak256(abi.encodePacked(symbol)) == keccak256("Cake-LP");
+            //solhint-disable-next-line no-empty-blocks
+        } catch Error(string memory) {} catch (bytes memory) {}
     }
 
     /**
@@ -704,6 +703,7 @@ contract InterestMarketV1 is Initializable, Context {
      *
      * @notice It checks if the `COLLATERAL` is a PCS pair token and treats it accordingly.
      * @notice Slippage is not an issue because on {liquidate} we always burn the necessary amount of `DINERO`.
+     * @notice We are only  using highly liquid pairs. So slippage should not be an issue. Front-running can be an issue, but the liquidation fee should cover it. It will be between 10%-15% (minus 10% for the protocol) of the debt liquidated.
      *
      * @param collateralAmount The amount of tokens to remove from the liquidity in case of `COLLATERAL` being a PCS pair {IERC20}.
      * Or the amount of collateral to sell if it is a normal {IERC20}.
@@ -730,6 +730,8 @@ contract InterestMarketV1 is Initializable, Context {
                 "MKT: no dinero on last index"
             );
 
+            // Even if one of the tokens is WBNB. We dont want BNB because we want to use {swapExactTokensForTokens} for Dinero after.
+            // Avoids unecessary routing through WBNB {deposit} and {withdraw}.
             (uint256 amount0, uint256 amount1) = ROUTER.removeLiquidity(
                 IPancakePair(address(COLLATERAL)).token0(),
                 IPancakePair(address(COLLATERAL)).token1(),

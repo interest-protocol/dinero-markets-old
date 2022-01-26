@@ -295,11 +295,13 @@ describe('InterestMarketV1', () => {
     // Liquidate alice using the collateral so router will use some allowance
     await cakeMarket
       .connect(bob)
-      .liquidate([alice.address], [parseEther('50')], bob.address, [
-        cake.address,
-        bnb.address,
-        dinero.address,
-      ]);
+      .liquidate(
+        [alice.address],
+        [parseEther('50')],
+        bob.address,
+        [cake.address, bnb.address, dinero.address],
+        []
+      );
 
     const currentAllowance = await cake.allowance(
       cakeMarket.address,
@@ -973,10 +975,13 @@ describe('InterestMarketV1', () => {
       await expect(
         cakeMarket
           .connect(owner)
-          .liquidate([alice.address], [parseEther('1')], recipient.address, [
-            dinero.address,
-            cake.address,
-          ])
+          .liquidate(
+            [alice.address],
+            [parseEther('1')],
+            recipient.address,
+            [dinero.address, cake.address],
+            []
+          )
       ).to.revertedWith('MKT: no dinero at last index');
     });
     it('reverts if there are no accounts to liquidate', async () => {
@@ -1001,6 +1006,7 @@ describe('InterestMarketV1', () => {
             [alice.address, bob.address, jose.address],
             [parseEther('10'), parseEther('10'), parseEther('10')],
             owner.address,
+            [],
             []
           )
       ).to.revertedWith('MKT: no liquidations');
@@ -1097,7 +1103,8 @@ describe('InterestMarketV1', () => {
           [alice.address, jose.address],
           [parseEther('99'), parseEther('99')],
           recipient.address,
-          [cake.address, bnb.address, dinero.address] // Enables the user of the router
+          [cake.address, bnb.address, dinero.address], // Enables the use of the router for non LP-tokens.
+          []
         )
       )
         .to.emit(cakeMarket2, 'WithdrawCollateral')
@@ -1242,7 +1249,7 @@ describe('InterestMarketV1', () => {
       // Pass time to accrue fees
       await advanceTime(63_113_904, ethers); // advance 2 years
 
-      // All but BOb should be liquidated
+      // All but Bob should be liquidated
       await expect(
         cakeMarket
           .connect(owner)
@@ -1250,6 +1257,7 @@ describe('InterestMarketV1', () => {
             [alice.address, bob.address, jose.address],
             [parseEther('99'), parseEther('99'), parseEther('90')],
             recipient.address,
+            [],
             []
           )
       )

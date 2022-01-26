@@ -263,8 +263,7 @@ contract LPVault is Vault {
      * @dev We withdraw an `amount` of tokens from the `from` stored in the {CAKE_MASTER_CHEF}.
      *
      * @notice The base unit for {totalRewardsPerAmount} is 1e12.
-     * @notice The Cake rewards always go to the `to` address.
-     * @notice The {user.rewards} is sent to the `from` and not the `recipient`.
+     * @notice The {user.rewards} is sent to the `from` and not the `to`.
      * During liquidations, the rewards will go to the `from` that opened the loan, but some of the deposited
      * tokens will go to the liquidator or the {InterestMarketV1} contract.
      *
@@ -320,8 +319,8 @@ contract LPVault is Vault {
             CAKE_MASTER_CHEF.leaveStaking(rewards - cakeBalance);
         }
 
-        // Send the rewards to the `to`.
-        CAKE.safeTransfer(to, rewards);
+        // Send the rewards to the `from`.
+        CAKE.safeTransfer(from, rewards);
 
         // Only restake if there is at least 1 {CAKE} in the contract after sending the rewards.
         // If there are no {STAKING TOKENS} left, we do not need to restake. Because it means the vault is empty.
