@@ -66,4 +66,24 @@ contract PancakeRouter {
         );
         _swap(amounts, path, to);
     }
+
+    function removeLiquidity(
+        address tokenA,
+        address tokenB,
+        uint256 liquidity,
+        uint256 amountAMin,
+        uint256 amountBMin,
+        address to,
+        uint256
+    ) public virtual returns (uint256 amountA, uint256 amountB) {
+        address pair = PancakeLibrary.pairFor(factory, tokenA, tokenB);
+        IPancakeERC20(pair).transferFrom(msg.sender, pair, liquidity); // send liquidity to pair
+        (uint256 amount0, uint256 amount1) = IPancakePair(pair).burn(to);
+        (address token0, ) = PancakeLibrary.sortTokens(tokenA, tokenB);
+        (amountA, amountB) = tokenA == token0
+            ? (amount0, amount1)
+            : (amount1, amount0);
+        require(amountA >= amountAMin, "PancakeRouter: INSUFFICIENT_A_AMOUNT");
+        require(amountB >= amountBMin, "PancakeRouter: INSUFFICIENT_B_AMOUNT");
+    }
 }

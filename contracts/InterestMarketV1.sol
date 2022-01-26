@@ -667,15 +667,19 @@ contract InterestMarketV1 is Initializable, Context {
                 path,
                 path2
             );
+            // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
+            // Liquidator keeps the rest as profit.
+            // Liquidator recipient Dinero from the swap.
+            DINERO.burn(recipient, liquidationInfo.allDebt + protocolFee);
         } else {
             // Liquidator will be paid in `COLLATERAL`
             // Send collateral to the `recipient` (includes liquidator fee + protocol fee)
             COLLATERAL.safeTransfer(recipient, liquidationInfo.allCollateral);
+            // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
+            // Liquidator keeps the rest as profit.
+            // Liquidator has dinero in this scenario
+            DINERO.burn(_msgSender(), liquidationInfo.allDebt + protocolFee);
         }
-
-        // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
-        // Liquidator keeps the rest as profit.
-        DINERO.burn(_msgSender(), liquidationInfo.allDebt + protocolFee);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -730,11 +734,21 @@ contract InterestMarketV1 is Initializable, Context {
                 "MKT: no dinero on last index"
             );
 
+            address token0 = IPancakePair(address(COLLATERAL)).token0();
+            address token1 = IPancakePair(address(COLLATERAL)).token1();
+            // save gas
+            IPancakeRouter02 router = ROUTER;
+
+            // We need to approve to remove liquidity and swap
+            // We can trust the PCS router
+            IPancakePair(token0).approve(address(router), type(uint256).max);
+            IPancakePair(token1).approve(address(router), type(uint256).max);
+
             // Even if one of the tokens is WBNB. We dont want BNB because we want to use {swapExactTokensForTokens} for Dinero after.
             // Avoids unecessary routing through WBNB {deposit} and {withdraw}.
-            (uint256 amount0, uint256 amount1) = ROUTER.removeLiquidity(
-                IPancakePair(address(COLLATERAL)).token0(),
-                IPancakePair(address(COLLATERAL)).token1(),
+            (uint256 amount0, uint256 amount1) = router.removeLiquidity(
+                token0,
+                token1,
                 collateralAmount,
                 0, // The liquidator will pay for slippage
                 0, // The liquidator will pay for slippage
@@ -743,7 +757,7 @@ contract InterestMarketV1 is Initializable, Context {
                 block.timestamp
             );
 
-            ROUTER.swapExactTokensForTokens(
+            router.swapExactTokensForTokens(
                 // Sell all token0 removed from the liquidity.
                 amount0,
                 // The liquidator will pay for the slippage.
@@ -757,7 +771,7 @@ contract InterestMarketV1 is Initializable, Context {
                 block.timestamp
             );
 
-            ROUTER.swapExactTokensForTokens(
+            router.swapExactTokensForTokens(
                 // Sell all token1 obtained from removing the liquidity.
                 amount1,
                 // The liquidator will pay for the slippage.
