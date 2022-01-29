@@ -3,7 +3,7 @@ pragma solidity 0.8.10;
 
 import "./interfaces/IPancakeFactory.sol";
 
-import "./lib/PancakeLibrary.sol";
+import "./lib/PancakeLib.sol";
 import "./interfaces/IPancakePair.sol";
 import "./interfaces/IPancakeERC20.sol";
 
@@ -33,7 +33,7 @@ contract LiquidityRouter {
         if (IPancakeFactory(factory).getPair(tokenA, tokenB) == address(0)) {
             IPancakeFactory(factory).createPair(tokenA, tokenB);
         }
-        (uint256 reserveA, uint256 reserveB) = PancakeLibrary.getReserves(
+        (uint256 reserveA, uint256 reserveB) = PancakeLib.getReserves(
             factory,
             tokenA,
             tokenB
@@ -41,7 +41,7 @@ contract LiquidityRouter {
         if (reserveA == 0 && reserveB == 0) {
             (amountA, amountB) = (amountADesired, amountBDesired);
         } else {
-            uint256 amountBOptimal = PancakeLibrary.quote(
+            uint256 amountBOptimal = PancakeLib.quote(
                 amountADesired,
                 reserveA,
                 reserveB
@@ -54,7 +54,7 @@ contract LiquidityRouter {
                 );
                 (amountA, amountB) = (amountADesired, amountBOptimal);
             } else {
-                uint256 amountAOptimal = PancakeLibrary.quote(
+                uint256 amountAOptimal = PancakeLib.quote(
                     amountBDesired,
                     reserveB,
                     reserveA
@@ -96,7 +96,7 @@ contract LiquidityRouter {
             amountAMin,
             amountBMin
         );
-        address pair = PancakeLibrary.pairFor(factory, tokenA, tokenB);
+        address pair = PancakeLib.pairFor(factory, tokenA, tokenB);
         IPancakeERC20(tokenA).transferFrom(msg.sender, pair, amountA);
         IPancakeERC20(tokenB).transferFrom(msg.sender, pair, amountB);
         liquidity = IPancakePair(pair).mint(to);

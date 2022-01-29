@@ -16,15 +16,18 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import "./interfaces/IPancakeRouter02.sol";
 import "./interfaces/IPancakePair.sol";
 
+import "./tokens/Dinero.sol";
+
 import "./lib/Rebase.sol";
+import "./lib/FullMath.sol";
 
 import "./vaults/Vault.sol";
 
-import "./Dinero.sol";
 import "./OracleV1.sol";
 import "./InterestGovernorV1.sol";
 
@@ -68,6 +71,7 @@ contract InterestMarketV1 is Initializable, Context {
     using RebaseLibrary for Rebase;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
+    using FullMath for uint256;
 
     /*///////////////////////////////////////////////////////////////
                             EVENTS
@@ -373,9 +377,8 @@ contract InterestMarketV1 is Initializable, Context {
 
         // Amount of tokens every borrower together owes the protocol
         // Reminder: `INTEREST_RATE` has a base unit of 1e18
-        uint256 debt = (uint256(_totalLoan.elastic) *
-            _loan.INTEREST_RATE *
-            elapsedTime) / 1e18;
+        uint256 debt = (uint256(_totalLoan.elastic) * _loan.INTEREST_RATE)
+            .mulDiv(elapsedTime, 1e18);
 
         unchecked {
             // Should not overflow.
@@ -545,7 +548,7 @@ contract InterestMarketV1 is Initializable, Context {
      * Requirements:
      *
      * - If the liquidator wishes to use collateral to pay off a debt. He must exchange it to Dinero.
-     * - He must hold enough Dinero to cover the sum of principals if opts to not sell the collateral in PCS.
+     * - He must hold enough Dinero to cover the sum of principals if opts to not sell the collateral in PCS to avoid slippage costs.
      */
     function liquidate(
         address[] calldata accounts,
@@ -601,11 +604,14 @@ contract InterestMarketV1 is Initializable, Context {
             uint256 debt = _totalLoan.toElastic(principal, false);
 
             // Calculate the collateralFee (for the liquidator and the protocol)
-            uint256 fee = (debt * _liquidationFee) / 1e6;
+            uint256 fee = debt.mulDiv(_liquidationFee, 1e6);
 
             // How much collateral is needed to cover the loan + fees.
             // Since Dinero is always USD we can calculate this way.
-            uint256 collateralToCover = ((debt + fee) * 1e18) / _exchangeRate;
+            uint256 collateralToCover = (debt + fee).mulDiv(
+                1e18,
+                _exchangeRate
+            );
 
             // Remove the collateral from the account. We can consider the debt paid.
             userCollateral[account] -= collateralToCover;
@@ -648,7 +654,7 @@ contract InterestMarketV1 is Initializable, Context {
         totalCollateral -= liquidationInfo.allCollateral;
 
         // 10% of the liquidation fee to be given to the protocol.
-        uint256 protocolFee = (liquidationInfo.allFee * 100) / 1000;
+        uint256 protocolFee = uint256(liquidationInfo.allFee).mulDiv(100, 1000);
 
         unchecked {
             // Should not overflow.
@@ -833,14 +839,14 @@ contract InterestMarketV1 is Initializable, Context {
         Rebase memory _totalLoan = totalLoan;
 
         // Convert the collateral to USD. USD has 18 decimals so we need to remove them.
-        uint256 collateralInUSD = (collateralAmount * _exchangeRate) / 1e18;
+        uint256 collateralInUSD = collateralAmount.mulDiv(_exchangeRate, 1e18);
 
         // All Loans are emitted in `DINERO` which is based on USD price
         // Collateral in USD * {maxLTVRatio} has to be greater than principal + interest rate accrued in DINERO which is pegged to USD
         return
-            (collateralInUSD * maxLTVRatio) >
+            collateralInUSD.mulDiv(maxLTVRatio, 1e6) >
             // Multiply the {maxLTVRatio} this way gives to be more precise.
-            _totalLoan.toElastic(principal, true) * 1e6;
+            _totalLoan.toElastic(principal, true);
     }
 
     /**

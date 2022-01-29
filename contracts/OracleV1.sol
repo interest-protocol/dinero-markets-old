@@ -14,23 +14,37 @@
 pragma solidity 0.8.10;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import "./interfaces/AggregatorV3Interface.sol";
 import "./interfaces/IPancakePair.sol";
 
 import "./lib/Math.sol";
+import "./lib/FullMath.sol";
+
+import "./PancakeOracle.sol";
 
 /**
  * @dev A wrapper around the Chainlink oracles to feed prices to the markets. It aims to house all oracle logic of the protocol.
  *
+ * @notice Auditors please check that the contract always return the price with 18 decimals both from Chainlink and PCS.
+ * @notice The lending markets rely on this being the case.
  * @notice Security of this contract relies on Chainlink.
- * @notice The exchange rate returned has a base unit of 1e18.
+ * @notice We scale all decimals to 18 to follow the same decimals as WBNB and BUSD.
  * @notice It supports LP tokens.
  * @notice We intend to add a back up oracle using PCS TWAPS before main net release.
  * @notice It does not treat in case of a price of 0 or failure.
  * @notice Only supports tokens supported by Chainlink  https://docs.chain.link/docs/binance-smart-chain-addresses/.
+ * @notice We assume that BUSD is USD - 0x4Fabb145d64652a948d72533023f6E7A623C7C53
  */
 contract OracleV1 is Ownable {
+    /*///////////////////////////////////////////////////////////////
+                            LIBRARIES
+    //////////////////////////////////////////////////////////////*/
+    using SafeCast for *;
+    using FullMath for uint256;
+
     /*///////////////////////////////////////////////////////////////
                                 ENUMS
     //////////////////////////////////////////////////////////////*/
@@ -46,10 +60,16 @@ contract OracleV1 is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line var-name-mixedcase
+    PancakeOracle public immutable TWAP;
+
+    // solhint-disable-next-line var-name-mixedcase
     AggregatorV3Interface public immutable BNB_USD;
 
     // solhint-disable-next-line var-name-mixedcase
     address public immutable WBNB;
+
+    // solhint-disable-next-line var-name-mixedcase
+    address public immutable BUSD;
 
     // Token Address -> Chainlink feed with USD base.
     mapping(address => AggregatorV3Interface) public getUSDBaseFeeds;
@@ -64,10 +84,17 @@ contract OracleV1 is Ownable {
      * @param bnb_usd The chainlink feed for bnb/usd.
      * @param wbnb The address for WBNB.
      */
-    // solhint-disable-next-line var-name-mixedcase
-    constructor(AggregatorV3Interface bnb_usd, address wbnb) {
+    constructor(
+        PancakeOracle twap,
+        // solhint-disable-next-line var-name-mixedcase
+        AggregatorV3Interface bnb_usd,
+        address wbnb,
+        address busd
+    ) {
+        TWAP = twap;
         BNB_USD = bnb_usd;
         WBNB = wbnb;
+        BUSD = busd;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -83,19 +110,18 @@ contract OracleV1 is Ownable {
      * @param decimals The current decimals the price has
      * @return uint256 the new price supporting 18 decimal houses
      */
-    function _scaleDecimals(int256 price, uint8 decimals)
+    function _scaleDecimals(uint256 price, uint8 decimals)
         private
         pure
         returns (uint256)
     {
         uint256 baseDecimals = 18;
-        uint256 _price = uint256(price);
         if (decimals < baseDecimals) {
-            return _price * 10**uint256(baseDecimals - decimals);
+            return price * 10**uint256(baseDecimals - decimals);
         } else if (decimals > baseDecimals) {
-            return _price / 10**uint256(decimals - baseDecimals);
+            return price / 10**uint256(decimals - baseDecimals);
         }
-        return _price;
+        return price;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -130,23 +156,44 @@ contract OracleV1 is Ownable {
     /**
      * @dev It calls chainlink to get the USD price of a token and adjusts the decimals.
      *
+     * @notice On the TWAP we assume 1 BUSD is 1 USD.
+     *
      * @param token The address of the token for the feed.
      * @param amount The number of tokens to calculate the value in USD.
-     * @return uint256 The price of the token in USD.
+     * @return price uint256 The price of the token in USD.
      */
     function getTokenUSDPrice(address token, uint256 amount)
         public
         view
-        returns (uint256)
+        returns (uint256 price)
     {
         require(token != address(0), "Oracle: no address zero");
         // BNB feed is not saved in a mapping for gas optimization.
         if (token == WBNB) return getBNBUSDPrice(amount);
 
         AggregatorV3Interface feed = getUSDBaseFeeds[token];
-        (, int256 price, , , ) = feed.latestRoundData();
-        // Since amount and price both have a base unit of 1e18, we need to divide by 1e18.
-        return (_scaleDecimals(price, feed.decimals()) * amount) / 1 ether;
+
+        try feed.latestRoundData() returns (
+            uint80,
+            int256 answer,
+            uint256,
+            uint256,
+            uint80
+        ) {
+            price =
+                (_scaleDecimals(answer.toUint256(), feed.decimals()) * amount) /
+                1 ether;
+        } catch Error(string memory) {
+            price = _scaleDecimals(
+                TWAP.consult(WBNB, amount, BUSD),
+                _getDecimals(BUSD)
+            );
+        } catch (bytes memory) {
+            price = _scaleDecimals(
+                TWAP.consult(WBNB, amount, BUSD),
+                _getDecimals(BUSD)
+            );
+        }
     }
 
     /**
@@ -163,9 +210,9 @@ contract OracleV1 is Ownable {
     {
         uint256 fairBNBValue = getLPTokenBNBPrice(pair);
         // Since amount and price both have a base unit of 1e18, we need to divide by 1e18.
-        valueInBNB = (fairBNBValue * amount) / 1 ether;
+        valueInBNB = fairBNBValue.mulDiv(amount, 1 ether);
         // Since bnb and usd both have a base unit of 1e18, we need to divide by 1e18.
-        valueInUSD = (valueInBNB * getBNBUSDPrice(1 ether)) / 1 ether;
+        valueInUSD = valueInBNB.mulDiv(getBNBUSDPrice(1 ether), 1 ether);
     }
 
     /**
@@ -205,24 +252,41 @@ contract OracleV1 is Ownable {
     }
 
     /**
-     * @dev It returns the the price of a token in BNB terms.
+     * @dev We first try to get the price from Chainlink as it is more accurate. But in case it fails we will read from a PCS TWAP.
      *
-     * @param token The address of the token for the feed
-     * @param amount The number of tokens to calculate the price with
-     * @return uint256 The price of the token in BNB adjust to 18 decimals
+     * @notice We know that WBNB has 18 decimals and we are asking for the price in WBNB. So we do not need to scale the decimals.
+     * @notice We assume that the `token` and {WBNB} pair exists in Pancake Swap.
+     *
+     * @param token The address of the token we wish to find the price in BNB amount
+     * @param amount The amount of tokens
+     * @return price The amount of BNB `amount` of `token` is worth.
+     *
      */
     function getTokenBNBPrice(address token, uint256 amount)
         public
         view
-        returns (uint256)
+        returns (uint256 price)
     {
         // 1 BNB is always 1 BNB
         if (token == WBNB) return amount;
         require(token != address(0), "Oracle: no address zero");
 
         AggregatorV3Interface feed = getBNBBaseFeeds[token];
-        (, int256 price, , , ) = feed.latestRoundData();
-        return (_scaleDecimals(price, feed.decimals()) * amount) / 1 ether;
+        try feed.latestRoundData() returns (
+            uint80,
+            int256 answer,
+            uint256,
+            uint256,
+            uint80
+        ) {
+            price =
+                (_scaleDecimals(answer.toUint256(), feed.decimals()) * amount) /
+                1 ether;
+        } catch Error(string memory) {
+            price = TWAP.consult(token, amount, WBNB);
+        } catch (bytes memory) {
+            price = TWAP.consult(token, amount, WBNB);
+        }
     }
 
     /**
@@ -232,10 +296,51 @@ contract OracleV1 is Ownable {
      * @return uint256 A pair that has the value price and the decimal houses in the right
      */
     function getBNBUSDPrice(uint256 amount) public view returns (uint256) {
-        (, int256 price, , , ) = BNB_USD.latestRoundData();
+        try BNB_USD.latestRoundData() returns (
+            uint80,
+            int256 answer,
+            uint256,
+            uint256,
+            uint80
+        ) {
+            return
+                (_scaleDecimals(answer.toUint256(), BNB_USD.decimals()) *
+                    amount) / 1 ether;
+        } catch Error(string memory) {
+            return
+                _scaleDecimals(
+                    TWAP.consult(WBNB, amount, BUSD),
+                    _getDecimals(BUSD)
+                );
+        } catch (bytes memory) {
+            return
+                _scaleDecimals(
+                    TWAP.consult(WBNB, amount, BUSD),
+                    _getDecimals(BUSD)
+                );
+        }
+    }
 
-        // @dev We increase the decimals of BNB value to 18 to work with {ERC20}
-        return (_scaleDecimals(price, BNB_USD.decimals()) * amount) / 1 ether;
+    /*///////////////////////////////////////////////////////////////
+                            PRIVATE VIEW FUNCTION
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Helper function to safely get the decimals from an IERC20
+     *
+     * @notice We assume that if a token does not include the {decimals}, it has 18.
+     *
+     * @param token The address of the token we wish to read the decimals from
+     * @return The number of decimals.
+     */
+    function _getDecimals(address token) private view returns (uint8) {
+        try IERC20Metadata(token).decimals() returns (uint8 decimals) {
+            return decimals;
+        } catch Error(string memory) {
+            return 18;
+        } catch (bytes memory) {
+            return 18;
+        }
     }
 
     /*///////////////////////////////////////////////////////////////

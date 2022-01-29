@@ -3,7 +3,7 @@ pragma solidity 0.8.10;
 
 import "./interfaces/IPancakeFactory.sol";
 
-import "./lib/PancakeLibrary.sol";
+import "./lib/PancakeLib.sol";
 import "./interfaces/IPancakePair.sol";
 import "./interfaces/IPancakeERC20.sol";
 import "./interfaces/IWETH.sol";
@@ -30,15 +30,15 @@ contract ETHRouter {
     ) internal virtual {
         for (uint256 i; i < path.length - 1; i++) {
             (address input, address output) = (path[i], path[i + 1]);
-            (address token0, ) = PancakeLibrary.sortTokens(input, output);
+            (address token0, ) = PancakeLib.sortTokens(input, output);
             uint256 amountOut = amounts[i + 1];
             (uint256 amount0Out, uint256 amount1Out) = input == token0
                 ? (uint256(0), amountOut)
                 : (amountOut, uint256(0));
             address to = i < path.length - 2
-                ? PancakeLibrary.pairFor(factory, output, path[i + 2])
+                ? PancakeLib.pairFor(factory, output, path[i + 2])
                 : _to;
-            IPancakePair(PancakeLibrary.pairFor(factory, input, output)).swap(
+            IPancakePair(PancakeLib.pairFor(factory, input, output)).swap(
                 amount0Out,
                 amount1Out,
                 to,
@@ -54,7 +54,7 @@ contract ETHRouter {
         uint256
     ) external payable virtual returns (uint256[] memory amounts) {
         require(path[0] == WETH, "PancakeRouter: INVALID_PATH");
-        amounts = PancakeLibrary.getAmountsOut(factory, msg.value, path);
+        amounts = PancakeLib.getAmountsOut(factory, msg.value, path);
         require(
             amounts[amounts.length - 1] >= amountOutMin,
             "PancakeRouter: INSUFFICIENT_OUTPUT_AMOUNT"
@@ -62,7 +62,7 @@ contract ETHRouter {
         IWETH(WETH).deposit{value: amounts[0]}();
         assert(
             IWETH(WETH).transfer(
-                PancakeLibrary.pairFor(factory, path[0], path[1]),
+                PancakeLib.pairFor(factory, path[0], path[1]),
                 amounts[0]
             )
         );

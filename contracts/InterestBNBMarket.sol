@@ -12,12 +12,15 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 pragma solidity 0.8.10;
 
 import "@openzeppelin/contracts/utils/Context.sol";
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import "./interfaces/IPancakeRouter02.sol";
 
 import "./lib/Rebase.sol";
+import "./lib/FullMath.sol";
 
-import "./Dinero.sol";
+import "./tokens/Dinero.sol";
+
 import "./OracleV1.sol";
 import "./InterestGovernorV1.sol";
 
@@ -51,6 +54,7 @@ contract InterestBNBMarketV1 is Context {
 
     using RebaseLibrary for Rebase;
     using SafeCast for uint256;
+    using FullMath for uint256;
 
     /*///////////////////////////////////////////////////////////////
                             EVENTS
@@ -291,9 +295,8 @@ contract InterestBNBMarketV1 is Context {
 
         // Amount of tokens every borrower together owes the protocol
         // Reminder: `INTEREST_RATE` has a base unit of 1e18
-        uint256 debt = (uint256(_totalLoan.elastic) *
-            _loan.INTEREST_RATE *
-            elapsedTime) / 1e18;
+        uint256 debt = (uint256(_totalLoan.elastic) * _loan.INTEREST_RATE)
+            .mulDiv(elapsedTime, 1e18);
 
         unchecked {
             // Should not overflow.
@@ -512,11 +515,14 @@ contract InterestBNBMarketV1 is Context {
             uint256 debt = _totalLoan.toElastic(principal, false);
 
             // Calculate the collateralFee (for the liquidator and the protocol)
-            uint256 fee = (debt * _liquidationFee) / 1e6;
+            uint256 fee = debt.mulDiv(_liquidationFee, 1e6);
 
             // How much collateral is needed to cover the loan + fees.
             // Since Dinero is always USD we can calculate this way.
-            uint256 collateralToCover = ((debt + fee) * 1e18) / _exchangeRate;
+            uint256 collateralToCover = (debt + fee).mulDiv(
+                1e18,
+                _exchangeRate
+            );
 
             // Remove the collateral from the account. We can consider the debt paid.
             userCollateral[account] -= collateralToCover;
@@ -548,7 +554,7 @@ contract InterestBNBMarketV1 is Context {
         );
 
         // 10% of the liquidation fee to be given to the protocol.
-        uint256 protocolFee = (liquidationInfo.allFee * 100) / 1000;
+        uint256 protocolFee = uint256(liquidationInfo.allFee).mulDiv(100, 1000);
 
         unchecked {
             // Should not overflow.
@@ -634,14 +640,13 @@ contract InterestBNBMarketV1 is Context {
         Rebase memory _totalLoan = totalLoan;
 
         // Convert the collateral to USD. USD has 18 decimals so we need to remove them.
-        uint256 collateralInUSD = (collateralAmount * _exchangeRate) / 1e18;
+        uint256 collateralInUSD = collateralAmount.mulDiv(_exchangeRate, 1e18);
 
         // All Loans are emitted in `DINERO` which is based on USD price
         // Collateral in USD * {maxLTVRatio} has to be greater than principal + interest rate accrued in DINERO which is pegged to USD
         return
-            (collateralInUSD * maxLTVRatio) >
-            // Multiply the {maxLTVRatio} this way gives to be more precise.
-            _totalLoan.toElastic(principal, true) * 1e6;
+            collateralInUSD.mulDiv(maxLTVRatio, 1e6) >
+            _totalLoan.toElastic(principal, true);
     }
 
     /*///////////////////////////////////////////////////////////////

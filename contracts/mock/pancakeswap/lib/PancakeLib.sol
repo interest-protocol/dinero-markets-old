@@ -5,7 +5,7 @@ import "../PancakePair.sol";
 
 import "./SafeMath.sol";
 
-library PancakeLibrary {
+library PancakeLib {
     using SafeMath for uint256;
 
     // returns sorted token addresses, used to handle return values from pairs sorted in this order

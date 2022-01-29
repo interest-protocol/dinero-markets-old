@@ -26,9 +26,9 @@ pragma solidity 0.8.10;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/proxy/Clones.sol";
 
-import "./InterestMarketV1.sol";
+import "./tokens/Dinero.sol";
 
-import "./Dinero.sol";
+import "./InterestMarketV1.sol";
 
 /**
  * @dev The governor will manage the contracts by being able to grant and revoke the {MINTER_ROLE}.
