@@ -16,7 +16,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "./lib/FullMath.sol";
+import "./lib/IntMath.sol";
 
 import "./tokens/InterestToken.sol";
 import "./tokens/StakedInterestToken.sol";
@@ -29,7 +29,6 @@ import "./tokens/StakedInterestToken.sol";
  * We use Open Zeppelin version 4.5.0-rc.0 for this. Because it does not reduce the allowance on max allowance.
  * This is to incentivize other protocols to treat {StakedInterestToken} as the {InterestToken}. Because they can redeem it any time.
  * For example, if another protocol requires the {InterestToken} to cover an undercollaterized position, it can use the {unstake} function.
- * @notice The {pool.accruedIntPerShare} has a base unit of 1e12 for highe precision.
  * @notice The owner can add new pools and set their allocation.
  * @notice Only the current {devAccount} can update the developer account, which gets 10% of all new minted tokens as they are harvested.
  * @notice The {CasaDePapel} needs to get the ownership of both {InterestToken} and {StakedInterestToken} before the {startBlock}.
@@ -41,7 +40,7 @@ contract CasaDePapel is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     using SafeERC20 for IERC20;
-    using FullMath for uint256;
+    using IntMath for uint256;
 
     /*///////////////////////////////////////////////////////////////
                                 EVENTS
@@ -121,9 +120,6 @@ contract CasaDePapel is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     *
-     * @notice `interestTokenPerBlock` has a base of 1e18.
-     *
      * @param interestToken Address of the {InterestToken}.
      * @param stakedInterestToken Address of the {StakedInterestToken}.
      * @param _devAccount The address of the account that will get 10% of all new minted tokens.
@@ -186,8 +182,6 @@ contract CasaDePapel is Ownable {
     /**
      * @dev This function updates the rewards for the pool with id `poolId` and mints tokens for the {devAccount}.
      *
-     * @notice The {pool.accruedIntPerShare} has a base unit of 1e12.
-     *
      * @param poolId The id of the pool to be updated.
      */
     function updatePool(uint256 poolId) public {
@@ -222,7 +216,7 @@ contract CasaDePapel is Ownable {
         // Note: this variable i already per share as we divide by the `amountOfStakedTokens`.
         pool.accruedIntPerShare =
             pool.accruedIntPerShare +
-            intReward.mulDiv(1e12, amountOfStakedTokens);
+            intReward.bdiv(amountOfStakedTokens);
 
         pool.lastRewardBlock = block.number;
 
@@ -232,8 +226,6 @@ contract CasaDePapel is Ownable {
 
     /**
      * @dev It updates the current rewards accrued in all pools. It is an optional feature in many functions. If the caller wishes to do.
-     *
-     * @notice pool.accruedIntPerShare has a base of 1e12.
      *
      * @notice This is a O(n) operation, which can cost a lot of gas.
      */
@@ -273,7 +265,7 @@ contract CasaDePapel is Ownable {
         if (user.amount > 0) {
             // Calculate the user pending rewards by checking his % of the acruedIntPerShare minus what he got paid already.
             _pendingRewards =
-                user.amount.mulDiv(pool.accruedIntPerShare, 1e12) -
+                user.amount.bmul(pool.accruedIntPerShare) -
                 user.rewardsPaid;
         }
 
@@ -293,7 +285,7 @@ contract CasaDePapel is Ownable {
         }
 
         // He has been paid all rewards up to this point.
-        user.rewardsPaid = user.amount.mulDiv(pool.accruedIntPerShare, 1e12);
+        user.rewardsPaid = user.amount.bmul(pool.accruedIntPerShare);
 
         // Update global state
         pools[poolId] = pool;
@@ -336,10 +328,8 @@ contract CasaDePapel is Ownable {
 
         // User always has rewards if he has staked tokens. Unless he deposits and withdraws in the same block.
         // Save user rewards before any state manipulation.
-        // Note that {pool.accruedIntPerShare} has a base unit of 1e12.
-        uint256 _pendingRewards = (
-            user.amount.mulDiv(pool.accruedIntPerShare, 1e12)
-        ) - user.rewardsPaid;
+        uint256 _pendingRewards = user.amount.bmul(pool.accruedIntPerShare) -
+            user.rewardsPaid;
 
         // User can wish to simply get his pending rewards.
         if (amount > 0) {
@@ -350,8 +340,7 @@ contract CasaDePapel is Ownable {
         }
 
         // Update the amount of reward paid to the user.
-        // Note that {pool.accruedIntPerShare} has a base unit of 1e12.
-        user.rewardsPaid = user.amount.mulDiv(pool.accruedIntPerShare, 1e12);
+        user.rewardsPaid = user.amount.bmul(pool.accruedIntPerShare);
 
         // Update global state
         pools[poolId] = pool;
@@ -388,7 +377,7 @@ contract CasaDePapel is Ownable {
         if (user.amount > 0) {
             // Note the base unit of {pool.accruedIntPerShare}.
             _pendingRewards =
-                user.amount.mulDiv(pool.accruedIntPerShare, 1e12) -
+                user.amount.bmul(pool.accruedIntPerShare) -
                 user.rewardsPaid;
         }
 
@@ -410,7 +399,7 @@ contract CasaDePapel is Ownable {
         }
 
         // Update the state to indicate that the user has been paid all the rewards up to this block.
-        user.rewardsPaid = user.amount.mulDiv(pool.accruedIntPerShare, 1e12);
+        user.rewardsPaid = user.amount.bmul(pool.accruedIntPerShare);
 
         // If the user has any pending rewards. We send it to him.
         if (_pendingRewards > 0) {
@@ -501,8 +490,6 @@ contract CasaDePapel is Ownable {
     /**
      * @dev This function will help the front-end know how many rewards the user has in the pool at any given block.
      *
-     * @notice The {accruedIntPerShare} has a base unit of 1e12.
-     *
      * @param poolId The id of the pool we wish to find the rewards for `_user`
      * @param _user The address of the user we wish to find his/her rewards
      */
@@ -532,9 +519,9 @@ contract CasaDePapel is Ownable {
             );
             accruedIntPerShare =
                 accruedIntPerShare +
-                intReward.mulDiv(1e12, totalSupply);
+                intReward.bdiv(totalSupply);
         }
-        return user.amount.mulDiv(accruedIntPerShare, 1e12) - user.rewardsPaid;
+        return user.amount.bmul(accruedIntPerShare) - user.rewardsPaid;
     }
 
     /**************************** PRIVATE FUNCTIONS ****************************/
@@ -554,7 +541,7 @@ contract CasaDePapel is Ownable {
         if (allOtherPoolsPoints != 0) {
             // {INTEREST_TOKEN} pool allocation points is always equal to 1/3 of all the other pools.
             // We reuse the same variable to save memory. Even though, it says allOtherPoolsPoints. At this point is the pool 0 points.
-            allOtherPoolsPoints = allOtherPoolsPoints / 3;
+            allOtherPoolsPoints = allOtherPoolsPoints.bdiv(0.3e18);
 
             // Update the total allocation pools.
             _totalAllocationPoints -= pools[0].allocationPoints;
@@ -569,7 +556,6 @@ contract CasaDePapel is Ownable {
     /**
      * @dev This function has the core logic for unstaking.
      *
-     * @notice The {pool.accruedIntPerShare} has a base unit of 1e12.
      * @notice That recipient is not necessarly the account or `msg.sender`.
      *
      * @param account The address that owns the deposited tokens in this pool.
@@ -592,11 +578,8 @@ contract CasaDePapel is Ownable {
         User memory user = userInfo[0][account];
 
         // Calculate the pending rewards.
-        // Note the base unit of 1e12 for {pool.accruedIntPerShare}.
-        uint256 _pendingRewards = user.amount.mulDiv(
-            pool.accruedIntPerShare,
-            1e12
-        ) - user.rewardsPaid;
+        uint256 _pendingRewards = user.amount.bmul(pool.accruedIntPerShare) -
+            user.rewardsPaid;
 
         // The user can opt to simply get the rewards, if he passes an `amount` of 0.
         if (amount > 0) {
@@ -609,8 +592,7 @@ contract CasaDePapel is Ownable {
         }
 
         // Update `account` rewardsPaid. `Account` has been  paid in full amount up to this block.
-        // Note the base unit of 1e12 in {pool.accruedIntPerShare}.
-        user.rewardsPaid = user.amount.mulDiv(pool.accruedIntPerShare, 1e12);
+        user.rewardsPaid = user.amount.bmul(pool.accruedIntPerShare);
         // Update the global state.
         pools[0] = pool;
         userInfo[0][account] = user;

@@ -3,6 +3,8 @@ pragma solidity 0.8.10;
 
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
+import "./IntMath.sol";
+
 struct Rebase {
     uint128 elastic;
     uint128 base;
@@ -22,6 +24,7 @@ struct Rebase {
  */
 library RebaseLibrary {
     using SafeCast for uint256;
+    using IntMath for uint256;
 
     /**
      * @dev Calculates a base value from an elastic value using the ratio of a {Rebase} struct.
@@ -40,8 +43,8 @@ library RebaseLibrary {
         if (total.elastic == 0) {
             base = elastic;
         } else {
-            base = (elastic * total.base) / total.elastic;
-            if (roundUp && (base * total.elastic) / total.base < elastic) {
+            base = elastic.mulDiv(total.base, total.elastic);
+            if (roundUp && base.mulDiv(total.elastic, total.base) < elastic) {
                 base += 1;
             }
         }
@@ -64,8 +67,8 @@ library RebaseLibrary {
         if (total.base == 0) {
             elastic = base;
         } else {
-            elastic = (base * total.elastic) / total.base;
-            if (roundUp && (elastic * total.base) / total.elastic < base) {
+            elastic = base.mulDiv(total.elastic, total.base);
+            if (roundUp && elastic.mulDiv(total.base, total.elastic) < base) {
                 elastic += 1;
             }
         }

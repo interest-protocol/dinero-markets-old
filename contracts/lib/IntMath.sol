@@ -1,15 +1,33 @@
 // SPDX-License-Identifier: CC-BY-4.0
 pragma solidity 0.8.10;
 
-//solhint-disable
-
 /**
+ * @dev We assume that all numbers passed to {bmul} and {bdiv} have a mantissa of 1e18
+ *
  * @notice We copied from https://github.com/Uniswap/v3-core/blob/main/contracts/libraries/FullMath.sol
  * @notice We modified line 67 per this post https://ethereum.stackexchange.com/questions/96642/unary-operator-cannot-be-applied-to-type-uint256
  */
 // taken from https://medium.com/coinmonks/math-in-solidity-part-3-percents-and-proportions-4db014e080b1
 // license is CC-BY-4.0
-library FullMath {
+library IntMath {
+    // Base Mantissa of all numbers in Interest Protocol
+    uint256 private constant BASE = 1e18;
+
+    /**
+     * @dev Function ensures that the return value keeps the right mantissa
+     */
+    function bmul(uint256 x, uint256 y) internal pure returns (uint256) {
+        return mulDiv(x, y, BASE);
+    }
+
+    /**
+     * @dev Function ensures that the return value keeps the right mantissa
+     */
+    function bdiv(uint256 x, uint256 y) internal pure returns (uint256) {
+        return mulDiv(x, BASE, y);
+    }
+
+    //solhint-disable
     /// @notice Calculates floor(a×b÷denominator) with full precision. Throws if result overflows a uint256 or denominator == 0
     /// @param a The multiplicand
     /// @param b The multiplier
@@ -108,5 +126,23 @@ library FullMath {
         // is no longer required.
         result = prod0 * inv;
         return result;
+    }
+
+    /**
+     * @notice This was copied from Uniswap without any modifications.
+     * https://github.com/Uniswap/v2-core/blob/master/contracts/libraries/Math.sol
+     * babylonian method (https://en.wikipedia.org/wiki/Methods_of_computing_square_roots#Babylonian_method)
+     */
+    function sqrt(uint256 y) internal pure returns (uint256 z) {
+        if (y > 3) {
+            z = y;
+            uint256 x = y / 2 + 1;
+            while (x < z) {
+                z = x;
+                x = (y / x + x) / 2;
+            }
+        } else if (y != 0) {
+            z = 1;
+        }
     }
 }

@@ -20,8 +20,8 @@ import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "./interfaces/AggregatorV3Interface.sol";
 import "./interfaces/IPancakePair.sol";
 
-import "./lib/Math.sol";
-import "./lib/FullMath.sol";
+import "./lib/IntMath.sol";
+import "./lib/IntERC20.sol";
 
 import "./PancakeOracle.sol";
 
@@ -43,7 +43,8 @@ contract OracleV1 is Ownable {
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
     using SafeCast for *;
-    using FullMath for uint256;
+    using IntMath for uint256;
+    using IntERC20 for address;
 
     /*///////////////////////////////////////////////////////////////
                                 ENUMS
@@ -131,7 +132,7 @@ contract OracleV1 is Ownable {
     /**
      * @dev It returns usd value of {ERC20} tokens and checks if they are a PCS LP token or not.
      *
-     * @notice Note the usd price has a base unit of 1e18.
+     * @notice Note the usd price has a mantissa of 1e18.
      *
      * @param token The address of the {ERC20} token
      * @param amount The number of `token` to evaluate the USD amount
@@ -157,6 +158,7 @@ contract OracleV1 is Ownable {
      * @dev It calls chainlink to get the USD price of a token and adjusts the decimals.
      *
      * @notice On the TWAP we assume 1 BUSD is 1 USD.
+     * @notice The amount will have 18 decimals
      *
      * @param token The address of the token for the feed.
      * @param amount The number of tokens to calculate the value in USD.
@@ -180,19 +182,29 @@ contract OracleV1 is Ownable {
             uint256,
             uint80
         ) {
-            price =
-                (_scaleDecimals(answer.toUint256(), feed.decimals()) * amount) /
-                1 ether;
+            price = _scaleDecimals(answer.toUint256(), feed.decimals()).bmul(
+                amount
+            );
         } catch Error(string memory) {
-            price = _scaleDecimals(
-                TWAP.consult(WBNB, amount, BUSD),
-                _getDecimals(BUSD)
+            // Get the token price in BNB as token/BUSD pairs are rare
+            uint256 bnbPrice = _scaleDecimals(
+                TWAP.consult(token, amount, WBNB),
+                BUSD.safeDecimals()
             );
+
+            // Then get BNB price in
+            // We just need price for 1BNB because we already computed the amount above
+            price = bnbPrice.bmul(getBNBUSDPrice(1 ether));
         } catch (bytes memory) {
-            price = _scaleDecimals(
-                TWAP.consult(WBNB, amount, BUSD),
-                _getDecimals(BUSD)
+            // Get the token price in BNB as token/BUSD pairs are rare
+            uint256 bnbPrice = _scaleDecimals(
+                TWAP.consult(token, amount, WBNB),
+                BUSD.safeDecimals()
             );
+
+            // Then get BNB price in
+            // We just need price for 1BNB because we already computed the amount above
+            price = bnbPrice.bmul(getBNBUSDPrice(1 ether));
         }
     }
 
@@ -209,10 +221,10 @@ contract OracleV1 is Ownable {
         returns (uint256 valueInBNB, uint256 valueInUSD)
     {
         uint256 fairBNBValue = getLPTokenBNBPrice(pair);
-        // Since amount and price both have a base unit of 1e18, we need to divide by 1e18.
-        valueInBNB = fairBNBValue.mulDiv(amount, 1 ether);
-        // Since bnb and usd both have a base unit of 1e18, we need to divide by 1e18.
-        valueInUSD = valueInBNB.mulDiv(getBNBUSDPrice(1 ether), 1 ether);
+        // Since amount and price both have a mantissa of 1e18, we need to divide by 1e18.
+        valueInBNB = fairBNBValue.bmul(amount);
+        // Since bnb and usd both have a mantissa of 1e18, we need to divide by 1e18.
+        valueInUSD = valueInBNB.bmul(getBNBUSDPrice(1 ether));
     }
 
     /**
@@ -241,14 +253,15 @@ contract OracleV1 is Ownable {
         (uint256 reserve0, uint256 reserve1, ) = pair.getReserves();
 
         // Get square root of K
-        uint256 sqrtK = Math.sqrt(reserve0 * (reserve1)) / totalSupply;
+        uint256 sqrtK = IntMath.sqrt(reserve0 * (reserve1)) / totalSupply;
 
         // Relies on chainlink to get the token value in BNB
         uint256 price0 = getTokenBNBPrice(token0, 1 ether);
         uint256 price1 = getTokenBNBPrice(token1, 1 ether);
 
         // Get fair price of LP token in BNB by re-engineering the K formula.
-        return (((sqrtK * 2 * (Math.sqrt(price0)))) * (Math.sqrt(price1)));
+        return (((sqrtK * 2 * (IntMath.sqrt(price0)))) *
+            (IntMath.sqrt(price1)));
     }
 
     /**
@@ -279,9 +292,9 @@ contract OracleV1 is Ownable {
             uint256,
             uint80
         ) {
-            price =
-                (_scaleDecimals(answer.toUint256(), feed.decimals()) * amount) /
-                1 ether;
+            price = _scaleDecimals(answer.toUint256(), feed.decimals()).bmul(
+                amount
+            );
         } catch Error(string memory) {
             price = TWAP.consult(token, amount, WBNB);
         } catch (bytes memory) {
@@ -310,36 +323,14 @@ contract OracleV1 is Ownable {
             return
                 _scaleDecimals(
                     TWAP.consult(WBNB, amount, BUSD),
-                    _getDecimals(BUSD)
+                    BUSD.safeDecimals()
                 );
         } catch (bytes memory) {
             return
                 _scaleDecimals(
                     TWAP.consult(WBNB, amount, BUSD),
-                    _getDecimals(BUSD)
+                    BUSD.safeDecimals()
                 );
-        }
-    }
-
-    /*///////////////////////////////////////////////////////////////
-                            PRIVATE VIEW FUNCTION
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @dev Helper function to safely get the decimals from an IERC20
-     *
-     * @notice We assume that if a token does not include the {decimals}, it has 18.
-     *
-     * @param token The address of the token we wish to read the decimals from
-     * @return The number of decimals.
-     */
-    function _getDecimals(address token) private view returns (uint8) {
-        try IERC20Metadata(token).decimals() returns (uint8 decimals) {
-            return decimals;
-        } catch Error(string memory) {
-            return 18;
-        } catch (bytes memory) {
-            return 18;
         }
     }
 

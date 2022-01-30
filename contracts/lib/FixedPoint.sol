@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.10;
 
-import "./FullMath.sol";
+import "./IntMath.sol";
 
 // solhint-disable
 /**
@@ -63,7 +63,7 @@ library FixedPoint {
             );
             return uq112x112(uint224(result));
         } else {
-            uint256 result = FullMath.mulDiv(numerator, Q112, denominator);
+            uint256 result = IntMath.mulDiv(numerator, Q112, denominator);
             require(
                 result <= type(uint224).max,
                 "FixedPoint::fraction: overflow"
