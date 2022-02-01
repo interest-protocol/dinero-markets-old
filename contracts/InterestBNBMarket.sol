@@ -12,12 +12,16 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 pragma solidity 0.8.10;
 
 import "@openzeppelin/contracts/utils/Context.sol";
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "./interfaces/IPancakeRouter02.sol";
 
 import "./lib/Rebase.sol";
+import "./lib/IntMath.sol";
 
-import "./Dinero.sol";
+import "./tokens/Dinero.sol";
+
 import "./OracleV1.sol";
 import "./InterestGovernorV1.sol";
 
@@ -29,10 +33,7 @@ import "./InterestGovernorV1.sol";
  * @notice There is no deposit fee.
  * @notice There is a liquidation fee.
  * @notice Since Dinero is assumed to always be pegged to USD. Only need an exchange rate from collateral to USD.
- * @notice {INTEREST_RATE} has a base unit of 1e8
  * @notice exchange rate has a base unit of 18 decimals
- * @notice {maxLTVRatio} has a base unit of 1e6
- * @notice {liquidationFee} has a base unit of 1e6
  * @notice The govenor owner has sole access to critical functions in this contract.
  * @notice Market will only supports BNB, which has 18 decimals.
  * @notice The {maxLTVRatio} will start at 60% and slow be raised up to 80%.
@@ -44,13 +45,14 @@ import "./InterestGovernorV1.sol";
  * If Dinero falls below, borrowers that have open  loans and swapped to a different crypto, can buy dinero cheaper and close their loans running a profit. Liquidators can accumulate Dinero to close underwater positions with an arbitrate. As liquidation will always assume 1 Dinero is worth 1 USD. If Dinero goes above a dollar, people are encouraged to borrow more Dinero for arbitrage. We believe this will keep the price pegged at 1 USD.
  *
  */
-contract InterestBNBMarketV1 is Context {
+contract InterestBNBMarketV1 is ReentrancyGuard, Context {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
 
     using RebaseLibrary for Rebase;
     using SafeCast for uint256;
+    using IntMath for uint256;
 
     /*///////////////////////////////////////////////////////////////
                             EVENTS
@@ -290,10 +292,10 @@ contract InterestBNBMarketV1 is Context {
         }
 
         // Amount of tokens every borrower together owes the protocol
-        // Reminder: `INTEREST_RATE` has a base unit of 1e18
-        uint256 debt = (uint256(_totalLoan.elastic) *
-            _loan.INTEREST_RATE *
-            elapsedTime) / 1e18;
+        // By using {bmul} at the end we get a higher precision
+        uint256 debt = (uint256(_totalLoan.elastic) * _loan.INTEREST_RATE).bmul(
+            elapsedTime
+        );
 
         unchecked {
             // Should not overflow.
@@ -365,7 +367,11 @@ contract InterestBNBMarketV1 is Context {
      *
      * - `msg.sender` must remain solvent after removing the collateral.
      */
-    function withdrawCollateral(address to, uint256 amount) external isSolvent {
+    function withdrawCollateral(address to, uint256 amount)
+        external
+        nonReentrant
+        isSolvent
+    {
         // Update how much is owed to the protocol before allowing collateral to be withdrawn
         accrue();
 
@@ -444,7 +450,6 @@ contract InterestBNBMarketV1 is Context {
      *
      * @notice Liquidator can use collateral to close the position or must have enough dinero in this account.
      * @notice Liquidators can only close a portion of an underwater position.
-     * @notice {liquidationFee} has a base unit of 6.
      * @notice {exchangeRate} has a base unit of 1e18.
      * @notice The liquidator must have more than the sum of principals in Dinero because of the fees accrued over time. Unless he chooses to use the collateral to cover the positions.
      * @notice We assume PCS will remain most liquid exchange in BSC for this version of the contract. We will also add liquidate of BNB/DNR to PCS.
@@ -512,11 +517,11 @@ contract InterestBNBMarketV1 is Context {
             uint256 debt = _totalLoan.toElastic(principal, false);
 
             // Calculate the collateralFee (for the liquidator and the protocol)
-            uint256 fee = (debt * _liquidationFee) / 1e6;
+            uint256 fee = debt.bmul(_liquidationFee);
 
             // How much collateral is needed to cover the loan + fees.
             // Since Dinero is always USD we can calculate this way.
-            uint256 collateralToCover = ((debt + fee) * 1e18) / _exchangeRate;
+            uint256 collateralToCover = (debt + fee).bdiv(_exchangeRate);
 
             // Remove the collateral from the account. We can consider the debt paid.
             userCollateral[account] -= collateralToCover;
@@ -548,7 +553,7 @@ contract InterestBNBMarketV1 is Context {
         );
 
         // 10% of the liquidation fee to be given to the protocol.
-        uint256 protocolFee = (liquidationInfo.allFee * 100) / 1000;
+        uint256 protocolFee = uint256(liquidationInfo.allFee).bmul(0.1e18);
 
         unchecked {
             // Should not overflow.
@@ -598,6 +603,8 @@ contract InterestBNBMarketV1 is Context {
      * @param amount How much BNB to send to the `to` address.
      */
     function _sendCollateral(address payable to, uint256 amount) private {
+        require(address(this).balance >= amount, "MKT: insufficient balance");
+
         //solhint-disable-next-line avoid-low-level-calls
         (bool success, ) = to.call{value: amount}("");
         require(success, "MKT: unable to remove collateral");
@@ -605,9 +612,6 @@ contract InterestBNBMarketV1 is Context {
 
     /**
      * @dev Checks if an `account` has enough collateral to back his loan based on the {maxLTVRatio}.
-     *
-     * @notice Note the {exchangeRate} base unit of 1e18.
-     * @notice Note the {maxLTVRatio} base unit of 1e6.
      *
      * @param account The address to check if he is solvent.
      * @param _exchangeRate The current exchange rate of `COLLATERAL` in USD
@@ -634,14 +638,13 @@ contract InterestBNBMarketV1 is Context {
         Rebase memory _totalLoan = totalLoan;
 
         // Convert the collateral to USD. USD has 18 decimals so we need to remove them.
-        uint256 collateralInUSD = (collateralAmount * _exchangeRate) / 1e18;
+        uint256 collateralInUSD = collateralAmount.bmul(_exchangeRate);
 
         // All Loans are emitted in `DINERO` which is based on USD price
         // Collateral in USD * {maxLTVRatio} has to be greater than principal + interest rate accrued in DINERO which is pegged to USD
         return
-            (collateralInUSD * maxLTVRatio) >
-            // Multiply the {maxLTVRatio} this way gives to be more precise.
-            _totalLoan.toElastic(principal, true) * 1e6;
+            collateralInUSD.bmul(maxLTVRatio) >
+            _totalLoan.toElastic(principal, true);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -650,8 +653,6 @@ contract InterestBNBMarketV1 is Context {
 
     /**
      * @dev updates the {maxLTVRatio} of the whole contract.
-     *
-     * @notice Be mindful that it has a base unit of 1e6.
      *
      * @param amount The new {maxLTVRatio}.
      *
@@ -662,14 +663,12 @@ contract InterestBNBMarketV1 is Context {
      *
      */
     function setMaxLTVRatio(uint256 amount) external onlyGovernorOwner {
-        require(9e5 >= amount, "MKT: too high");
+        require(0.9e18 >= amount, "MKT: too high");
         maxLTVRatio = amount;
     }
 
     /**
      * @dev Updates the {liquidationFee}.
-     *
-     * @notice It is a percentage with a  base unit of 1e6.
      *
      * @param amount The new liquidation fee.
      *
@@ -680,7 +679,7 @@ contract InterestBNBMarketV1 is Context {
      *
      */
     function setLiquidationFee(uint256 amount) external onlyGovernorOwner {
-        require(15e4 >= amount, "MKT: too high");
+        require(0.15e18 >= amount, "MKT: too high");
         liquidationFee = amount;
     }
 
@@ -698,6 +697,7 @@ contract InterestBNBMarketV1 is Context {
      *
      */
     function setInterestRate(uint64 amount) external onlyGovernorOwner {
+        // 13e8 * 60 * 60 * 24 * 365 / 1e18 = ~ 0.0409968
         require(13e8 >= amount, "MKT: too high");
         loan.INTEREST_RATE = amount;
     }

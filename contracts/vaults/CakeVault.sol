@@ -15,6 +15,8 @@ pragma solidity 0.8.10;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import "../lib/IntMath.sol";
+
 import "./Vault.sol";
 
 /**
@@ -32,6 +34,7 @@ contract CakeVault is Vault {
     //////////////////////////////////////////////////////////////*/
 
     using SafeERC20 for IERC20;
+    using IntMath for uint256;
 
     /*///////////////////////////////////////////////////////////////
                                  CONSTRUCTOR
@@ -80,9 +83,6 @@ contract CakeVault is Vault {
 
     /**
      * @dev This function compounds the {CAKE} rewards in the pool id 0 and rewards the caller with 2% of the pending rewards.
-     *
-     * @notice The compounding fee base unit is 1e6.
-     * @notice The {totalRewardsPerAmount} has a base unit of 1e12.
      */
     function compound() external {
         uint256 cakeRewards;
@@ -93,11 +93,11 @@ contract CakeVault is Vault {
         // Get rewards from the `CAKE` pool. We do not update the {_totalRewardsPerAmount} here because we need to first deduct the feee.
         cakeRewards += _unStakeCake(0);
 
-        // Calculate the compounding fee to sent to the `msg.sender`. It has a base unit of 1e6, which makes it 2%.
-        uint256 fee = (cakeRewards * 2e4) / 1e6;
+        // Calculate the compounding fee to sent to the `msg.sender`.
+        uint256 fee = cakeRewards.bmul(0.02e18);
 
         // update the {_totalRewardsPerAmount} without the fee
-        _totalRewardsPerAmount += ((cakeRewards - fee) * 1e12) / _totalAmount;
+        _totalRewardsPerAmount += (cakeRewards - fee).bdiv(_totalAmount);
 
         // Pay the `msg.sender`
         CAKE.safeTransfer(_msgSender(), fee);
@@ -122,7 +122,6 @@ contract CakeVault is Vault {
      * It assigns the deposit to the `to` address.
      *
      * @notice It assumes the `from` has given enough approval to this contract.
-     * @notice The variable {_totalRewardsPerAmount} has a base unit of 1e12.
      * @notice This function does not send the current rewards accrued to the `to`.
      *
      * @param from The address that will {transferFrom} {CAKE} tokens.
@@ -142,14 +141,14 @@ contract CakeVault is Vault {
         // If there are no tokens deposited in the vault, We do not need to update the {_totalRewardsPerAmount}. As there are no rewards to be updated.
         if (_totalAmount > 0) {
             // Reinvest all cake into the CAKE pool and get the current rewards.
-            _totalRewardsPerAmount += (_stakeCake() * 1e12) / _totalAmount;
+            _totalRewardsPerAmount += _stakeCake().bdiv(_totalAmount);
         }
 
         // If the user has no deposited tokens, we do not need to update his rewards.
         if (user.amount > 0) {
             // Update how many rewards the user has accrued up to this point.
             user.rewards +=
-                ((_totalRewardsPerAmount * user.amount) / 1e12) -
+                _totalRewardsPerAmount.bmul(user.amount) -
                 user.rewardDebt;
         }
 
@@ -165,7 +164,7 @@ contract CakeVault is Vault {
         CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
 
         // Update State to tell us that the `account` has been completed "paid" up to this point.
-        user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
+        user.rewardDebt = _totalRewardsPerAmount.bmul(user.amount);
 
         // Update Global state
         userInfo[to] = user;
@@ -178,7 +177,6 @@ contract CakeVault is Vault {
     /**
      * @dev The objective of this function is to allow the `from` to withdraw some of his previously deposited tokens from the {CAKE_MASTER_CHEF}.
      *
-     * @notice The base unit for {totalRewardsPerAmount} is 1e12.
      * @notice The {user.rewards} is sent to the `from` and not the `recipient`.
      * @notice The Cake rewards always go to the `to` address.
      * During liquidations, the rewards will go to the `from` that opened the loan, but some of the deposited
@@ -211,10 +209,10 @@ contract CakeVault is Vault {
         // And withdraw the requested amount of {CAKE} from the pool.
         // The {Vault} contract ensures that the `amount` is greater than 0.
         // It also ensured that the {totalAmount} is greater than 0.
-        _totalRewardsPerAmount += (_unStakeCake(amount) * 1e12) / _totalAmount;
+        _totalRewardsPerAmount += _unStakeCake(amount).bdiv(_totalAmount);
 
         // Calculate how many rewards the `account` has acrrued up to this block.
-        uint256 rewards = ((_totalRewardsPerAmount * user.amount) / 1e12) -
+        uint256 rewards = _totalRewardsPerAmount.bmul(user.amount) -
             user.rewardDebt;
 
         // Update the state.
@@ -255,7 +253,7 @@ contract CakeVault is Vault {
         if (_totalAmount > 0) {
             // If the Vault still has assets update the state as usual
             totalRewardsPerAmount = _totalRewardsPerAmount;
-            user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
+            user.rewardDebt = _totalRewardsPerAmount.bmul(user.amount);
             totalAmount = _totalAmount;
         } else {
             // If the Vault does not have any {CAKE}, reset the whole state.

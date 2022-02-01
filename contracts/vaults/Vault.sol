@@ -18,6 +18,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "../interfaces/IMasterChef.sol";
 import "../interfaces/IVault.sol";
 
+import "../lib/IntMath.sol";
+
 /**
  * @dev It provides the events, state variables and an interface for the {InterestMarketV1} to interact with the Pancake Swap Master Chef.
  * This can be seen as part of the {InterestMarketV1}.
@@ -29,6 +31,12 @@ import "../interfaces/IVault.sol";
  * @notice It is meant to be used only with tokens supported by tge {CAKE_MASTER_CHEF}.
  */
 abstract contract Vault is IVault, Ownable {
+    /*///////////////////////////////////////////////////////////////
+                                LIBRARIES
+    //////////////////////////////////////////////////////////////*/
+
+    using IntMath for uint256;
+
     /*///////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
@@ -70,7 +78,7 @@ abstract contract Vault is IVault, Ownable {
 
     uint256 public totalAmount; // total amount of staking token in the contract
 
-    uint256 public totalRewardsPerAmount; // is boosted by 1e12
+    uint256 public totalRewardsPerAmount;
 
     /*///////////////////////////////////////////////////////////////
                                 CONSTRUCTOR
@@ -114,8 +122,6 @@ abstract contract Vault is IVault, Ownable {
      * @dev It checks how many pending {CAKE] an `account` is entitled to by calculating
      * how much {CAKE} they have accrued + pending {CAKE} in {CAKE_MASTER_CHEF}.
      *
-     * @notice {totalRewardsPerAmount} has a base unit of 1e12.
-     *
      * @param account The address, which we will return how much pending {CAKE} it current has.
      * @return rewards The number of pending {CAKE} rewards.
      */
@@ -133,13 +139,15 @@ abstract contract Vault is IVault, Ownable {
         User memory user = userInfo[account];
 
         // Get all current pending rewards.
-        uint256 pendingRewardsPerAmount = (getPendingRewards() * 1e12) /
-            _totalAmount;
+        uint256 pendingRewardsPerAmount = getPendingRewards().bdiv(
+            _totalAmount
+        );
 
         // Calculates how many of {CAKE} rewards the user has accrued since his last deposit/withdraw.
         rewards +=
-            (((_totalRewardsPerAmount + pendingRewardsPerAmount) *
-                user.amount) / 1e12) -
+            (_totalRewardsPerAmount + pendingRewardsPerAmount).bmul(
+                user.amount
+            ) -
             user.rewardDebt;
 
         // This contract only sends the rewards on withdraw. So in case the user never withdraw, we need to add the `user.rewards`.

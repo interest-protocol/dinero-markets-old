@@ -15,6 +15,8 @@ pragma solidity 0.8.10;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import "../lib/IntMath.sol";
+
 import "./Vault.sol";
 
 /**
@@ -33,6 +35,7 @@ contract LPVault is Vault {
     //////////////////////////////////////////////////////////////*/
 
     using SafeERC20 for IERC20;
+    using IntMath for uint256;
 
     /*///////////////////////////////////////////////////////////////
                                  CONSTANTS
@@ -111,9 +114,6 @@ contract LPVault is Vault {
 
     /**
      * @dev This function compounds the {CAKE} rewards in the pool id 0 and rewards the caller with 2% of the pending rewards.
-     *
-     * @notice The compounding fee base unit is 1e6.
-     * @notice The {totalRewardsPerAmount} has a base unit of 1e12.
      */
     function compound() external {
         // Variable to keep track of the {CAKE} rewards we will get by depositing and unstaking.
@@ -130,10 +130,10 @@ contract LPVault is Vault {
 
         // Calculate the fee to reward the `msg.sender`.
         // The fee amounts to 2% of all the rewards harvested in this block.
-        uint256 fee = (cakeRewards * 2e4) / 1e6;
+        uint256 fee = cakeRewards.bmul(0.02e18);
 
         // Update the state
-        _totalRewardsPerAmount += ((cakeRewards - fee) * 1e12) / _totalAmount;
+        _totalRewardsPerAmount += (cakeRewards - fee).bdiv(_totalAmount);
 
         // Pay the `msg.sender` the fee.
         CAKE.safeTransfer(_msgSender(), fee);
@@ -199,7 +199,6 @@ contract LPVault is Vault {
      * It assigns the deposit to the `to` account for composability.
      *
      * @notice It assumes the `from` has given enough approval to this contract.
-     * @notice The variable {_totalRewardsPerAmount} has a base unit of 1e12.
      * @notice This function does not send the current rewards accrued to the `to`.
      *
      * @param from The address that needs to have {STAKING_TOKEN} and provide approval.
@@ -219,17 +218,17 @@ contract LPVault is Vault {
         // If there are no tokens deposited, we do not have to update the current rewards.
         if (_totalAmount > 0) {
             // Get rewards currently in the {STAKING_TOKEN} pool.
-            _totalRewardsPerAmount += (_depositFarm(0) * 1e12) / _totalAmount;
+            _totalRewardsPerAmount += _depositFarm(0).bdiv(_totalAmount);
             // Reinvest all {CAKE} rewards into the CAKE pool.
             // The functions on this block send pending {CAKE} to this contract. Therefore, we need to update the {_totalRewardsPerAccount}.
-            _totalRewardsPerAmount += (_stakeCake() * 1e12) / _totalAmount;
+            _totalRewardsPerAmount += _stakeCake().bdiv(_totalAmount);
         }
 
         // We do not need to calculate rewards if the user has no open deposits in this contract.
         if (user.amount > 0) {
             // Calculate and add how many rewards the user accrued.
             user.rewards +=
-                ((_totalRewardsPerAmount * user.amount) / 1e12) -
+                _totalRewardsPerAmount.bmul(user.amount) -
                 user.rewardDebt;
         }
 
@@ -249,7 +248,7 @@ contract LPVault is Vault {
         CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
 
         // Update State to tell us that user has been completed paid up to this point.
-        user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
+        user.rewardDebt = _totalRewardsPerAmount.bmul(user.amount);
 
         // Update Global state
         userInfo[to] = user;
@@ -262,7 +261,6 @@ contract LPVault is Vault {
     /**
      * @dev We withdraw an `amount` of tokens from the `from` stored in the {CAKE_MASTER_CHEF}.
      *
-     * @notice The base unit for {totalRewardsPerAmount} is 1e12.
      * @notice The {user.rewards} is sent to the `from` and not the `to`.
      * During liquidations, the rewards will go to the `from` that opened the loan, but some of the deposited
      * tokens will go to the liquidator or the {InterestMarketV1} contract.
@@ -293,12 +291,12 @@ contract LPVault is Vault {
         // The {Vault} contract ensures that the `amount` is greater than 0.
         // It also ensured that the {totalAmount} is greater than 0.
         // We withdraw from the {CAKE_MASTER_CHEF} the desired `amount`.
-        _totalRewardsPerAmount += (_withdrawFarm(amount) * 1e12) / _totalAmount;
+        _totalRewardsPerAmount += _withdrawFarm(amount).bdiv(_totalAmount);
         // Collect the current rewards in the {CAKE} pool to properly update {_totalRewardsPerAmount}.
-        _totalRewardsPerAmount += (_unStakeCake(0) * 1e12) / _totalAmount;
+        _totalRewardsPerAmount += _unStakeCake(0).bdiv(_totalAmount);
 
         // Calculate how many rewards the user is entitled before this deposit
-        uint256 rewards = ((_totalRewardsPerAmount * user.amount) / 1e12) -
+        uint256 rewards = _totalRewardsPerAmount.bmul(user.amount) -
             user.rewardDebt;
 
         // Update the state
@@ -333,7 +331,7 @@ contract LPVault is Vault {
         if (_totalAmount > 0) {
             // Reset totalRewardsPerAmount if the pool is totally empty
             totalRewardsPerAmount = _totalRewardsPerAmount;
-            user.rewardDebt = (_totalRewardsPerAmount * user.amount) / 1e12;
+            user.rewardDebt = _totalRewardsPerAmount.bmul(user.amount);
             totalAmount = _totalAmount;
         } else {
             // If the Vault does not have any {STAKING_TOKEN}, reset the global state.

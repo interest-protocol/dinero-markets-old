@@ -227,15 +227,21 @@ describe('LPVault', () => {
     ]);
 
     const rewardsPerAmount = totalRewardsPerAmount.add(
-      pendingRewards.mul(1e12).div(totalAmount)
+      pendingRewards.mul(parseEther('1')).div(totalAmount)
     );
 
     const aliceRewards = aliceInfo.rewards.add(
-      rewardsPerAmount.mul(parseEther('30')).div(1e12).sub(aliceInfo.rewardDebt)
+      rewardsPerAmount
+        .mul(parseEther('30'))
+        .div(parseEther('1'))
+        .sub(aliceInfo.rewardDebt)
     );
 
     const bobRewards = bobInfo.rewards.add(
-      rewardsPerAmount.mul(parseEther('35')).div(1e12).sub(bobInfo.rewardDebt)
+      rewardsPerAmount
+        .mul(parseEther('35'))
+        .div(parseEther('1'))
+        .sub(bobInfo.rewardDebt)
     );
 
     expect(await lpVault.getUserPendingRewards(alice.address)).to.be.equal(
@@ -251,9 +257,9 @@ describe('LPVault', () => {
     // @notice pending rewards need to account for current pending cake in the pool + the auto compounded cake
     expect(aliceRewards.add(bobRewards)).to.be.equal(
       totalRewardsPerAmount
-        .add(pendingRewards.mul(1e12).div(totalAmount))
+        .add(pendingRewards.mul(parseEther('1')).div(totalAmount))
         .mul(parseEther('65'))
-        .div(1e12)
+        .div(parseEther('1'))
         .sub(aliceInfo.rewardDebt)
         .sub(bobInfo.rewardDebt)
         .add(aliceInfo.rewards)
@@ -318,7 +324,7 @@ describe('LPVault', () => {
       totalRewardsPerAmount.add(
         masterChefUserInfo2.amount
           .sub(masterChefUserInfo.amount)
-          .mul(1e12)
+          .mul(parseEther('1'))
           .div(totalAmount)
       )
     );
@@ -446,17 +452,17 @@ describe('LPVault', () => {
       ]);
 
       expect(aliceInfo3.rewardDebt).to.be.equal(
-        totalRewardsPerAmount3.mul(parseEther('30')).div(1e12)
+        totalRewardsPerAmount3.mul(parseEther('30')).div(parseEther('1'))
       );
       expect(aliceInfo3.rewards).to.be.equal(
-        totalRewardsPerAmount3.mul(parseEther('20')).div(1e12)
+        totalRewardsPerAmount3.mul(parseEther('20')).div(parseEther('1'))
       );
       expect(aliceInfo3.amount).to.be.equal(parseEther('30'));
       expect(totalAmount3).to.be.equal(parseEther('30'));
       expect(totalRewardsPerAmount3).to.be.equal(
         totalRewardsPerAmount2
           .add(masterChefCakePool3.amount)
-          .mul(1e12)
+          .mul(parseEther('1'))
           .div(totalAmount2)
       );
       // Hard to calculate precise Cake reward
@@ -508,7 +514,7 @@ describe('LPVault', () => {
       expect(bobInfo2.amount).to.be.equal(parseEther('10'));
       expect(bobInfo2.rewards).to.be.equal(0);
       expect(bobInfo2.rewardDebt).to.be.equal(
-        totalRewardsPerAmount4.mul(parseEther('10')).div(1e12)
+        totalRewardsPerAmount4.mul(parseEther('10')).div(parseEther('1'))
       );
       expect(totalAmount4).to.be.equal(totalAmount3.add(parseEther('10')));
       expect(masterChefLpPool4.amount).to.be.equal(
@@ -518,7 +524,7 @@ describe('LPVault', () => {
         totalRewardsPerAmount3.add(
           masterChefCakePool4.amount
             .sub(masterChefCakePool3.amount)
-            .mul(1e12)
+            .mul(parseEther('1'))
             .div(totalAmount3)
         )
       );
@@ -648,7 +654,7 @@ describe('LPVault', () => {
 
       expect(aliceInfo2.amount).to.be.equal(parseEther('10'));
       expect(aliceInfo2.rewardDebt).to.be.equal(
-        totalRewardsPerAmount2.mul(parseEther('10')).div(1e12)
+        totalRewardsPerAmount2.mul(parseEther('10')).div(parseEther('1'))
       );
       expect(aliceInfo2.rewards).to.be.equal(0);
       expect(totalRewardsPerAmount2.gt(totalRewardsPerAmount)).to.be.equal(

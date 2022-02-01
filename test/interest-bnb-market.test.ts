@@ -9,6 +9,8 @@ import {
   InterestGovernorV1,
   LiquidityRouter,
   MockChainLinkFeed,
+  MockERC20,
+  MockTWAP,
   OracleV1,
   PancakeFactory,
   WETH9,
@@ -29,6 +31,8 @@ describe('InterestBNBMarketV1', () => {
   let factory: PancakeFactory;
   let router: ETHRouter;
   let liquidityRouter: LiquidityRouter;
+  let mockTWAP: MockTWAP;
+  let busd: MockERC20;
 
   let owner: SignerWithAddress;
   let alice: SignerWithAddress;
@@ -42,16 +46,31 @@ describe('InterestBNBMarketV1', () => {
     [owner, alice, bob, treasury, developer, jose, recipient] =
       await ethers.getSigners();
 
-    [dinero, weth, mockBnbUsdDFeed, factory] = await multiDeploy(
-      ['Dinero', 'WETH9', 'MockChainLinkFeed', 'PancakeFactory'],
-      [[], [], [8, 'CAKE/USD', 1], [developer.address]]
-    );
+    [dinero, weth, mockBnbUsdDFeed, factory, mockTWAP, busd] =
+      await multiDeploy(
+        [
+          'Dinero',
+          'WETH9',
+          'MockChainLinkFeed',
+          'PancakeFactory',
+          'MockTWAP',
+          'MockERC20',
+        ],
+        [
+          [],
+          [],
+          [8, 'CAKE/USD', 1],
+          [developer.address],
+          [],
+          ['Binance USD', 'BUSD', parseEther('1000')],
+        ]
+      );
 
     [governor, oracle, router, liquidityRouter] = await multiDeploy(
       ['InterestGovernorV1', 'OracleV1', 'ETHRouter', 'LiquidityRouter'],
       [
         [dinero.address],
-        [mockBnbUsdDFeed.address, weth.address],
+        [mockTWAP.address, mockBnbUsdDFeed.address, weth.address, busd.address],
         [factory.address, weth.address],
         [factory.address, weth.address],
       ]
@@ -63,8 +82,8 @@ describe('InterestBNBMarketV1', () => {
         governor.address,
         oracle.address,
         ethers.BigNumber.from(12e8),
-        ethers.BigNumber.from(5e5),
-        ethers.BigNumber.from(10e4),
+        ethers.BigNumber.from('500000000000000000'),
+        ethers.BigNumber.from('100000000000000000'),
       ]),
       dinero
         .connect(owner)
@@ -480,20 +499,20 @@ describe('InterestBNBMarketV1', () => {
       await expect(
         interestBNBMarket
           .connect(owner)
-          .setMaxLTVRatio(ethers.BigNumber.from(9e5).add(1))
+          .setMaxLTVRatio(ethers.BigNumber.from('900000000000000001'))
       ).to.revertedWith('MKT: too high');
     });
     it('updates the max tvl ratio', async () => {
       expect(await interestBNBMarket.maxLTVRatio()).to.be.equal(
-        ethers.BigNumber.from(5e5)
+        ethers.BigNumber.from('500000000000000000')
       );
 
       await interestBNBMarket
         .connect(owner)
-        .setMaxLTVRatio(ethers.BigNumber.from(9e5));
+        .setMaxLTVRatio(ethers.BigNumber.from('900000000000000000'));
 
       expect(await interestBNBMarket.maxLTVRatio()).to.be.equal(
-        ethers.BigNumber.from(9e5)
+        ethers.BigNumber.from('900000000000000000')
       );
     });
   });
@@ -507,20 +526,20 @@ describe('InterestBNBMarketV1', () => {
       await expect(
         interestBNBMarket
           .connect(owner)
-          .setLiquidationFee(ethers.BigNumber.from(15e4).add(1))
+          .setLiquidationFee(ethers.BigNumber.from('150000000000000001'))
       ).to.revertedWith('MKT: too high');
     });
     it('updates the liquidation fee', async () => {
       expect(await interestBNBMarket.liquidationFee()).to.be.equal(
-        ethers.BigNumber.from(10e4)
+        ethers.BigNumber.from('100000000000000000')
       );
 
       await interestBNBMarket
         .connect(owner)
-        .setLiquidationFee(ethers.BigNumber.from(15e4));
+        .setLiquidationFee(ethers.BigNumber.from('150000000000000000'));
 
       expect(await interestBNBMarket.liquidationFee()).to.be.equal(
-        ethers.BigNumber.from(15e4)
+        ethers.BigNumber.from('150000000000000000')
       );
     });
   });

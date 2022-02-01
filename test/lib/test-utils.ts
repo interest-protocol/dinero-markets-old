@@ -31,6 +31,14 @@ export const advanceTime = (time: number, _ethers: typeof ethers) =>
 export const advanceBlock = (_ethers: typeof ethers) =>
   _ethers.provider.send('evm_mine', []);
 
+export const advanceBlockAndTime = async (
+  time: number,
+  _ethers: typeof ethers
+) => {
+  await _ethers.provider.send('evm_increaseTime', [time]);
+  await _ethers.provider.send('evm_mine', []);
+};
+
 export const makeCalculateAccruedInt =
   (interestPerBlock: BigNumber) =>
   (
@@ -44,7 +52,7 @@ export const makeCalculateAccruedInt =
       .mul(interestPerBlock)
       .mul(allocationPoints)
       .div(totalAllocationPoints)
-      .mul(1e12);
+      .mul(ethers.utils.parseEther('1'));
 
     return accruedInterest.add(rewards.div(totalSupply));
   };
@@ -53,4 +61,8 @@ export const calculateUserPendingRewards = (
   userAmount: BigNumber,
   poolAccruedIntPerShare: BigNumber,
   userRewardsPaid: BigNumber
-) => userAmount.mul(poolAccruedIntPerShare).div(1e12).sub(userRewardsPaid);
+) =>
+  userAmount
+    .mul(poolAccruedIntPerShare)
+    .div(ethers.utils.parseEther('1'))
+    .sub(userRewardsPaid);

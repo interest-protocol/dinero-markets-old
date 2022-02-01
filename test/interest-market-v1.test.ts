@@ -12,6 +12,7 @@ import {
   MasterChef,
   MockChainLinkFeed,
   MockERC20,
+  MockTWAP,
   OracleV1,
   PancakeFactory,
   PancakeRouter,
@@ -39,6 +40,7 @@ describe('InterestMarketV1', () => {
   let cakeVault: CakeVault;
   let bnb: MockERC20;
   let dinero: Dinero;
+  let busd: MockERC20;
   let governor: InterestGovernorV1;
   let factory: PancakeFactory;
   let router: PancakeRouter;
@@ -50,6 +52,7 @@ describe('InterestMarketV1', () => {
   let mockBnbUsdDFeed: MockChainLinkFeed;
   let mockCakeBNBFeed: MockChainLinkFeed;
   let oracle: OracleV1;
+  let mockTwap: MockTWAP;
 
   let owner: SignerWithAddress;
   let alice: SignerWithAddress;
@@ -72,6 +75,8 @@ describe('InterestMarketV1', () => {
       mockCakeUsdFeed,
       mockBnbUsdDFeed,
       mockCakeBNBFeed,
+      busd,
+      mockTwap,
     ] = await multiDeploy(
       [
         'CakeToken',
@@ -82,6 +87,8 @@ describe('InterestMarketV1', () => {
         'MockChainLinkFeed',
         'MockChainLinkFeed',
         'MockChainLinkFeed',
+        'MockERC20',
+        'MockTWAP',
       ],
       [
         [],
@@ -92,6 +99,8 @@ describe('InterestMarketV1', () => {
         [8, 'CAKE/USD', 1],
         [8, 'BNB/USD', 1],
         [8, 'CAKE/BNB', 1],
+        ['Binance USD', 'BUSD', parseEther('10000000')],
+        [],
       ]
     );
 
@@ -108,7 +117,7 @@ describe('InterestMarketV1', () => {
         [dinero.address],
         [factory.address, weth.address],
         [factory.address, weth.address],
-        [mockBnbUsdDFeed.address, bnb.address],
+        [mockTwap.address, mockBnbUsdDFeed.address, bnb.address, busd.address],
       ]
     );
 
@@ -210,8 +219,8 @@ describe('InterestMarketV1', () => {
         cake.address,
         cakeVault.address,
         ethers.BigNumber.from(12e8),
-        ethers.BigNumber.from(5e5),
-        ethers.BigNumber.from(10e4),
+        ethers.BigNumber.from('500000000000000000'),
+        ethers.BigNumber.from('100000000000000000'),
       ]
     );
 
@@ -502,8 +511,8 @@ describe('InterestMarketV1', () => {
           cake.address,
           ethers.constants.AddressZero,
           ethers.BigNumber.from(12e8),
-          ethers.BigNumber.from(5e5),
-          ethers.BigNumber.from(10e4),
+          ethers.BigNumber.from('500000000000000000'),
+          ethers.BigNumber.from('100000000000000000'),
         ]
       );
 
@@ -650,8 +659,8 @@ describe('InterestMarketV1', () => {
           cake.address,
           ethers.constants.AddressZero,
           ethers.BigNumber.from(12e8),
-          ethers.BigNumber.from(5e5),
-          ethers.BigNumber.from(10e4),
+          ethers.BigNumber.from('500000000000000000'),
+          ethers.BigNumber.from('100000000000000000'),
         ]
       );
 
@@ -754,20 +763,20 @@ describe('InterestMarketV1', () => {
       await expect(
         cakeMarket
           .connect(owner)
-          .setMaxLTVRatio(ethers.BigNumber.from(9e5).add(1))
+          .setMaxLTVRatio(ethers.BigNumber.from('900000000000000001'))
       ).to.revertedWith('MKT: too high');
     });
     it('updates the max tvl ratio', async () => {
       expect(await cakeMarket.maxLTVRatio()).to.be.equal(
-        ethers.BigNumber.from(5e5)
+        ethers.BigNumber.from('500000000000000000')
       );
 
       await cakeMarket
         .connect(owner)
-        .setMaxLTVRatio(ethers.BigNumber.from(9e5));
+        .setMaxLTVRatio(ethers.BigNumber.from('90000000000000000'));
 
       expect(await cakeMarket.maxLTVRatio()).to.be.equal(
-        ethers.BigNumber.from(9e5)
+        ethers.BigNumber.from('90000000000000000')
       );
     });
   });
@@ -781,20 +790,20 @@ describe('InterestMarketV1', () => {
       await expect(
         cakeMarket
           .connect(owner)
-          .setLiquidationFee(ethers.BigNumber.from(15e4).add(1))
+          .setLiquidationFee(ethers.BigNumber.from('150000000000000001'))
       ).to.revertedWith('MKT: too high');
     });
     it('updates the liquidation fee', async () => {
       expect(await cakeMarket.liquidationFee()).to.be.equal(
-        ethers.BigNumber.from(10e4)
+        ethers.BigNumber.from('100000000000000000')
       );
 
       await cakeMarket
         .connect(owner)
-        .setLiquidationFee(ethers.BigNumber.from(15e4));
+        .setLiquidationFee(ethers.BigNumber.from('150000000000000000'));
 
       expect(await cakeMarket.liquidationFee()).to.be.equal(
-        ethers.BigNumber.from(15e4)
+        ethers.BigNumber.from('150000000000000000')
       );
     });
   });
@@ -1035,8 +1044,8 @@ describe('InterestMarketV1', () => {
           cake.address,
           ethers.constants.AddressZero,
           ethers.BigNumber.from(12e8),
-          ethers.BigNumber.from(5e5),
-          ethers.BigNumber.from(10e4),
+          ethers.BigNumber.from('500000000000000000'),
+          ethers.BigNumber.from('100000000000000000'),
         ]
       );
 
@@ -1394,8 +1403,8 @@ describe('InterestMarketV1', () => {
           // Already tested the logic of the vault
           ethers.constants.AddressZero,
           ethers.BigNumber.from(12e8),
-          ethers.BigNumber.from(5e5),
-          ethers.BigNumber.from(10e4),
+          ethers.BigNumber.from('500000000000000000'),
+          ethers.BigNumber.from('100000000000000000'),
         ]
       );
 
@@ -1469,8 +1478,8 @@ describe('InterestMarketV1', () => {
           // Already tested the logic of the vault
           ethers.constants.AddressZero,
           ethers.BigNumber.from(12e8),
-          ethers.BigNumber.from(5e5),
-          ethers.BigNumber.from(10e4),
+          ethers.BigNumber.from('500000000000000000'),
+          ethers.BigNumber.from('100000000000000000'),
         ]
       );
 
