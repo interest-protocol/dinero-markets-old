@@ -31,6 +31,14 @@ export const advanceTime = (time: number, _ethers: typeof ethers) =>
 export const advanceBlock = (_ethers: typeof ethers) =>
   _ethers.provider.send('evm_mine', []);
 
+export const advanceBlockAndTime = async (
+  time: number,
+  _ethers: typeof ethers
+) => {
+  await _ethers.provider.send('evm_increaseTime', [time]);
+  await _ethers.provider.send('evm_mine', []);
+};
+
 export const makeCalculateAccruedInt =
   (interestPerBlock: BigNumber) =>
   (

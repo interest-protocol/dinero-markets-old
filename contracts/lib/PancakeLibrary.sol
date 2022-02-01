@@ -7,7 +7,7 @@ pragma solidity 0.8.10;
 library PancakeLibrary {
     // returns sorted token addresses, used to handle return values from pairs sorted in this order
     function sortTokens(address tokenA, address tokenB)
-        public
+        internal
         pure
         returns (address token0, address token1)
     {
@@ -23,7 +23,7 @@ library PancakeLibrary {
         address factory,
         address tokenA,
         address tokenB
-    ) external pure returns (address pair) {
+    ) internal pure returns (address pair) {
         (address token0, address token1) = sortTokens(tokenA, tokenB);
         pair = address(
             uint160(
