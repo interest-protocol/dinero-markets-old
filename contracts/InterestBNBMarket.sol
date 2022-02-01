@@ -13,6 +13,7 @@ pragma solidity 0.8.10;
 
 import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "./interfaces/IPancakeRouter02.sol";
 
@@ -44,7 +45,7 @@ import "./InterestGovernorV1.sol";
  * If Dinero falls below, borrowers that have open  loans and swapped to a different crypto, can buy dinero cheaper and close their loans running a profit. Liquidators can accumulate Dinero to close underwater positions with an arbitrate. As liquidation will always assume 1 Dinero is worth 1 USD. If Dinero goes above a dollar, people are encouraged to borrow more Dinero for arbitrage. We believe this will keep the price pegged at 1 USD.
  *
  */
-contract InterestBNBMarketV1 is Context {
+contract InterestBNBMarketV1 is ReentrancyGuard, Context {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -366,7 +367,11 @@ contract InterestBNBMarketV1 is Context {
      *
      * - `msg.sender` must remain solvent after removing the collateral.
      */
-    function withdrawCollateral(address to, uint256 amount) external isSolvent {
+    function withdrawCollateral(address to, uint256 amount)
+        external
+        nonReentrant
+        isSolvent
+    {
         // Update how much is owed to the protocol before allowing collateral to be withdrawn
         accrue();
 
@@ -548,7 +553,7 @@ contract InterestBNBMarketV1 is Context {
         );
 
         // 10% of the liquidation fee to be given to the protocol.
-        uint256 protocolFee = uint256(liquidationInfo.allFee).mul(0.1e18);
+        uint256 protocolFee = uint256(liquidationInfo.allFee).bmul(0.1e18);
 
         unchecked {
             // Should not overflow.
@@ -598,6 +603,8 @@ contract InterestBNBMarketV1 is Context {
      * @param amount How much BNB to send to the `to` address.
      */
     function _sendCollateral(address payable to, uint256 amount) private {
+        require(address(this).balance >= amount, "MKT: insufficient balance");
+
         //solhint-disable-next-line avoid-low-level-calls
         (bool success, ) = to.call{value: amount}("");
         require(success, "MKT: unable to remove collateral");

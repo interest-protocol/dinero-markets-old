@@ -73,9 +73,9 @@ contract OracleV1 is Ownable {
     address public immutable BUSD;
 
     // Token Address -> Chainlink feed with USD base.
-    mapping(address => AggregatorV3Interface) public getUSDBaseFeeds;
+    mapping(address => AggregatorV3Interface) public getUSDFeeds;
     // Token Address -> Chainlink feed with BNB base.
-    mapping(address => AggregatorV3Interface) public getBNBBaseFeeds;
+    mapping(address => AggregatorV3Interface) public getBNBFeeds;
 
     /*///////////////////////////////////////////////////////////////
                             CONSTRUCTOR
@@ -159,6 +159,7 @@ contract OracleV1 is Ownable {
      *
      * @notice On the TWAP we assume 1 BUSD is 1 USD.
      * @notice The amount will have 18 decimals
+     * @notice We assume that TWAP will support token/BNB as this is the most common pairing and not token/BUSD or token/USDC.
      *
      * @param token The address of the token for the feed.
      * @param amount The number of tokens to calculate the value in USD.
@@ -173,7 +174,7 @@ contract OracleV1 is Ownable {
         // BNB feed is not saved in a mapping for gas optimization.
         if (token == WBNB) return getBNBUSDPrice(amount);
 
-        AggregatorV3Interface feed = getUSDBaseFeeds[token];
+        AggregatorV3Interface feed = getUSDFeeds[token];
 
         try feed.latestRoundData() returns (
             uint80,
@@ -186,20 +187,24 @@ contract OracleV1 is Ownable {
                 amount
             );
         } catch Error(string memory) {
+            address wbnb = WBNB;
+
             // Get the token price in BNB as token/BUSD pairs are rare
             uint256 bnbPrice = _scaleDecimals(
-                TWAP.consult(token, amount, WBNB),
-                BUSD.safeDecimals()
+                TWAP.consult(token, amount, wbnb),
+                wbnb.safeDecimals()
             );
 
             // Then get BNB price in
             // We just need price for 1BNB because we already computed the amount above
             price = bnbPrice.bmul(getBNBUSDPrice(1 ether));
         } catch (bytes memory) {
+            address wbnb = WBNB;
+
             // Get the token price in BNB as token/BUSD pairs are rare
             uint256 bnbPrice = _scaleDecimals(
-                TWAP.consult(token, amount, WBNB),
-                BUSD.safeDecimals()
+                TWAP.consult(token, amount, wbnb),
+                wbnb.safeDecimals()
             );
 
             // Then get BNB price in
@@ -284,7 +289,7 @@ contract OracleV1 is Ownable {
         if (token == WBNB) return amount;
         require(token != address(0), "Oracle: no address zero");
 
-        AggregatorV3Interface feed = getBNBBaseFeeds[token];
+        AggregatorV3Interface feed = getBNBFeeds[token];
         try feed.latestRoundData() returns (
             uint80,
             int256 answer,
@@ -296,9 +301,17 @@ contract OracleV1 is Ownable {
                 amount
             );
         } catch Error(string memory) {
-            price = TWAP.consult(token, amount, WBNB);
+            address wbnb = WBNB;
+            price = _scaleDecimals(
+                TWAP.consult(token, amount, wbnb),
+                wbnb.safeDecimals()
+            );
         } catch (bytes memory) {
-            price = TWAP.consult(token, amount, WBNB);
+            address wbnb = WBNB;
+            price = _scaleDecimals(
+                TWAP.consult(token, amount, wbnb),
+                wbnb.safeDecimals()
+            );
         }
     }
 
@@ -309,7 +322,10 @@ contract OracleV1 is Ownable {
      * @return uint256 A pair that has the value price and the decimal houses in the right
      */
     function getBNBUSDPrice(uint256 amount) public view returns (uint256) {
-        try BNB_USD.latestRoundData() returns (
+        // solhint-disable-next-line var-name-mixedcase
+        AggregatorV3Interface bnb_usd = BNB_USD;
+
+        try bnb_usd.latestRoundData() returns (
             uint80,
             int256 answer,
             uint256,
@@ -317,19 +333,21 @@ contract OracleV1 is Ownable {
             uint80
         ) {
             return
-                (_scaleDecimals(answer.toUint256(), BNB_USD.decimals()) *
+                (_scaleDecimals(answer.toUint256(), bnb_usd.decimals()) *
                     amount) / 1 ether;
         } catch Error(string memory) {
+            address busd = BUSD;
             return
                 _scaleDecimals(
-                    TWAP.consult(WBNB, amount, BUSD),
-                    BUSD.safeDecimals()
+                    TWAP.consult(WBNB, amount, busd),
+                    busd.safeDecimals()
                 );
         } catch (bytes memory) {
+            address busd = BUSD;
             return
                 _scaleDecimals(
-                    TWAP.consult(WBNB, amount, BUSD),
-                    BUSD.safeDecimals()
+                    TWAP.consult(WBNB, amount, busd),
+                    busd.safeDecimals()
                 );
         }
     }
@@ -359,9 +377,9 @@ contract OracleV1 is Ownable {
         FeedType feedType
     ) external onlyOwner {
         if (feedType == FeedType.BNB) {
-            getBNBBaseFeeds[asset] = feed;
+            getBNBFeeds[asset] = feed;
         } else {
-            getUSDBaseFeeds[asset] = feed;
+            getUSDFeeds[asset] = feed;
         }
     }
 }

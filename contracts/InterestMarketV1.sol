@@ -247,7 +247,7 @@ contract InterestMarketV1 is Initializable, Context {
         require(address(COLLATERAL) != address(0), "MKT: no zero address");
         // {maxLTVRatio} must be within the acceptable bounds.
         require(
-            9e5 >= maxLTVRatio && maxLTVRatio >= 5e5,
+            0.9e18 >= maxLTVRatio && maxLTVRatio >= 0.5e18,
             "MKT: ltc ratio out of bounds"
         );
 

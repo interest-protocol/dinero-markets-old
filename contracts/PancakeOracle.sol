@@ -139,14 +139,18 @@ contract PancakeOracle {
      * - We require that the pair actually exists; otherwise, there is no point to update it.
      */
     function update(address tokenA, address tokenB) external {
-        address pair = LIBRARY_WRAPPER.pairFor(FACTORY, tokenA, tokenB);
+        address factory = FACTORY;
+        uint256 granularity = GRANULARITY;
+        LibraryWrapper libraryWrapper = LIBRARY_WRAPPER;
+
+        address pair = libraryWrapper.pairFor(factory, tokenA, tokenB);
         require(
-            IPancakeFactory(FACTORY).getPair(tokenA, tokenB) != address(0),
+            IPancakeFactory(factory).getPair(tokenA, tokenB) != address(0),
             "PO: pair does not exist"
         );
 
         // populate the array with empty observations (first call only)
-        for (uint256 i = pairObservations[pair].length; i < GRANULARITY; i++) {
+        for (uint256 i = pairObservations[pair].length; i < granularity; i++) {
             pairObservations[pair].push();
         }
 
@@ -165,7 +169,7 @@ contract PancakeOracle {
                 uint256 price0Cumulative,
                 uint256 price1Cumulative,
 
-            ) = UniswapV2OracleLibrary.currentCumulativePrices(pair);
+            ) = libraryWrapper.currentCumulativePrices(pair);
             //solhint-disable-next-line not-rely-on-time
             observation.timestamp = block.timestamp;
             observation.price0Cumulative = price0Cumulative;
@@ -199,8 +203,11 @@ contract PancakeOracle {
         uint256 amountIn,
         address tokenOut
     ) external view returns (uint256 amountOut) {
+        uint256 windowSize = WINDOW_SIZE;
+        LibraryWrapper libraryWrapper = LIBRARY_WRAPPER;
+
         // Get pair based on the tokens
-        address pair = LIBRARY_WRAPPER.pairFor(FACTORY, tokenIn, tokenOut);
+        address pair = libraryWrapper.pairFor(FACTORY, tokenIn, tokenOut);
 
         // Get the first observation in the {WINDOW_SIZE}
         // If the window size is 24 hours. Get the observation made 24 hours ago.
@@ -213,18 +220,15 @@ contract PancakeOracle {
 
         // If the earliest observation for the window is larger than the window. It does not belong to this cycle
         // It is an oudated price, which means the oracle has not been updated
-        require(WINDOW_SIZE >= timeElapsed, "PO: missing observation");
+        require(windowSize >= timeElapsed, "PO: missing observation");
         // If the condition above passes and the require in the constructor as well. This should never happen.
-        assert(timeElapsed >= WINDOW_SIZE - PERIOD_SIZE * 2);
+        assert(timeElapsed >= windowSize - PERIOD_SIZE * 2);
 
         // Get current cumulative prices
-        (
-            uint256 price0Cumulative,
-            uint256 price1Cumulative,
-
-        ) = UniswapV2OracleLibrary.currentCumulativePrices(pair);
+        (uint256 price0Cumulative, uint256 price1Cumulative, ) = libraryWrapper
+            .currentCumulativePrices(pair);
         // Need to sort tokens to know the correct price cumulative
-        (address token0, ) = LIBRARY_WRAPPER.sortTokens(tokenIn, tokenOut);
+        (address token0, ) = libraryWrapper.sortTokens(tokenIn, tokenOut);
 
         return
             token0 == tokenIn

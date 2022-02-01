@@ -177,7 +177,6 @@ contract CakeVault is Vault {
     /**
      * @dev The objective of this function is to allow the `from` to withdraw some of his previously deposited tokens from the {CAKE_MASTER_CHEF}.
      *
-     * @notice The base unit for {totalRewardsPerAmount} is 1e12.
      * @notice The {user.rewards} is sent to the `from` and not the `recipient`.
      * @notice The Cake rewards always go to the `to` address.
      * During liquidations, the rewards will go to the `from` that opened the loan, but some of the deposited

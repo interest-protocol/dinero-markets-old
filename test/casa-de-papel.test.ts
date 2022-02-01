@@ -417,7 +417,7 @@ describe('Case de Papel', () => {
       // Only one user so he was paid all rewards
       expect(user1.rewardsPaid).to.be.equal(
         // accruedIntPerShare has more decimal houses for precision
-        pool1.accruedIntPerShare.mul(pool1.totalSupply).div(1e12)
+        pool1.accruedIntPerShare.mul(pool1.totalSupply).div(parseEther('1'))
       );
       expect(await interestToken.balanceOf(alice.address)).to.be.equal(
         calculateUserPendingRewards(
@@ -472,7 +472,7 @@ describe('Case de Papel', () => {
       // Only one user so he was paid all rewards
       expect(user1.rewardsPaid).to.be.equal(
         // accruedIntPerShare has more decimal houses for precision
-        pool.accruedIntPerShare.mul(pool.totalSupply).div(1e12)
+        pool.accruedIntPerShare.mul(pool.totalSupply).div(parseEther('1'))
       );
       expect(await interestToken.balanceOf(jose.address)).to.be.equal(
         calculateUserPendingRewards(
@@ -517,7 +517,7 @@ describe('Case de Papel', () => {
       // Only one user so he was paid all rewards
       expect(user1.rewardsPaid).to.be.equal(
         // accruedIntPerShare has more decimal houses for precision
-        pool.accruedIntPerShare.mul(pool.totalSupply).div(1e12)
+        pool.accruedIntPerShare.mul(pool.totalSupply).div(parseEther('1'))
       );
       expect(await interestToken.balanceOf(alice.address)).to.be.equal(
         calculateUserPendingRewards(
@@ -546,7 +546,7 @@ describe('Case de Papel', () => {
       expect(userInfo.rewardsPaid).to.be.equal(0);
       expect(pool.totalSupply).to.be.equal(parseEther('5'));
       // Pool has rewards to be given but since this is an urgent withdraw they will not be given out
-      expect(pool.accruedIntPerShare.toNumber()).to.be.greaterThan(0);
+      expect(pool.accruedIntPerShare.gt(0)).to.equal(true);
 
       await expect(casaDePapel.connect(alice).emergencyWithdraw(1))
         .to.emit(casaDePapel, 'EmergencyWithdraw')
@@ -587,7 +587,7 @@ describe('Case de Papel', () => {
       expect(userInfo.rewardsPaid).to.be.equal(0);
       expect(pool.totalSupply).to.be.equal(parseEther('5'));
       // Pool has rewards to be given but since this is an urgent withdraw they will not be given out
-      expect(pool.accruedIntPerShare.toNumber()).to.be.greaterThan(0);
+      expect(pool.accruedIntPerShare.gt(0)).to.equal(true);
 
       await expect(casaDePapel.connect(alice).emergencyWithdraw(0))
         .to.emit(casaDePapel, 'EmergencyWithdraw')
@@ -653,7 +653,7 @@ describe('Case de Papel', () => {
       expect(pool.totalSupply).to.be.equal(parseEther('25'));
       expect(user.amount).to.be.equal(parseEther('5'));
       expect(user.rewardsPaid).to.be.equal(
-        parseEther('5').mul(pool.accruedIntPerShare).div(1e12)
+        parseEther('5').mul(pool.accruedIntPerShare).div(parseEther('1'))
       );
 
       // Accrue rewards
@@ -675,7 +675,7 @@ describe('Case de Papel', () => {
         balance.add(
           user.amount
             .mul(pool1.accruedIntPerShare)
-            .div(1e12)
+            .div(parseEther('1'))
             .sub(user.rewardsPaid)
         )
       );
@@ -716,12 +716,12 @@ describe('Case de Papel', () => {
       expect(pool1.totalSupply).to.be.equal(parseEther('20'));
       expect(user1.amount).to.be.equal(parseEther('20'));
       expect(user1.rewardsPaid).to.be.equal(
-        parseEther('20').mul(pool1.accruedIntPerShare).div(1e12)
+        parseEther('20').mul(pool1.accruedIntPerShare).div(parseEther('1'))
       );
       expect(balance1).to.be.equal(
         balance
           // + Rewards
-          .add(user.amount.mul(pool1.accruedIntPerShare).div(1e12))
+          .add(user.amount.mul(pool1.accruedIntPerShare).div(parseEther('1')))
           // - Deposit
           .sub(parseEther('15'))
       );
@@ -768,11 +768,13 @@ describe('Case de Papel', () => {
 
       expect(user1.amount).to.be.equal(user.amount);
       expect(balance1).to.be.equal(
-        balance.add(user.amount.mul(pool1.accruedIntPerShare).div(1e12))
+        balance.add(
+          user.amount.mul(pool1.accruedIntPerShare).div(parseEther('1'))
+        )
       );
       expect(pool1.totalSupply).to.be.equal(pool.totalSupply);
       expect(user1.rewardsPaid).to.be.equal(
-        user1.amount.mul(pool1.accruedIntPerShare).div(1e12)
+        user1.amount.mul(pool1.accruedIntPerShare).div(parseEther('1'))
       );
     });
     it('allows to withdraw deposited tokens', async () => {
@@ -810,12 +812,14 @@ describe('Case de Papel', () => {
 
       expect(user1.amount).to.be.equal(parseEther('4'));
       expect(user1.rewardsPaid).to.be.equal(
-        user1.amount.mul(pool1.accruedIntPerShare).div(1e12)
+        user1.amount.mul(pool1.accruedIntPerShare).div(parseEther('1'))
       );
       expect(pool1.totalSupply).to.be.equal(parseEther('12'));
       // Rewards are in Int Token
       expect(balance1).to.be.equal(
-        balance.add(user.amount.mul(pool1.accruedIntPerShare).div(1e12))
+        balance.add(
+          user.amount.mul(pool1.accruedIntPerShare).div(parseEther('1'))
+        )
       );
       // Withdraw is on the pool token
       expect(lpBalance1).to.be.equal(lpBalance.add(parseEther('3')));
@@ -849,7 +853,7 @@ describe('Case de Papel', () => {
       expect(pool.totalSupply).to.be.equal(parseEther('17'));
       expect(user.amount).to.be.equal(parseEther('7'));
       expect(user.rewardsPaid).to.be.equal(
-        pool.accruedIntPerShare.mul(user.amount).div(1e12)
+        pool.accruedIntPerShare.mul(user.amount).div(parseEther('1'))
       );
 
       await expect(casaDePapel.connect(alice).deposit(1, 0))
@@ -872,7 +876,7 @@ describe('Case de Papel', () => {
       // Rewards paid in INT
       expect(balance1).to.be.equal(
         balance
-          .add(user.amount.mul(pool1.accruedIntPerShare).div(1e12))
+          .add(user.amount.mul(pool1.accruedIntPerShare).div(parseEther('1')))
           .sub(user.rewardsPaid)
       );
     });
@@ -911,14 +915,14 @@ describe('Case de Papel', () => {
       expect(pool1.totalSupply).to.be.equal(parseEther('13'));
       expect(user1.amount).to.be.equal(parseEther('13'));
       expect(user1.rewardsPaid).to.be.equal(
-        user1.amount.mul(pool1.accruedIntPerShare).div(1e12)
+        user1.amount.mul(pool1.accruedIntPerShare).div(parseEther('1'))
       );
       // Rewards r paid when depositing
       expect(balance1).to.be.equal(
         balance.add(
           user.amount
             .mul(pool1.accruedIntPerShare)
-            .div(1e12)
+            .div(parseEther('1'))
             .sub(user.rewardsPaid)
         )
       );

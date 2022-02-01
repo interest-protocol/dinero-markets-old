@@ -44,7 +44,7 @@ export const makeCalculateAccruedInt =
       .mul(interestPerBlock)
       .mul(allocationPoints)
       .div(totalAllocationPoints)
-      .mul(1e12);
+      .mul(ethers.utils.parseEther('1'));
 
     return accruedInterest.add(rewards.div(totalSupply));
   };
@@ -53,4 +53,8 @@ export const calculateUserPendingRewards = (
   userAmount: BigNumber,
   poolAccruedIntPerShare: BigNumber,
   userRewardsPaid: BigNumber
-) => userAmount.mul(poolAccruedIntPerShare).div(1e12).sub(userRewardsPaid);
+) =>
+  userAmount
+    .mul(poolAccruedIntPerShare)
+    .div(ethers.utils.parseEther('1'))
+    .sub(userRewardsPaid);

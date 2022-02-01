@@ -10,9 +10,9 @@ contract MockTWAP {
 
     function consult(
         address,
-        uint256,
+        uint256 amount,
         address
     ) external view returns (uint256 amountOut) {
-        amountOut = value;
+        amountOut = (value * amount) / 1 ether;
     }
 }

@@ -25,7 +25,7 @@ contract LibraryWrapper {
     }
 
     function currentCumulativePrices(address pair)
-        internal
+        external
         view
         returns (
             uint256,

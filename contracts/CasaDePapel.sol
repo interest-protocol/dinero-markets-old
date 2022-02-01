@@ -210,13 +210,11 @@ contract CasaDePapel is Ownable {
         );
 
         // We mint an additional 10% to the devAccount.
-        INTEREST_TOKEN.mint(devAccount, intReward / 10);
+        INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
 
         // This value stores all rewards the pool ever got.
         // Note: this variable i already per share as we divide by the `amountOfStakedTokens`.
-        pool.accruedIntPerShare =
-            pool.accruedIntPerShare +
-            intReward.bdiv(amountOfStakedTokens);
+        pool.accruedIntPerShare += intReward.bdiv(amountOfStakedTokens);
 
         pool.lastRewardBlock = block.number;
 
@@ -541,7 +539,7 @@ contract CasaDePapel is Ownable {
         if (allOtherPoolsPoints != 0) {
             // {INTEREST_TOKEN} pool allocation points is always equal to 1/3 of all the other pools.
             // We reuse the same variable to save memory. Even though, it says allOtherPoolsPoints. At this point is the pool 0 points.
-            allOtherPoolsPoints = allOtherPoolsPoints.bdiv(0.3e18);
+            allOtherPoolsPoints = allOtherPoolsPoints / 3;
 
             // Update the total allocation pools.
             _totalAllocationPoints -= pools[0].allocationPoints;
