@@ -359,18 +359,6 @@ contract NFTMarket is ERC721Holder, Context {
             _msgSender()
         ];
 
-        if (_isBNB(loanToken)) {
-            // Lender must send BNB to the contract before hand
-            require(msg.value >= principal, "NFTM: not enough BNB");
-        } else {
-            // Make sure the lender has assets and gave us permission to start this loan in case the borrower accepts
-            require(
-                loanToken.allowance(_msgSender(), address(this)) >= principal &&
-                    loanToken.balanceOf(_msgSender()) >= principal,
-                "NFTM: need approval"
-            );
-        }
-
         // Update state in memory
         _proposal.loanToken = loanToken;
         _proposal.principal = principal;
@@ -382,6 +370,18 @@ contract NFTMarket is ERC721Holder, Context {
         proposals[address(collection)][tokenId][_msgSender()] = _proposal;
         _allProposals[address(collection)][tokenId].add(_msgSender());
         _users[address(collection)][_msgSender()].add(tokenId);
+
+        if (_isBNB(loanToken)) {
+            // Lender must send BNB to the contract before hand
+            require(msg.value >= principal, "NFTM: not enough BNB");
+        } else {
+            // Make sure the lender has assets and gave us permission to start this loan in case the borrower accepts
+            require(
+                loanToken.allowance(_msgSender(), address(this)) >= principal &&
+                    loanToken.balanceOf(_msgSender()) >= principal,
+                "NFTM: need approval"
+            );
+        }
 
         emit CounterOffer(
             collection,
@@ -433,6 +433,10 @@ contract NFTMarket is ERC721Holder, Context {
         // Charge a fee to the borrower.
         uint256 principalToSend = _loan.principal.bmul(0.995e18);
 
+        // Update global state
+        loans[address(collection)][tokenId] = _loan;
+        _users[address(collection)][lender].add(tokenId);
+
         // Sent the assets from the `msg.sender` to the borrower.
         // Support BNB
         if (_isBNB(_loan.loanToken)) {
@@ -446,10 +450,6 @@ contract NFTMarket is ERC721Holder, Context {
                 principalToSend
             );
         }
-
-        // Update global state
-        loans[address(collection)][tokenId] = _loan;
-        _users[address(collection)][lender].add(tokenId);
 
         emit LenderStartLoan(collection, tokenId, lender, _loan.borrower);
     }
@@ -483,6 +483,12 @@ contract NFTMarket is ERC721Holder, Context {
         Proposal memory _proposal = proposals[address(collection)][tokenId][
             proposer
         ];
+
+        // Check that the proposal exists
+        require(
+            _proposal.lender != address(0) && _proposal.lender != _msgSender(),
+            "NFTM: invalid lender"
+        );
 
         // Update state in memory using the proposal data
         //solhint-disable-next-line not-rely-on-time
@@ -581,11 +587,11 @@ contract NFTMarket is ERC721Holder, Context {
         require(_loan.startDate == 0, "NFTM: loan in progress");
         require(_loan.borrower == _msgSender(), "NFTM: no permission");
 
-        // Return the NFT to the owner
-        collection.safeTransferFrom(address(this), _loan.borrower, tokenId);
-
         // Delte the loan data from storage
         delete loans[address(collection)][tokenId];
+
+        // Return the NFT to the owner
+        collection.safeTransferFrom(address(this), _loan.borrower, tokenId);
 
         emit WithdrawNFT(collection, tokenId, _msgSender());
     }
@@ -614,11 +620,11 @@ contract NFTMarket is ERC721Holder, Context {
             "NFTM: cannot be liquidated"
         );
 
-        // Send the NFT to the lender
-        collection.safeTransferFrom(address(this), _loan.lender, tokenId);
-
         // Remove loan from storage
         delete loans[address(collection)][tokenId];
+
+        // Send the NFT to the lender
+        collection.safeTransferFrom(address(this), _loan.lender, tokenId);
 
         emit Liquidate(collection, tokenId, _loan.lender, _loan.borrower);
     }
@@ -667,6 +673,9 @@ contract NFTMarket is ERC721Holder, Context {
         uint256 protocolFee = fee.bmul(0.02e18); // 2% of the fee
         uint256 total = _loan.principal + fee;
 
+        // Remove loan from storage
+        delete loans[address(collection)][tokenId];
+
         // Get BNB or ERC20 to cover the loan + fee
         // Send the
         if (_isBNB(_loan.loanToken)) {
@@ -686,9 +695,6 @@ contract NFTMarket is ERC721Holder, Context {
 
         // Send the collateral
         collection.safeTransferFrom(address(this), _loan.borrower, tokenId);
-
-        // Remove loan from storage
-        delete loans[address(collection)][tokenId];
 
         emit Repay(
             collection,
