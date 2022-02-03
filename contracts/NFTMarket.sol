@@ -56,6 +56,13 @@ contract NFTMarket is ERC721Holder, Context {
         address indexed owner
     );
 
+    event Liquidate(
+        IERC721 indexed collection,
+        uint256 indexed tokenId,
+        address indexed lender,
+        address borrower
+    );
+
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -82,7 +89,6 @@ contract NFTMarket is ERC721Holder, Context {
         uint64 maturity;
         uint64 startDate;
         uint256 principal;
-        bool repaid;
     }
 
     struct Proposal {
@@ -230,6 +236,10 @@ contract NFTMarket is ERC721Holder, Context {
         require(maturity > 0, "NFTM: no maturity");
         require(principal > 0, "NFTM: no principal");
 
+        Loan memory _loan = loans[address(collection)][tokenId];
+
+        require(_loan.borrower != address(0), "NFTM: no loan available");
+
         Proposal memory _proposal = proposals[address(collection)][tokenId][
             _msgSender()
         ];
@@ -276,18 +286,22 @@ contract NFTMarket is ERC721Holder, Context {
         _loan.startDate = block.timestamp.toUint64();
         _loan.lender = _msgSender();
 
+        uint256 principalToSend = _loan.principal.bmul(0.995e18);
+
         if (_loan.loanToken == IERC20(address(0))) {
             require(msg.value >= _loan.principal, "NFTM: incorrect principal");
             //solhint-disable-next-line avoid-low-level-calls
-            (bool success, ) = _loan.borrower.call{value: _loan.principal}("");
+            (bool success, ) = _loan.borrower.call{value: principalToSend}("");
             require(success, "NFTM: failed to send BNB");
         } else {
             _loan.loanToken.safeTransferFrom(
                 _msgSender(),
                 _loan.borrower,
-                _loan.principal
+                principalToSend
             );
         }
+
+        delete _allProposals[address(collection)][tokenId];
 
         loans[address(collection)][tokenId] = _loan;
 
@@ -341,13 +355,72 @@ contract NFTMarket is ERC721Holder, Context {
 
     function withdrawNFT(IERC721 collection, uint256 tokenId) external {
         Loan memory _loan = loans[address(collection)][tokenId];
-        require(_loan.startDate == 0 || _loan.repaid, "NFTM: loan in progress");
+        require(_loan.startDate == 0, "NFTM: loan in progress");
 
-        collection.safeTransferFrom(address(this), _msgSender(), tokenId);
+        collection.safeTransferFrom(address(this), _loan.borrower, tokenId);
 
         delete loans[address(collection)][tokenId];
         delete _allProposals[address(collection)][tokenId];
 
         emit WithdrawNFT(collection, tokenId, _msgSender());
+    }
+
+    function liquidate(IERC721 collection, uint256 tokenId) external {
+        Loan memory _loan = loans[address(collection)][tokenId];
+        require(
+            _loan.startDate > 0 &&
+                //solhint-disable-next-line not-rely-on-time
+                block.timestamp >= _loan.maturity,
+            "NFTM: cannot be liquidated"
+        );
+
+        collection.safeTransferFrom(address(this), _loan.lender, tokenId);
+
+        delete loans[address(collection)][tokenId];
+
+        emit Liquidate(collection, tokenId, _loan.lender, _loan.borrower);
+    }
+
+    function getEarnings(IERC20 token) external {
+        address feeTo = FEE_TO;
+
+        token.safeTransfer(feeTo, token.balanceOf(address(this)));
+
+        if (address(this).balance > 1 ether) {
+            //solhint-disable-next-line avoid-low-level-calls
+            (bool success, ) = feeTo.call{value: address(this).balance}("");
+            require(success, "NFTM: failed to send BNB");
+        }
+    }
+
+    function repay(IERC721 collection, uint256 tokenId) external payable {
+        Loan memory _loan = loans[address(collection)][tokenId];
+
+        require(_loan.startDate > 0, "NFTM: no loan");
+
+        //solhint-disable-next-line not-rely-on-time
+        uint256 timeElapsed = block.timestamp - _loan.startDate;
+        uint256 total = uint256(timeElapsed * _loan.principal).bmul(
+            _loan.interestRate
+        );
+        uint256 protocolFee = total.bmul(0.01e18);
+
+        if (_loan.loanToken == IERC20(address(0))) {
+            require(msg.value >= total + protocolFee, "NFTM: incorrect amount");
+            //solhint-disable-next-line avoid-low-level-calls
+            (bool success, ) = _loan.lender.call{value: total}("");
+            require(success, "NFTM: failed to send BNB");
+        } else {
+            _loan.loanToken.safeTransferFrom(_msgSender(), _loan.lender, total);
+            _loan.loanToken.safeTransferFrom(
+                _msgSender(),
+                address(this),
+                protocolFee
+            );
+        }
+
+        collection.safeTransferFrom(address(this), _loan.borrower, tokenId);
+
+        delete loans[address(collection)][tokenId];
     }
 }
