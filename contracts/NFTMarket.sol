@@ -53,14 +53,18 @@ contract NFTMarket is ERC721Holder, Context {
         IERC721 indexed collection,
         uint256 indexed tokenId,
         address indexed lender,
-        address borrower
+        address borrower,
+        IERC20 token,
+        uint256 amount
     );
 
     event BorrowerStartLoan(
         IERC721 indexed collection,
         uint256 indexed tokenId,
         address lender,
-        address indexed borrower
+        address indexed borrower,
+        IERC20 token,
+        uint256 amount
     );
 
     event WithdrawNFT(
@@ -332,12 +336,6 @@ contract NFTMarket is ERC721Holder, Context {
         uint64 interestRate,
         uint64 maturity
     ) external payable {
-        // Does not make sense to propose a loan to yourself
-        require(
-            collection.ownerOf(tokenId) != _msgSender(),
-            "NFTM: must be nft owner"
-        );
-
         // Loan needs to have the following values to function
         require(interestRate > 0, "NFTM: no interest rate");
         require(maturity > 0, "NFTM: no maturity");
@@ -346,8 +344,13 @@ contract NFTMarket is ERC721Holder, Context {
         // Save state to memory to save gas
         Loan memory _loan = loans[address(collection)][tokenId];
 
-        // Make sure this is an existing loan
-        require(_loan.borrower != address(0), "NFTM: no loan available");
+        require(_loan.borrower != _msgSender(), "NFTM: not allowed");
+
+        // Make sure this is an existing loan and has not started
+        require(
+            _loan.borrower != address(0) && _loan.startDate == 0,
+            "NFTM: no loan available"
+        );
 
         // Save state to memory to save gas
         Proposal memory _proposal = proposals[address(collection)][tokenId][
@@ -397,18 +400,16 @@ contract NFTMarket is ERC721Holder, Context {
      *
      * @param collection The address of the contract of the NFT
      * @param tokenId The id of the NFT
-     * @param lender The address of the lender
      *
      * Requirements:
      *
      * - Can only start a loan that has not been started
      * - The loan must exist and lender cannot be the borrower
      */
-    function lenderStartLoan(
-        IERC721 collection,
-        uint256 tokenId,
-        address lender
-    ) external payable {
+    function lenderStartLoan(IERC721 collection, uint256 tokenId)
+        external
+        payable
+    {
         // Save state to memory to save gas
         Loan memory _loan = loans[address(collection)][tokenId];
 
@@ -416,21 +417,21 @@ contract NFTMarket is ERC721Holder, Context {
         require(_loan.startDate == 0, "NFTM: loan in progress");
         // Loan must exist. We check via the borrower
         require(
-            _loan.borrower != lender && _loan.borrower != address(0),
+            _loan.borrower != _msgSender() && _loan.borrower != address(0),
             "NFTM: invalid borrower"
         );
 
         // Start the loan and set the lender
         //solhint-disable-next-line not-rely-on-time
         _loan.startDate = block.timestamp.toUint64();
-        _loan.lender = lender;
+        _loan.lender = _msgSender();
 
         // Charge a fee to the borrower.
         uint256 principalToSend = _loan.principal.bmul(0.995e18);
 
         // Update global state
         loans[address(collection)][tokenId] = _loan;
-        _users[address(collection)][lender].add(tokenId);
+        _users[address(collection)][_msgSender()].add(tokenId);
 
         // Sent the assets from the `msg.sender` to the borrower.
         // Support BNB
@@ -446,7 +447,14 @@ contract NFTMarket is ERC721Holder, Context {
             );
         }
 
-        emit LenderStartLoan(collection, tokenId, lender, _loan.borrower);
+        emit LenderStartLoan(
+            collection,
+            tokenId,
+            _msgSender(),
+            _loan.borrower,
+            _loan.loanToken,
+            principalToSend
+        );
     }
 
     /**
@@ -480,9 +488,10 @@ contract NFTMarket is ERC721Holder, Context {
         ];
 
         // Check that the proposal exists
+        // _proposal.lender will never be _msgSender because we already check above. But does not hurt to check again.
         require(
             _proposal.lender != address(0) && _proposal.lender != _msgSender(),
-            "NFTM: invalid lender"
+            "NFTM: proposal not found"
         );
 
         // Update state in memory using the proposal data
@@ -506,7 +515,7 @@ contract NFTMarket is ERC721Holder, Context {
 
         // Send the principal. BNB supported
         if (_isBNB(_loan.loanToken)) {
-            _sendBNB(payable(_loan.lender), principalToSend);
+            _sendBNB(payable(_loan.borrower), principalToSend);
         } else {
             _loan.loanToken.safeTransferFrom(
                 _loan.lender,
@@ -514,14 +523,16 @@ contract NFTMarket is ERC721Holder, Context {
                 _loan.principal
             );
 
-            _loan.loanToken.safeTransfer(_loan.lender, principalToSend);
+            _loan.loanToken.safeTransfer(_loan.borrower, principalToSend);
         }
 
         emit BorrowerStartLoan(
             collection,
             tokenId,
             _loan.lender,
-            _loan.borrower
+            _loan.borrower,
+            _loan.loanToken,
+            principalToSend
         );
     }
 
