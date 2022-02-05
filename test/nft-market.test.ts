@@ -789,7 +789,7 @@ describe('NFTMarket', () => {
           ONE_DAY.mul(15)
         );
 
-      nftMarket
+      await nftMarket
         .connect(bob)
         .counterOffer(
           nft.address,
@@ -808,8 +808,6 @@ describe('NFTMarket', () => {
           )
         )
         .div(parseEther('1'));
-
-      const fee = TEN_BTC.mul(2).sub(principalToSend);
 
       const [loan, proposal, nftMarketBalance, aliceBalance] =
         await Promise.all([
@@ -875,7 +873,10 @@ describe('NFTMarket', () => {
       expect(proposal2.principal).to.be.equal(0);
       expect(proposal2.loanToken).to.be.equal(ethers.constants.AddressZero);
       expect(proposal2.maturity).to.be.equal(0);
-      expect(nftMarketBalance.eq(nftMarketBalance2.sub(fee))).to.be.equal(true);
+
+      expect(
+        nftMarketBalance.eq(nftMarketBalance2.add(principalToSend))
+      ).to.be.equal(true);
 
       // We subtract 0.5 ether because of fees
       expect(
@@ -883,6 +884,215 @@ describe('NFTMarket', () => {
           aliceBalance.add(TEN_BTC.mul(2).sub(parseEther('0.5')))
         )
       ).to.be.equal(true);
+    });
+  });
+  describe('function: withdrawBNB', () => {
+    it('reverts if the proposal has been accepted', async () => {
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await nftMarket
+        .connect(bob)
+        .counterOffer(
+          nft.address,
+          ethers.constants.AddressZero,
+          1,
+          TEN_BTC.mul(2),
+          INTEREST_RATE.add(1),
+          ONE_DAY.mul(30),
+          { value: TEN_BTC.mul(2) }
+        );
+
+      await nftMarket
+        .connect(alice)
+        .borrowerStartLoan(nft.address, 1, bob.address);
+
+      await expect(
+        nftMarket.connect(bob).withdrawBNB(nft.address, 1, bob.address)
+      ).to.revertedWith('NFTM: no permission');
+
+      await expect(
+        nftMarket.connect(bob).withdrawBNB(nft.address, 2, bob.address)
+      ).to.revertedWith('NFTM: no permission');
+    });
+    it('allows you to withdraw ETH if the proposal was not accepted', async () => {
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await nftMarket
+        .connect(bob)
+        .counterOffer(
+          nft.address,
+          ethers.constants.AddressZero,
+          1,
+          TEN_BTC.mul(2),
+          INTEREST_RATE.add(1),
+          ONE_DAY.mul(30),
+          { value: TEN_BTC.mul(2) }
+        );
+
+      const [proposal, bobBalance] = await Promise.all([
+        nftMarket.proposals(nft.address, 1, bob.address),
+        bob.getBalance(),
+      ]);
+
+      expect(proposal.interestRate).to.be.equal(INTEREST_RATE.add(1));
+      expect(proposal.lender).to.be.equal(bob.address);
+      expect(proposal.principal).to.be.equal(TEN_BTC.mul(2));
+      expect(proposal.loanToken).to.be.equal(ethers.constants.AddressZero);
+      expect(proposal.maturity).to.be.equal(ONE_DAY.mul(30));
+
+      await expect(
+        nftMarket.connect(bob).withdrawBNB(nft.address, 1, bob.address)
+      )
+        .to.emit(nftMarket, 'WithdrawBNB')
+        .withArgs(nft.address, 1, bob.address, TEN_BTC.mul(2));
+
+      const [proposal2, bobBalance2] = await Promise.all([
+        nftMarket.proposals(nft.address, 1, bob.address),
+        bob.getBalance(),
+      ]);
+
+      expect(proposal2.interestRate).to.be.equal(0);
+      expect(proposal2.lender).to.be.equal(ethers.constants.AddressZero);
+      expect(proposal2.principal).to.be.equal(0);
+      expect(proposal2.loanToken).to.be.equal(ethers.constants.AddressZero);
+      expect(proposal2.maturity).to.be.equal(0);
+      // 19 and not 20 to account for fees
+      expect(bobBalance2.gt(bobBalance.add(parseEther('19')))).to.be.equal(
+        true
+      );
+    });
+  });
+  describe('function: withdraw NFT', () => {
+    it('reverts if the  loan has started already', async () => {
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await nftMarket.connect(bob).lenderStartLoan(nft.address, 1);
+
+      await expect(
+        nftMarket.connect(alice).withdrawNFT(nft.address, 1)
+      ).to.revertedWith('NFTM: loan in progress');
+
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          99,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await nftMarket
+        .connect(bob)
+        .counterOffer(
+          nft.address,
+          ethers.constants.AddressZero,
+          99,
+          TEN_BTC.mul(2),
+          INTEREST_RATE.add(1),
+          ONE_DAY.mul(30),
+          { value: TEN_BTC.mul(2) }
+        );
+
+      await nftMarket
+        .connect(alice)
+        .borrowerStartLoan(nft.address, 99, bob.address);
+
+      await expect(
+        nftMarket.connect(alice).withdrawNFT(nft.address, 99)
+      ).to.revertedWith('NFTM: loan in progress');
+    });
+    it('reverts if the caller is not the borrower', async () => {
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await expect(
+        nftMarket.connect(bob).withdrawNFT(nft.address, 1)
+      ).to.revertedWith('NFTM: no permission');
+    });
+    it('allows a proposer to withdraw the NFT', async () => {
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      const [loan, nftOwner] = await Promise.all([
+        nftMarket.loans(nft.address, 1),
+        nft.ownerOf(1),
+      ]);
+
+      expect(nftOwner).to.be.equal(nftMarket.address);
+
+      expect(loan.loanToken).to.be.equal(usdc.address);
+      expect(loan.principal).to.be.equal(TEN_BTC);
+      expect(loan.maturity).to.be.equal(ONE_DAY.mul(15));
+      expect(loan.interestRate).to.be.equal(INTEREST_RATE);
+      expect(loan.tokenId).to.be.equal(1);
+      expect(loan.borrower).to.be.equal(alice.address);
+      expect(loan.lender).to.be.equal(ethers.constants.AddressZero);
+      expect(loan.startDate).to.be.equal(0);
+
+      await expect(nftMarket.connect(alice).withdrawNFT(nft.address, 1))
+        .to.emit(nftMarket, 'WithdrawNFT')
+        .withArgs(nft.address, 1, alice.address);
+
+      const [loan2, nftOwner2] = await Promise.all([
+        nftMarket.loans(nft.address, 1),
+        nft.ownerOf(1),
+      ]);
+
+      expect(nftOwner2).to.be.equal(alice.address);
+
+      expect(loan2.loanToken).to.be.equal(ethers.constants.AddressZero);
+      expect(loan2.principal).to.be.equal(0);
+      expect(loan2.maturity).to.be.equal(0);
+      expect(loan2.interestRate).to.be.equal(0);
+      expect(loan2.tokenId).to.be.equal(0);
+      expect(loan2.borrower).to.be.equal(ethers.constants.AddressZero);
+      expect(loan2.lender).to.be.equal(ethers.constants.AddressZero);
+      expect(loan2.startDate).to.be.equal(0);
     });
   });
 });

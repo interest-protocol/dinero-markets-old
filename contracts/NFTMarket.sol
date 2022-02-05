@@ -76,7 +76,8 @@ contract NFTMarket is ERC721Holder, Context {
     event WithdrawBNB(
         IERC721 indexed collection,
         uint256 indexed tokenId,
-        address indexed proposer
+        address indexed proposer,
+        uint256 amount
     );
 
     event Liquidate(
@@ -571,7 +572,7 @@ contract NFTMarket is ERC721Holder, Context {
         // Send BNB
         _sendBNB(to, amount);
 
-        emit WithdrawBNB(collection, tokenId, to);
+        emit WithdrawBNB(collection, tokenId, to, amount);
     }
 
     /**
