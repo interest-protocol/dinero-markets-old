@@ -270,11 +270,6 @@ contract NFTMarket is ERC721Holder, Context {
         uint64 interestRate,
         uint64 maturity
     ) external {
-        // Only the NFT owner can start a loan
-        require(
-            collection.ownerOf(tokenId) == _msgSender(),
-            "NFTM: must be nft owner"
-        );
         // Loan needs to have the following values to function
         require(interestRate > 0, "NFTM: no interest rate");
         require(maturity > 0, "NFTM: no maturity");
@@ -589,6 +584,7 @@ contract NFTMarket is ERC721Holder, Context {
 
         // Delte the loan data from storage
         delete loans[address(collection)][tokenId];
+        _users[address(collection)][_msgSender()].remove(tokenId);
 
         // Return the NFT to the owner
         collection.safeTransferFrom(address(this), _loan.borrower, tokenId);
@@ -622,6 +618,8 @@ contract NFTMarket is ERC721Holder, Context {
 
         // Remove loan from storage
         delete loans[address(collection)][tokenId];
+        _users[address(collection)][_loan.borrower].remove(tokenId);
+        _users[address(collection)][_loan.lender].remove(tokenId);
 
         // Send the NFT to the lender
         collection.safeTransferFrom(address(this), _loan.lender, tokenId);
@@ -675,6 +673,8 @@ contract NFTMarket is ERC721Holder, Context {
 
         // Remove loan from storage
         delete loans[address(collection)][tokenId];
+        _users[address(collection)][_loan.borrower].remove(tokenId);
+        _users[address(collection)][_loan.lender].remove(tokenId);
 
         // Get BNB or ERC20 to cover the loan + fee
         // Send the
