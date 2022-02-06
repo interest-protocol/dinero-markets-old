@@ -651,8 +651,10 @@ contract NFTMarket is ERC721Holder, Context {
         // Save gas
         address feeTo = FEE_TO;
 
-        // Send all ERC20 stored
-        token.safeTransfer(feeTo, token.balanceOf(address(this)));
+        if (address(token) != address(0)) {
+            // Send all ERC20 stored
+            token.safeTransfer(feeTo, token.balanceOf(address(this)));
+        }
 
         // Send BNB if it has more than 1 BNB in this contract's balance
         if (address(this).balance > 1 ether) {

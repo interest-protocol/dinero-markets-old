@@ -3,7 +3,7 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { MockERC20, MockNFT, NFTMarket } from '../typechain';
-import { deploy, multiDeploy } from './lib/test-utils';
+import { advanceBlockAndTime, deploy, multiDeploy } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
@@ -46,6 +46,14 @@ describe('NFTMarket', () => {
       usdc.mint(bob.address, parseEther('10000')),
       btc.connect(bob).approve(nftMarket.address, ethers.constants.MaxUint256),
       usdc.connect(bob).approve(nftMarket.address, ethers.constants.MaxUint256),
+      btc.mint(alice.address, parseEther('10000')),
+      usdc.mint(alice.address, parseEther('10000')),
+      btc
+        .connect(alice)
+        .approve(nftMarket.address, ethers.constants.MaxUint256),
+      usdc
+        .connect(alice)
+        .approve(nftMarket.address, ethers.constants.MaxUint256),
     ]);
   });
 
@@ -1093,6 +1101,519 @@ describe('NFTMarket', () => {
       expect(loan2.borrower).to.be.equal(ethers.constants.AddressZero);
       expect(loan2.lender).to.be.equal(ethers.constants.AddressZero);
       expect(loan2.startDate).to.be.equal(0);
+    });
+  });
+  describe('function: liquidate', () => {
+    it('reverts if the loan has not started', async () => {
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await expect(
+        nftMarket.connect(bob).liquidate(nft.address, 1)
+      ).to.revertedWith('NFTM: cannot be liquidated');
+
+      await nftMarket
+        .connect(bob)
+        .counterOffer(
+          nft.address,
+          ethers.constants.AddressZero,
+          1,
+          TEN_BTC.mul(2),
+          INTEREST_RATE.add(1),
+          ONE_DAY.mul(30),
+          { value: TEN_BTC.mul(2) }
+        );
+
+      await expect(
+        nftMarket.connect(bob).liquidate(nft.address, 1)
+      ).to.revertedWith('NFTM: cannot be liquidated');
+    });
+    it('reverts if the loan has started but it is before the maturity date', async () => {
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await nftMarket.connect(bob).lenderStartLoan(nft.address, 1);
+
+      await advanceBlockAndTime(ONE_DAY.mul(14).toNumber(), ethers);
+
+      await expect(
+        nftMarket.connect(bob).liquidate(nft.address, 1)
+      ).to.revertedWith('NFTM: cannot be liquidated');
+
+      await expect(
+        nftMarket.connect(alice).liquidate(nft.address, 1)
+      ).to.revertedWith('NFTM: cannot be liquidated');
+
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          99,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await nftMarket
+        .connect(bob)
+        .counterOffer(
+          nft.address,
+          ethers.constants.AddressZero,
+          99,
+          TEN_BTC.mul(2),
+          INTEREST_RATE.add(1),
+          ONE_DAY.mul(30),
+          { value: TEN_BTC.mul(2) }
+        );
+
+      await nftMarket
+        .connect(alice)
+        .borrowerStartLoan(nft.address, 99, bob.address);
+
+      await advanceBlockAndTime(ONE_DAY.mul(29).toNumber(), ethers);
+
+      await expect(
+        nftMarket.connect(bob).liquidate(nft.address, 99)
+      ).to.revertedWith('NFTM: cannot be liquidated');
+
+      await expect(
+        nftMarket.connect(alice).liquidate(nft.address, 99)
+      ).to.revertedWith('NFTM: cannot be liquidated');
+    });
+    it('allows liquidations', async () => {
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      const timestamp = (
+        await ethers.provider.getBlock(await ethers.provider.getBlockNumber())
+      ).timestamp;
+
+      await nftMarket.connect(bob).lenderStartLoan(nft.address, 1);
+
+      await advanceBlockAndTime(ONE_DAY.mul(15).toNumber(), ethers);
+
+      const [loan, nftOwner] = await Promise.all([
+        nftMarket.loans(nft.address, 1),
+        nft.ownerOf(1),
+      ]);
+
+      expect(nftOwner).to.be.equal(nftMarket.address);
+
+      expect(loan.loanToken).to.be.equal(usdc.address);
+      expect(loan.principal).to.be.equal(TEN_BTC);
+      expect(loan.maturity).to.be.equal(ONE_DAY.mul(15));
+      expect(loan.interestRate).to.be.equal(INTEREST_RATE);
+      expect(loan.tokenId).to.be.equal(1);
+      expect(loan.borrower).to.be.equal(alice.address);
+      expect(loan.lender).to.be.equal(bob.address);
+      expect(loan.startDate.gte(timestamp)).to.be.equal(true);
+
+      await expect(nftMarket.connect(bob).liquidate(nft.address, 1))
+        .to.emit(nftMarket, 'Liquidate')
+        .withArgs(nft.address, 1, bob.address, alice.address);
+
+      const [loan2, nftOwner2] = await Promise.all([
+        nftMarket.loans(nft.address, 1),
+        nft.ownerOf(1),
+      ]);
+
+      expect(nftOwner2).to.be.equal(bob.address);
+
+      expect(loan2.loanToken).to.be.equal(ethers.constants.AddressZero);
+      expect(loan2.principal).to.be.equal(0);
+      expect(loan2.maturity).to.be.equal(0);
+      expect(loan2.interestRate).to.be.equal(0);
+      expect(loan2.tokenId).to.be.equal(0);
+      expect(loan2.borrower).to.be.equal(ethers.constants.AddressZero);
+      expect(loan2.lender).to.be.equal(ethers.constants.AddressZero);
+      expect(loan2.startDate).to.be.equal(0);
+
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          99,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await nftMarket
+        .connect(bob)
+        .counterOffer(
+          nft.address,
+          ethers.constants.AddressZero,
+          99,
+          TEN_BTC.mul(2),
+          INTEREST_RATE.add(1),
+          ONE_DAY.mul(30),
+          { value: TEN_BTC.mul(2) }
+        );
+
+      const timestamp2 = (
+        await ethers.provider.getBlock(await ethers.provider.getBlockNumber())
+      ).timestamp;
+
+      await nftMarket
+        .connect(alice)
+        .borrowerStartLoan(nft.address, 99, bob.address);
+
+      const [loan3, nftOwner3] = await Promise.all([
+        nftMarket.loans(nft.address, 99),
+        nft.ownerOf(99),
+      ]);
+
+      expect(nftOwner3).to.be.equal(nftMarket.address);
+
+      expect(loan3.loanToken).to.be.equal(ethers.constants.AddressZero);
+      expect(loan3.principal).to.be.equal(TEN_BTC.mul(2));
+      expect(loan3.maturity).to.be.equal(ONE_DAY.mul(30));
+      expect(loan3.interestRate).to.be.equal(INTEREST_RATE.add(1));
+      expect(loan3.tokenId).to.be.equal(99);
+      expect(loan3.borrower).to.be.equal(alice.address);
+      expect(loan3.lender).to.be.equal(bob.address);
+      expect(loan3.startDate.gte(timestamp2)).to.be.equal(true);
+
+      await advanceBlockAndTime(ONE_DAY.mul(30).toNumber(), ethers);
+
+      await expect(nftMarket.connect(bob).liquidate(nft.address, 99))
+        .to.emit(nftMarket, 'Liquidate')
+        .withArgs(nft.address, 99, bob.address, alice.address);
+
+      const [loan4, nftOwner4] = await Promise.all([
+        nftMarket.loans(nft.address, 99),
+        nft.ownerOf(99),
+      ]);
+
+      expect(nftOwner4).to.be.equal(bob.address);
+
+      expect(loan4.loanToken).to.be.equal(ethers.constants.AddressZero);
+      expect(loan4.principal).to.be.equal(0);
+      expect(loan4.maturity).to.be.equal(0);
+      expect(loan4.interestRate).to.be.equal(0);
+      expect(loan4.tokenId).to.be.equal(0);
+      expect(loan4.borrower).to.be.equal(ethers.constants.AddressZero);
+      expect(loan4.lender).to.be.equal(ethers.constants.AddressZero);
+      expect(loan4.startDate).to.be.equal(0);
+    });
+  });
+  it('allows to get earnings', async () => {
+    await nftMarket
+      .connect(alice)
+      .proposeLoan(
+        nft.address,
+        usdc.address,
+        1,
+        TEN_BTC,
+        INTEREST_RATE,
+        ONE_DAY.mul(15)
+      );
+
+    await nftMarket.connect(bob).lenderStartLoan(nft.address, 1);
+
+    await advanceBlockAndTime(ONE_DAY.mul(15).toNumber(), ethers);
+
+    expect(await usdc.balanceOf(feeTo.address)).to.be.equal(0);
+
+    await nftMarket.connect(alice).repay(nft.address, 1);
+
+    const fee = ONE_DAY.mul(15).mul(INTEREST_RATE).div(parseEther('1'));
+
+    // 0.02e18
+    const protocolFee = fee
+      .mul(
+        ethers.BigNumber.from(200).mul(ethers.BigNumber.from('100000000000000'))
+      )
+      .div(parseEther('1'));
+
+    await nftMarket.getEarnings(usdc.address);
+
+    // Principal + fees
+    expect((await usdc.balanceOf(feeTo.address)).gte(protocolFee)).to.be.equal(
+      true
+    );
+
+    await nftMarket
+      .connect(alice)
+      .proposeLoan(
+        nft.address,
+        ethers.constants.AddressZero,
+        99,
+        TEN_BTC.mul(100),
+        INTEREST_RATE.mul(1000),
+        ONE_DAY.mul(90)
+      );
+
+    await nftMarket
+      .connect(bob)
+      .lenderStartLoan(nft.address, 99, { value: TEN_BTC.mul(100) });
+
+    const feeToBalance = await ethers.provider.getBalance(feeTo.address);
+
+    await advanceBlockAndTime(ONE_DAY.mul(90).toNumber(), ethers);
+
+    const fee2 = INTEREST_RATE.mul(1000)
+      .mul(ONE_DAY.mul(90).add(60 * 3)) // 3 minutes to estimate the amount needed
+      .div(parseEther('1'));
+
+    // 0.02e18
+    const protocolFee2 = fee2
+      .mul(
+        ethers.BigNumber.from(2000).mul(ethers.BigNumber.from('10000000000000'))
+      )
+      .div(parseEther('1'));
+
+    await nftMarket.connect(alice).repay(nft.address, 99, {
+      value: TEN_BTC.mul(100).add(fee2).add(protocolFee2),
+    });
+
+    await nftMarket.getEarnings(ethers.constants.AddressZero);
+
+    const feeToBalance2 = await ethers.provider.getBalance(feeTo.address);
+
+    expect(feeToBalance2.gt(feeToBalance.add(parseEther('1')))).to.be.equal(
+      true
+    );
+  });
+  describe('function: repay', () => {
+    it('reverts if the loan has not started or does not exist', async () => {
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await expect(
+        nftMarket.connect(bob).repay(nft.address, 1)
+      ).to.revertedWith('NFTM: no loan');
+
+      await nftMarket
+        .connect(bob)
+        .counterOffer(
+          nft.address,
+          ethers.constants.AddressZero,
+          1,
+          TEN_BTC.mul(2),
+          INTEREST_RATE.add(1),
+          ONE_DAY.mul(30),
+          { value: TEN_BTC.mul(2) }
+        );
+
+      await expect(
+        nftMarket.connect(alice).repay(nft.address, 1)
+      ).to.revertedWith('NFTM: no loan');
+
+      await expect(
+        nftMarket.connect(alice).repay(nft.address, 99)
+      ).to.revertedWith('NFTM: no loan');
+    });
+    it('allows a loan to be repaid in ERC20', async () => {
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await nftMarket.connect(bob).lenderStartLoan(nft.address, 1);
+
+      await advanceBlockAndTime(ONE_DAY.mul(16).toNumber(), ethers);
+
+      const [loan, nftMarketUSDCBalance, aliceUSDCBalance, nftOwner] =
+        await Promise.all([
+          nftMarket.loans(nft.address, 1),
+          usdc.balanceOf(nftMarket.address),
+          usdc.balanceOf(alice.address),
+          nft.ownerOf(1),
+        ]);
+
+      expect(loan.loanToken).to.be.equal(usdc.address);
+      expect(loan.principal).to.be.equal(TEN_BTC);
+      expect(loan.maturity).to.be.equal(ONE_DAY.mul(15));
+      expect(loan.interestRate).to.be.equal(INTEREST_RATE);
+      expect(loan.tokenId).to.be.equal(1);
+      expect(loan.borrower).to.be.equal(alice.address);
+      expect(loan.lender).to.be.equal(bob.address);
+      expect(loan.startDate.gt(0)).to.be.equal(true);
+
+      expect(nftMarketUSDCBalance).to.be.equal(0);
+
+      expect(nftOwner).to.be.equal(nftMarket.address);
+
+      await expect(nftMarket.connect(alice).repay(nft.address, 1))
+        .to.emit(nftMarket, 'Repay')
+        .to.emit(usdc, 'Transfer');
+
+      const [loan2, nftMarketUSDCBalance2, aliceUSDCBalance2, nftOwner2] =
+        await Promise.all([
+          nftMarket.loans(nft.address, 1),
+          usdc.balanceOf(nftMarket.address),
+          usdc.balanceOf(alice.address),
+          nft.ownerOf(1),
+        ]);
+
+      const fee = ONE_DAY.mul(15).mul(INTEREST_RATE).div(parseEther('1'));
+
+      // 0.02e18
+      const protocolFee = fee
+        .mul(
+          ethers.BigNumber.from(200).mul(
+            ethers.BigNumber.from('100000000000000')
+          )
+        )
+        .div(parseEther('1'));
+
+      expect(loan2.loanToken).to.be.equal(ethers.constants.AddressZero);
+      expect(loan2.principal).to.be.equal(0);
+      expect(loan2.maturity).to.be.equal(0);
+      expect(loan2.interestRate).to.be.equal(0);
+      expect(loan2.tokenId).to.be.equal(0);
+      expect(loan2.borrower).to.be.equal(ethers.constants.AddressZero);
+      expect(loan2.lender).to.be.equal(ethers.constants.AddressZero);
+      expect(loan2.startDate).to.be.equal(0);
+
+      expect(nftMarketUSDCBalance2.gte(protocolFee)).to.be.equal(true);
+
+      // estimate fees we use lte
+      expect(
+        aliceUSDCBalance2.lte(aliceUSDCBalance.sub(fee.add(TEN_BTC)))
+      ).to.be.equal(true);
+
+      expect(nftOwner2).to.be.equal(alice.address);
+    });
+    it('allows a loan to be repaid in ETH', async () => {
+      it('allows a loan to be repaid in ERC20', async () => {
+        await nftMarket
+          .connect(alice)
+          .proposeLoan(
+            nft.address,
+            ethers.constants.AddressZero,
+            1,
+            TEN_BTC,
+            INTEREST_RATE,
+            ONE_DAY.mul(15)
+          );
+
+        await nftMarket
+          .connect(bob)
+          .lenderStartLoan(nft.address, 1, { value: TEN_BTC });
+
+        const [loan, nftMarketBalance, aliceBalance, bobBalance, nftOwner] =
+          await Promise.all([
+            nftMarket.loans(nft.address, 1),
+            ethers.provider.getBalance(nftMarket.address),
+            alice.getBalance(),
+            bob.getBalance(),
+            nft.ownerOf(1),
+          ]);
+
+        expect(loan.loanToken).to.be.equal(ethers.constants.AddressZero);
+        expect(loan.principal).to.be.equal(TEN_BTC);
+        expect(loan.maturity).to.be.equal(ONE_DAY.mul(15));
+        expect(loan.interestRate).to.be.equal(INTEREST_RATE);
+        expect(loan.tokenId).to.be.equal(1);
+        expect(loan.borrower).to.be.equal(alice.address);
+        expect(loan.lender).to.be.equal(bob.address);
+        expect(loan.startDate.gt(0)).to.be.equal(true);
+
+        expect(nftOwner).to.be.equal(nftMarket.address);
+
+        // Send a bit mroe because of time delays
+        const fee = ONE_DAY.mul(16).mul(INTEREST_RATE).div(parseEther('1'));
+
+        // 0.02e18
+        const protocolFee = fee
+          .mul(
+            ethers.BigNumber.from(200).mul(
+              ethers.BigNumber.from('100000000000000')
+            )
+          )
+          .div(parseEther('1'));
+
+        await advanceBlockAndTime(ONE_DAY.mul(16).toNumber(), ethers);
+
+        await expect(
+          nftMarket
+            .connect(bob)
+            .repay(nft.address, 1, { value: fee.add(protocolFee).add(TEN_BTC) })
+        )
+          .to.emit(nftMarket, 'Repay')
+          .to.not.emit(usdc, 'Transfer')
+          .to.not.emit(btc, 'Transfer');
+
+        const [
+          loan2,
+          nftMarketBalance2,
+          aliceBalance2,
+          bobBalance2,
+          nftOwner2,
+        ] = await Promise.all([
+          nftMarket.loans(nft.address, 1),
+          ethers.provider.getBalance(nftMarket.address),
+          alice.getBalance(),
+          bob.getBalance(),
+          nft.ownerOf(1),
+        ]);
+
+        expect(loan2.loanToken).to.be.equal(ethers.constants.AddressZero);
+        expect(loan2.principal).to.be.equal(0);
+        expect(loan2.maturity).to.be.equal(0);
+        expect(loan2.interestRate).to.be.equal(0);
+        expect(loan2.tokenId).to.be.equal(0);
+        expect(loan2.borrower).to.be.equal(ethers.constants.AddressZero);
+        expect(loan2.lender).to.be.equal(ethers.constants.AddressZero);
+        expect(loan2.startDate).to.be.equal(0);
+
+        expect(
+          nftMarketBalance2.gte(nftMarketBalance.add(protocolFee))
+        ).to.be.equal(true);
+
+        // estimate fees we use lte
+        expect(
+          aliceBalance2.gte(aliceBalance.sub(fee.add(TEN_BTC)))
+        ).to.be.equal(true);
+
+        expect(
+          bobBalance2.lte(bobBalance.sub(fee.add(protocolFee).add(TEN_BTC)))
+        ).to.equal(true);
+
+        expect(nftOwner2).to.be.equal(alice.address);
+      });
     });
   });
 });
