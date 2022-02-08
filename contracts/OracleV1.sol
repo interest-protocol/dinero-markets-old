@@ -117,12 +117,13 @@ contract OracleV1 is Ownable {
         returns (uint256)
     {
         uint256 baseDecimals = 18;
-        if (decimals < baseDecimals) {
+
+        if (decimals == baseDecimals) return price;
+
+        if (decimals < baseDecimals)
             return price * 10**uint256(baseDecimals - decimals);
-        } else if (decimals > baseDecimals) {
-            return price / 10**uint256(decimals - baseDecimals);
-        }
-        return price;
+
+        return price / 10**uint256(decimals - baseDecimals);
     }
 
     /*///////////////////////////////////////////////////////////////
