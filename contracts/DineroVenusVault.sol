@@ -7,9 +7,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 
-import "./interfaces/IVenustroller.sol";
+import "./interfaces/IVenusTroller.sol";
 import "./interfaces/IVToken.sol";
-import "./interfaces/IVenusPriceOracle.sol";
 
 import "./lib/IntMath.sol";
 import "./lib/Rebase.sol";
@@ -224,23 +223,20 @@ contract DineroVenusVault is Ownable, Pausable {
     }
 
     function _vTokenBorrow(address vToken) private {
-        uint256 _collateralLimit = getSafeCollateralLimit(vToken);
-        (uint256 borrow, uint256 supply) = SAFE_VENUS.getVenusBorrowAndSupply(
-            address(this),
-            vToken
-        );
-
-        uint256 currentCollateralFactor = borrow.bdiv(supply);
-
-        if (currentCollateralFactor >= _collateralLimit) {
-            // Lower to meet the limit
-            return;
-        }
-
-        uint256 maxBorrowAmount = supply.bmul(_collateralLimit);
-        uint256 newBorrowAmount = maxBorrowAmount.min(
-            SAFE_VENUS.getVTokenBorrowLiquidity(vToken)
-        );
+        // uint256 _collateralLimit = getSafeCollateralLimit(vToken);
+        // (uint256 borrow, uint256 supply) = SAFE_VENUS.getVenusBorrowAndSupply(
+        //     address(this),
+        //     vToken
+        // );
+        // uint256 currentCollateralFactor = borrow.bdiv(supply);
+        // if (currentCollateralFactor >= _collateralLimit) {
+        //     // Lower to meet the limit
+        //     return;
+        // }
+        // uint256 maxBorrowAmount = supply.bmul(_collateralLimit);
+        // uint256 newBorrowAmount = maxBorrowAmount.min(
+        //     SAFE_VENUS.getVTokenBorrowLiquidity(vToken)
+        // );
     }
 
     /*///////////////////////////////////////////////////////////////

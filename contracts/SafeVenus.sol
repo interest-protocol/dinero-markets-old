@@ -1,9 +1,8 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-import "./interfaces/IVenustroller.sol";
+import "./interfaces/IVenusTroller.sol";
 import "./interfaces/IVToken.sol";
-import "./interfaces/IVenusPriceOracle.sol";
 import "./interfaces/IVenusVault.sol";
 import "./interfaces/IVenusInterestRateModel.sol";
 
@@ -12,11 +11,12 @@ import "./lib/IntMath.sol";
 import "./OracleV1.sol";
 
 /**
- * @dev This is a helper contract, similarly to a library, to interact with Venus Protocol.
+ * @dev This is a helper contract, similarly to a library, to calculate "safe" values. Safe in the essence that they give enough room to avoid liquidation.
  * https://github.com/VenusProtocol
- * It adds a safety room to all values to prevent a shortfall and get liquidations.
+ * It adds a safety room to all values to prevent a shortfall and get liquidated.
  * It prioritizes a safe position over maximizing profits.
- * The functions in this contract assume a very safe strategy of supplying and borrowing the same asset.
+ * The functions in this contract assume a very safe strategy of supplying and borrowing the same asset within 1 vToken contract.
+ * It requires chainlink feeds to convert all amounts in USD.
  */
 contract SafeVenus {
     /*///////////////////////////////////////////////////////////////
@@ -40,7 +40,7 @@ contract SafeVenus {
      * @dev This is the Venus controller 0xfD36E2c2a6789Db23113685031d7F16329158384
      */
     // solhint-disable-next-line var-name-mixedcase
-    IVenustroller public immutable VENUS_TROLLER;
+    IVenusTroller public immutable VENUS_TROLLER;
 
     /**
      * @dev This is the oracle we use in the entire project. It uses Chainlink as the primary source.
@@ -59,7 +59,7 @@ contract SafeVenus {
      * @param oracle The address of our maintained oracle address
      */
     constructor(
-        IVenustroller venustroller,
+        IVenusTroller venustroller,
         address xvs,
         OracleV1 oracle
     ) {
@@ -79,7 +79,7 @@ contract SafeVenus {
      * @param vToken A Venus vToken contract
      * @return uint256 The conservative collateral requirement
      */
-    function safeCollateralLimit(IVenusVault vault, IVToken vToken)
+    function safeCollateralRatio(IVenusVault vault, IVToken vToken)
         public
         view
         returns (uint256)
@@ -164,7 +164,7 @@ contract SafeVenus {
         returns (uint256)
     {
         // Get a safe ratio between borrow amount and collateral required.
-        uint256 _collateralLimit = safeCollateralLimit(vault, vToken);
+        uint256 _collateralLimit = safeCollateralRatio(vault, vToken);
 
         // Get the current positions of the `vault` in the `vToken` market.
         (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
@@ -234,7 +234,7 @@ contract SafeVenus {
 
         // borrowBalance / collateralLimitRatio will give us a safe supply value that we need to maintain to avoid liquidation.
         uint256 safeCollateral = borrowBalance.bdiv(
-            safeCollateralLimit(vault, vToken)
+            safeCollateralRatio(vault, vToken)
         );
 
         // If our supply is larger than the safe collateral, we can redeem the difference
@@ -343,8 +343,9 @@ contract SafeVenus {
     {
         // Get current market liquidity (supply - borrow in underlying)
         uint256 cash = vToken.getCash();
-        // No point to predict if we wanna borrow more than the liquidity
-        if (amount >= cash) return vToken.borrowRatePerBlock();
+
+        // Can not borrow more than the current liquidity
+        if (amount >= cash) amount = cash;
 
         // Get current interest model being used by the `vToken`.
         IVenusInterestRateModel interestRateModel = IVenusInterestRateModel(
@@ -374,8 +375,8 @@ contract SafeVenus {
         // Current market liquidity
         uint256 cash = vToken.getCash();
 
-        // No point to predict if we wanna borrow more than the liquidity
-        if (amount >= cash) return vToken.supplyRatePerBlock();
+        // Can not borrow more than the current liquidity
+        if (amount >= cash) amount = cash;
 
         // Get current `vToken` interest rate model.
         IVenusInterestRateModel interestRateModel = IVenusInterestRateModel(

@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
-interface IVenustroller {
-    function oracle() external view returns (address);
-
+interface IVenusTroller {
     function enterMarkets(address[] memory _vtokens) external;
 
     function exitMarket(address _vtoken) external;
