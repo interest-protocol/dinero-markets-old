@@ -443,4 +443,151 @@ describe('SafeVenus', () => {
         .withArgs(parseEther('13.3'));
     });
   });
+  describe('function: borrowInterestPerBlock', () => {
+    it('returns 0 if there are no open borrow positions', async () => {
+      await expect(
+        testSafeVenus.borrowInterestPerBlock(vault.address, vToken.address, 0)
+      )
+        .to.emit(testSafeVenus, 'BorrowInterestPerBlock')
+        .withArgs(0, 0);
+    });
+    it('returns cost and profit of opening a new borrow position', async () => {
+      await Promise.all([
+        vToken.__setTotalBorrowsCurrent(parseEther('1000')),
+        vToken.__setBorrowBalanceCurrent(vault.address, parseEther('150')),
+        venusTroller.__setVenusSpeeds(vToken.address, parseEther('40')),
+        interestRateModel.__setBorrowRate(parseEther('0.07')),
+      ]);
+
+      await expect(
+        testSafeVenus.borrowInterestPerBlock(
+          vault.address,
+          vToken.address,
+          parseEther('20')
+        )
+      )
+        .to.emit(testSafeVenus, 'BorrowInterestPerBlock')
+        // First value - 170 * 0.07 * 3000 = 35_700
+        // Second Value - (40 * 170) / 1020 * 10 = ~ 66.6. We took the exact number post-fact to pass the test.
+        .withArgs(parseEther('35700'), '66666666666666666660');
+    });
+  });
+
+  describe('function: supplyRewardPerBlock', () => {
+    it('returns 0 if there is no current supply amount in the market', async () => {
+      await expect(
+        testSafeVenus.supplyRewardPerBlock(vault.address, vToken.address, 0)
+      )
+        .to.emit(testSafeVenus, 'SupplyRewardPerBlock')
+        .withArgs(0);
+    });
+    it('returns the current supply reward', async () => {
+      await Promise.all([
+        vToken.__setExchangeRateCurrent(parseEther('1.1')),
+        vToken.__setBalanceOfUnderlying(vault.address, parseEther('200')),
+        venusTroller.__setVenusSpeeds(vToken.address, parseEther('400')),
+        interestRateModel.__setSupplyRate(parseEther('0.05')),
+      ]);
+
+      await expect(
+        testSafeVenus.supplyRewardPerBlock(
+          vault.address,
+          vToken.address,
+          parseEther('100')
+        )
+      )
+        .to.emit(testSafeVenus, 'SupplyRewardPerBlock')
+        // Underlying value 200 * 0.05 * 3000 = 30_000
+        // XVS reward (400 * 200 / 22000) * 10 = ~36
+        // Value below copied post test due to rounding.
+        .withArgs('30036363636363636363630');
+    });
+  });
+  it('returns a prediction for the borrow rate', async () => {
+    await Promise.all([
+      vToken.__setCash(parseEther('100')),
+      vToken.__setTotalBorrowsCurrent(parseEther('600')),
+      vToken.__setTotalReserves(parseEther('45')),
+      interestRateModel.__setBorrowRate(parseEther('0.06')),
+    ]);
+    await expect(
+      testSafeVenus.predictBorrowRate(vToken.address, parseEther('150'))
+    )
+      .to.emit(testSafeVenus, 'PredictBorrowRate')
+      .withArgs(parseEther('0.06'))
+      .to.emit(interestRateModel, 'BorrowRateArgs')
+      .withArgs(0, parseEther('700'), parseEther('45'));
+
+    await expect(
+      testSafeVenus.predictBorrowRate(vToken.address, parseEther('60'))
+    )
+      .to.emit(testSafeVenus, 'PredictBorrowRate')
+      .withArgs(parseEther('0.06'))
+      .to.emit(interestRateModel, 'BorrowRateArgs')
+      .withArgs(parseEther('40'), parseEther('660'), parseEther('45'));
+  });
+  it('returns a prediction for the supply rate', async () => {
+    await Promise.all([
+      vToken.__setCash(parseEther('200')),
+      vToken.__setTotalBorrowsCurrent(parseEther('700')),
+      vToken.__setTotalReserves(parseEther('85')),
+      vToken.__setReserveFactorMantissa(parseEther('2')),
+      interestRateModel.__setSupplyRate(parseEther('0.035')),
+    ]);
+
+    await expect(
+      testSafeVenus.predictSupplyRate(vToken.address, parseEther('300'))
+    )
+      .to.emit(testSafeVenus, 'PredictSupplyRate')
+      .withArgs(parseEther('0.035'))
+      .to.emit(interestRateModel, 'SupplyRateArgs')
+      .withArgs(0, parseEther('900'), parseEther('85'), parseEther('2'));
+
+    await expect(
+      testSafeVenus.predictSupplyRate(vToken.address, parseEther('150'))
+    )
+      .to.emit(testSafeVenus, 'PredictSupplyRate')
+      .withArgs(parseEther('0.035'))
+      .to.emit(interestRateModel, 'SupplyRateArgs')
+      .withArgs(
+        parseEther('50'),
+        parseEther('850'),
+        parseEther('85'),
+        parseEther('2')
+      );
+  });
+  it.only('returns a safe amount to deleverage from the supply', async () => {
+    await Promise.all([
+      // Safe collateral ratio of 0.75
+      vToken.__setSupplyRatePerBlock(parseEther('0.06')),
+      vToken.__setBorrowRatePerBlock(parseEther('0.08')),
+      venusTroller.__setMarkets(
+        vToken.address,
+        true,
+        parseEther('0.9'),
+        true,
+        true
+      ),
+      vToken.__setCash(parseEther('100')),
+      vToken.__setBorrowBalanceCurrent(vault.address, parseEther('40')),
+      vToken.__setBalanceOfUnderlying(vault.address, parseEther('100')), // we can  borrow up to 75 ether. (100 * 0.75)
+    ]);
+
+    await expect(testSafeVenus.deleverage(vault.address, vToken.address))
+      .to.emit(testSafeVenus, 'Deleverage')
+      .withArgs(0);
+
+    // We are above the safe collateral ratio
+    await vToken.__setBorrowBalanceCurrent(vault.address, parseEther('80'));
+
+    await expect(testSafeVenus.deleverage(vault.address, vToken.address))
+      .to.emit(testSafeVenus, 'Deleverage')
+      .withArgs(parseEther('5'));
+
+    await vToken.__setCash(parseEther('2'));
+
+    await expect(testSafeVenus.deleverage(vault.address, vToken.address))
+      .to.emit(testSafeVenus, 'Deleverage')
+      .withArgs(parseEther('2'));
+  });
 });

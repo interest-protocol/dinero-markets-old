@@ -9,7 +9,6 @@ import "./interfaces/IVenusInterestRateModel.sol";
 import "./lib/IntMath.sol";
 
 import "./OracleV1.sol";
-import "hardhat/console.sol";
 
 /**
  * @dev This is a helper contract, similarly to a library, to calculate "safe" values. Safe in the essence that they give enough room to avoid liquidation.
@@ -267,6 +266,8 @@ contract SafeVenus {
     /**
      * @dev Calculates the hypothethical borrow interest rate and XVS rewards per block with an additional `amount`.
      *
+     * @notice Use the function {predictBorrowRate} if you wish an `amount` of 0.
+     *
      * @param vault A vault contract
      * @param vToken A Venus vToken contract
      * @param amount The calculation will take into account if you intent to borrow an additional `amount` of the underlying token of `vToken`.
@@ -284,12 +285,19 @@ contract SafeVenus {
         uint256 vaultBorrow = vToken.borrowBalanceCurrent(address(vault)) +
             amount;
 
+        // Edge case for a market to have no loans. But since we use it as a denominator, we need to address it.
+        if (totalBorrow == 0)
+            // It should never happen that we have no borrows and we want to know the cost of borrowing 0.
+            return (0, 0);
+
         // Get the current rewards given by borrowing in USD per block.
         uint256 xvsInUSDPerBlock = ORACLE.getTokenUSDPrice(
             XVS,
-            // Venus speed has 18 decimals
-            (VENUS_TROLLER.venusSpeeds(address(vToken)) * vaultBorrow) /
+            // Venus speed has 18
+            VENUS_TROLLER.venusSpeeds(address(vToken)).mulDiv(
+                vaultBorrow,
                 totalBorrow
+            )
         );
 
         // Get current borrow interest rate times the amount in `vault`.
@@ -309,15 +317,17 @@ contract SafeVenus {
     /**
      * @dev This function predicts hypothetically the supply reward per block with an additional `amount`.
      *
+     * @notice Use the function {predictSupplyRate} if you wish an `amount` of 0.
+     *
      * @param vault A vault contract
      * @param vToken A Venus vToken contract
-     * @param amount An additional borrow amount to calculate the interest rate model for supplying
+     * @param borrowAmount An additional borrow amount to calculate the interest rate model for supplying
      * @return uint256 The supply reward rate in USD per block.
      */
     function supplyRewardPerBlock(
         IVenusVault vault,
         IVToken vToken,
-        uint256 amount
+        uint256 borrowAmount
     ) public returns (uint256) {
         // Total amount of supply amount in the `vToken`.
         uint256 totalSupplyAmount = IERC20(address(vToken)).totalSupply().bmul(
@@ -329,17 +339,22 @@ contract SafeVenus {
             address(vault)
         );
 
+        // This is super edge case. And should not happen, but we need to address it because we use it as a denominator.
+        if (totalSupplyAmount == 0) return 0;
+
         // Current amount of rewards being paid by supplying in `vToken` in XVS in USD terms per block
         uint256 xvsAmountInUSD = ORACLE.getTokenUSDPrice(
             XVS,
-            ((VENUS_TROLLER.venusSpeeds(address(vToken)) *
-                vaultUnderlyingBalance) / totalSupplyAmount)
+            VENUS_TROLLER.venusSpeeds(address(vToken)).mulDiv(
+                vaultUnderlyingBalance,
+                totalSupplyAmount
+            )
         );
 
         // Get current supply rate times the amout in `vault`.
         uint256 underlyingSupplyRate = predictSupplyRate(
             IVToken(vToken),
-            amount
+            borrowAmount
         ).bmul(vaultUnderlyingBalance);
 
         // Calculate the supply rate considering an additional borrow `amount` per block in USD and add the current XVS rewards in USD per block
@@ -363,7 +378,7 @@ contract SafeVenus {
         uint256 cash = vToken.getCash();
 
         // Can not borrow more than the current liquidity
-        if (amount >= cash) amount = cash;
+        if (amount > cash) amount = cash;
 
         // Get current interest model being used by the `vToken`.
         IVenusInterestRateModel interestRateModel = IVenusInterestRateModel(
@@ -394,7 +409,7 @@ contract SafeVenus {
         uint256 cash = vToken.getCash();
 
         // Can not borrow more than the current liquidity
-        if (amount >= cash) amount = cash;
+        if (amount > cash) amount = cash;
 
         // Get current `vToken` interest rate model.
         IVenusInterestRateModel interestRateModel = IVenusInterestRateModel(
@@ -439,10 +454,7 @@ contract SafeVenus {
         // If we are not above the maximum amount. We do not need to deleverage and return 0.
         if (amount == 0) return 0;
 
-        // Get the current safe redeem amount to avoid liquidation
-        uint256 safeAmount = safeRedeem(vault, vToken);
-
-        // We return the safest amount to deleverage using the supply without getting liquidated.
-        return amount > safeAmount ? safeAmount : amount;
+        // Cannot remove more than the current liquidity.
+        return amount.min(vToken.getCash());
     }
 }
