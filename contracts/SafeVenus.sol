@@ -9,6 +9,7 @@ import "./interfaces/IVenusInterestRateModel.sol";
 import "./lib/IntMath.sol";
 
 import "./OracleV1.sol";
+import "hardhat/console.sol";
 
 /**
  * @dev This is a helper contract, similarly to a library, to calculate "safe" values. Safe in the essence that they give enough room to avoid liquidation.
@@ -94,10 +95,12 @@ contract SafeVenus {
             vault.collateralLimit()
         );
 
+        uint256 borrowRate = vToken.borrowRatePerBlock();
+
+        if (borrowRate == 0) return enforcedLimit;
+
         // We calculate a percentage on based profit/cost
-        uint256 optimalLimit = vToken.supplyRatePerBlock().bdiv(
-            vToken.borrowRatePerBlock()
-        );
+        uint256 optimalLimit = vToken.supplyRatePerBlock().bdiv(borrowRate);
 
         // To make sure we stay within the protocol limit we take the minimum between the optimal and enforced limit.
         return enforcedLimit.min(optimalLimit);
@@ -169,6 +172,8 @@ contract SafeVenus {
         // Get the current positions of the `vault` in the `vToken` market.
         (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
 
+        require(supply > 0, "SV: no supply");
+
         // Get our current collateral requirement ratio
         uint256 currentCollateralFactor = borrow.bdiv(supply);
 
@@ -180,10 +185,17 @@ contract SafeVenus {
         // Maximum amount we can borrow based on our supply.
         uint256 maxBorrowAmount = supply.bmul(_collateralLimit);
 
+        // If we are borrowing more than the recommended amount. We return 0;
+        if (borrow > maxBorrowAmount) return 0;
+
         // We calculate how much more we can borrow until we hit our safe maximum.
         // We check how much liquidity there is. We cannot borrow more than the liquidity.
-        uint256 newBorrowAmount = maxBorrowAmount.min(vToken.getCash()) -
-            borrow;
+        uint256 newBorrowAmount = (maxBorrowAmount - borrow).min(
+            vToken.getCash()
+        );
+
+        // No point to borrow if there is no cash.
+        if (newBorrowAmount == 0) return 0;
 
         // Take a ratio between our current borrow amount and what
         uint256 newBorrowAmountRatio = borrow > 0
@@ -210,8 +222,7 @@ contract SafeVenus {
         // We only recomment a borrow amount if it is profitable and reduce it by 5% to give a safety margin.
         // 0 represents do not borrow.
         return
-            supplyInterestUSD + rewardInterestUSD >
-                borrowInterestUSD + borrowInterestUSD.bmul(0.1e18) // We increase the costs by 10% to give a safety margin
+            supplyInterestUSD + rewardInterestUSD > borrowInterestUSD
                 ? newBorrowAmount.bmul(0.95e18)
                 : 0;
     }
@@ -223,7 +234,7 @@ contract SafeVenus {
      * @param vToken A Venus vToken contract
      */
     function safeRedeem(IVenusVault vault, IVToken vToken)
-        external
+        public
         returns (uint256)
     {
         // Get current `vault` borrow and supply balances in `vToken`
@@ -232,8 +243,13 @@ contract SafeVenus {
             vToken
         );
 
+        // If we are not borrowing, we can redeem as much as the liquidity allows
+        if (borrowBalance == 0) return supplyBalance.min(vToken.getCash());
+
         // borrowBalance / collateralLimitRatio will give us a safe supply value that we need to maintain to avoid liquidation.
         uint256 safeCollateral = borrowBalance.bdiv(
+            // Should never be 0. As Venus uses the overcollaterized loan model. Cannot borrow without having collatera.
+            // If it is 0, it should throw to alert there is an issue with Venus.
             safeCollateralRatio(vault, vToken)
         );
 
@@ -245,7 +261,7 @@ contract SafeVenus {
 
         // We cannot redeem more than the current liquidity in the market.
         // This value can be used to safely redeem from the supply or borrow.
-        return redeemAmount.min(vToken.getCash().bmul(0.95e18));
+        return redeemAmount.min(vToken.getCash()).bmul(0.95e18);
     }
 
     /**
@@ -276,8 +292,9 @@ contract SafeVenus {
                 totalBorrow
         );
 
-        // Get current borrow interest rate for the `vaultBorrow`.
-        uint256 borrowInterestRatePerBlock = predictBorrowRate(vToken, amount);
+        // Get current borrow interest rate times the amount in `vault`.
+        uint256 borrowInterestRatePerBlock = predictBorrowRate(vToken, amount)
+            .bmul(vaultBorrow);
 
         // Get the cost of borrowing per block in USD
         uint256 underlyingInUSDPerBlock = ORACLE.getTokenUSDPrice(
@@ -319,6 +336,7 @@ contract SafeVenus {
                 vaultUnderlyingBalance) / totalSupplyAmount)
         );
 
+        // Get current supply rate times the amout in `vault`.
         uint256 underlyingSupplyRate = predictSupplyRate(
             IVToken(vToken),
             amount
@@ -391,5 +409,40 @@ contract SafeVenus {
                 vToken.totalReserves(),
                 vToken.reserveFactorMantissa()
             );
+    }
+
+    /**
+     * @dev Helper function to see if a vault should safely deleverage. It returns the amount to deleverage.
+     * A 0 means the vault should not deleverage and should probably borrow.
+     *
+     * @param vault A vault contract
+     * @param vToken A Venus vToken contract
+     */
+    function deleverage(IVenusVault vault, IVToken vToken)
+        external
+        returns (uint256)
+    {
+        // Get a safe ratio between borrow amount and collateral required.
+        uint256 _collateralLimit = safeCollateralRatio(vault, vToken);
+
+        // Get the current positions of the `vault` in the `vToken` market.
+        (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
+
+        // Maximum amount we can borrow based on our supply.
+        uint256 maxBorrowAmount = supply.bmul(_collateralLimit);
+
+        // Check if we are above the safe maximum amount. We find the difference.
+        uint256 amount = borrow > maxBorrowAmount
+            ? borrow - maxBorrowAmount
+            : 0;
+
+        // If we are not above the maximum amount. We do not need to deleverage and return 0.
+        if (amount == 0) return 0;
+
+        // Get the current safe redeem amount to avoid liquidation
+        uint256 safeAmount = safeRedeem(vault, vToken);
+
+        // We return the safest amount to deleverage using the supply without getting liquidated.
+        return amount > safeAmount ? safeAmount : amount;
     }
 }

@@ -76,4 +76,8 @@ contract MockVenusTroller is IVenusTroller {
         liquidity.liquidity = _liquidity;
         liquidity.shortfall = shortfall;
     }
+
+    function __setVenusSpeeds(address vToken, uint256 amount) external {
+        venusSpeeds[vToken] = amount;
+    }
 }

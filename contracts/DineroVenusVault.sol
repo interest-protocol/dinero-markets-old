@@ -53,7 +53,7 @@ contract DineroVenusVault is Ownable, Pausable {
     address public immutable WBNB;
 
     // solhint-disable-next-line var-name-mixedcase
-    IVenustroller public immutable VENUS_TROLLER;
+    IVenusTroller public immutable VENUS_TROLLER;
 
     //solhint-disable-next-line var-name-mixedcase
     Dinero public immutable DINERO;
@@ -84,7 +84,7 @@ contract DineroVenusVault is Ownable, Pausable {
     constructor(
         address xvs,
         address wbnb,
-        IVenustroller venusTroller,
+        IVenusTroller venusTroller,
         Dinero dinero,
         OracleV1 oracle,
         SafeVenus safeVenus
