@@ -556,7 +556,7 @@ describe('SafeVenus', () => {
         parseEther('2')
       );
   });
-  it.only('returns a safe amount to deleverage from the supply', async () => {
+  it('returns a safe amount to deleverage from the supply', async () => {
     await Promise.all([
       // Safe collateral ratio of 0.75
       vToken.__setSupplyRatePerBlock(parseEther('0.06')),

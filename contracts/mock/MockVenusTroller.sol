@@ -31,8 +31,13 @@ contract MockVenusTroller is IVenusTroller {
 
     mapping(address => uint256) public venusSpeeds;
 
+    function enterMarkets(address[] calldata)
+        external
+        returns (uint256[] memory data)
     //solhint-disable-next-line no-empty-blocks
-    function enterMarkets(address[] calldata) external {}
+    {
+
+    }
 
     //solhint-disable-next-line no-empty-blocks
     function exitMarket(address) external {}
@@ -48,6 +53,9 @@ contract MockVenusTroller is IVenusTroller {
     {
         return (liquidity.error, liquidity.liquidity, liquidity.shortfall);
     }
+
+    //solhint-disable-next-line no-empty-blocks
+    function claimVenus(address) external {}
 
     //solhint-disable-next-line no-empty-blocks
     function claimVenus(address, address[] calldata) external {}

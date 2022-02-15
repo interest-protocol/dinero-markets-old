@@ -2,7 +2,9 @@
 pragma solidity 0.8.10;
 
 interface IVenusTroller {
-    function enterMarkets(address[] memory _vtokens) external;
+    function enterMarkets(address[] memory _vtokens)
+        external
+        returns (uint256[] memory);
 
     function exitMarket(address _vtoken) external;
 
@@ -23,6 +25,8 @@ interface IVenusTroller {
             uint256,
             uint256
         );
+
+    function claimVenus(address holder) external;
 
     function claimVenus(address holder, address[] memory vTokens) external;
 
