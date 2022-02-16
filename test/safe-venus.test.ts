@@ -78,7 +78,7 @@ describe('SafeVenus', () => {
           ['Ether', 'ETH', INITIAL_SUPPLY],
           ['Wrapped BNB', 'WBNB', INITIAL_SUPPLY],
           ['Binance USD', 'BUSD', INITIAL_SUPPLY],
-          ['Venus BTC', 'vBTC', INITIAL_SUPPLY],
+          ['Venus BTC', 'vBTC', INITIAL_SUPPLY.mul(2)],
           [],
           [parseEther('0.9')],
           [18, 'XSV/USD', 2],
@@ -102,7 +102,6 @@ describe('SafeVenus', () => {
       vToken.__setUnderlying(ETH.address),
       vToken.__setInterestRateModel(interestRateModel.address),
       vToken.__setReserveFactorMantissa(parseEther('1')),
-      vToken.connect(owner).mint(INITIAL_SUPPLY),
       oracle.connect(owner).setFeed(XVS.address, xvsUSDFeed.address, 0),
       oracle.connect(owner).setFeed(ETH.address, ethUSDFeed.address, 0),
       xvsUSDFeed.setAnswer(parseEther('10')),
@@ -479,7 +478,7 @@ describe('SafeVenus', () => {
         .to.emit(testSafeVenus, 'SupplyRewardPerBlock')
         .withArgs(0);
     });
-    it('returns the current supply reward', async () => {
+    it.only('returns the current supply reward', async () => {
       await Promise.all([
         vToken.__setExchangeRateCurrent(parseEther('1.1')),
         vToken.__setBalanceOfUnderlying(vault.address, parseEther('200')),

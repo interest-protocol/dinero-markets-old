@@ -246,4 +246,8 @@ contract MockVenusToken is ERC20 {
     function __setRepayReturnValue(uint128 amount) external {
         returnValues.repay = amount;
     }
+
+    function __setMintReturn(uint128 amount) external {
+        returnValues.mint = amount;
+    }
 }
