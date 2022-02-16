@@ -1,12 +1,19 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+import "../lib/IntMath.sol";
 
 import "./MockERC20.sol";
 
 //solhint-disable-next-line max-states-count
 contract MockVenusToken is ERC20 {
+    using IntMath for uint256;
+    using SafeERC20 for IERC20;
+
     struct AccountSnapShot {
         uint256 error;
         uint256 vTokenBalance;
@@ -46,19 +53,14 @@ contract MockVenusToken is ERC20 {
 
     uint256 public totalBorrowsCurrent;
 
+    uint256 public _collateralFactor;
+
     struct ReturnValue {
         uint128 borrow;
         uint128 redeem;
         uint128 repay;
         uint128 mint;
     }
-
-    struct MintValues {
-        uint128 reddem;
-        uint128 borrow;
-    }
-
-    MintValues public mintValues;
 
     ReturnValue public returnValues;
 
@@ -101,28 +103,74 @@ contract MockVenusToken is ERC20 {
 
         if (value > 0) return value;
 
-        _mint(_msgSender(), (amount * exchangeRateCurrent) / 1 ether);
+        IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
+
+        _mint(_msgSender(), amount.bdiv(exchangeRateCurrent));
+
         return 0;
     }
 
-    function redeem(uint256) external view returns (uint256) {
-        return returnValues.redeem;
+    function redeem(uint256 amount) external returns (uint256) {
+        uint256 value = returnValues.redeem;
+
+        if (value > 0) return value;
+
+        if (
+            (balanceOfUnderlying[msg.sender] - amount).bdiv(
+                _collateralFactor
+            ) >= borrowBalanceCurrent[msg.sender]
+        ) {
+            IERC20(underlying).safeTransfer(
+                msg.sender,
+                amount.bmul(exchangeRateCurrent)
+            );
+            _burn(msg.sender, amount);
+            return 0;
+        }
+
+        return 1;
     }
 
-    function redeemUnderlying(uint256) external returns (uint256) {
-        MockERC20(underlying).mint(msg.sender, mintValues.reddem);
-        return returnValues.redeem;
+    function redeemUnderlying(uint256 amount) external returns (uint256) {
+        uint256 value = returnValues.redeem;
+
+        if (value > 0) return value;
+
+        if (
+            (balanceOfUnderlying[msg.sender] - amount).bdiv(
+                _collateralFactor
+            ) >= borrowBalanceCurrent[msg.sender]
+        ) {
+            IERC20(underlying).safeTransfer(msg.sender, amount);
+            _burn(msg.sender, amount.bdiv(exchangeRateCurrent));
+            return 0;
+        }
+
+        return 1;
     }
 
-    function borrow(uint256) external returns (uint256) {
-        MockERC20(underlying).mint(msg.sender, mintValues.borrow);
-        return returnValues.borrow;
+    function borrow(uint256 amount) external returns (uint256) {
+        uint256 value = returnValues.borrow;
+
+        if (value > 0) return value;
+
+        if (
+            (balanceOfUnderlying[msg.sender]).bdiv(_collateralFactor) >=
+            borrowBalanceCurrent[msg.sender] + amount
+        ) {
+            IERC20(underlying).safeTransfer(msg.sender, amount);
+            return 0;
+        }
+
+        return 1;
     }
 
     function repayBorrow(uint256 amount) external returns (uint256) {
         uint256 value = returnValues.repay;
 
         if (value > 0) return value;
+
+        IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
 
         borrowBalanceCurrent[msg.sender] -= amount;
 
@@ -231,16 +279,8 @@ contract MockVenusToken is ERC20 {
         totalBorrowsCurrent = amount;
     }
 
-    function __setRedeemUnlderyingValue(uint128 amount) external {
-        mintValues.reddem = amount;
-    }
-
     function __setBorrowReturn(uint128 amount) external {
         returnValues.borrow = amount;
-    }
-
-    function __setMintBorrowValue(uint128 amount) external {
-        mintValues.borrow = amount;
     }
 
     function __setRepayReturnValue(uint128 amount) external {
@@ -249,5 +289,17 @@ contract MockVenusToken is ERC20 {
 
     function __setMintReturn(uint128 amount) external {
         returnValues.mint = amount;
+    }
+
+    function __setCollateralFactor(uint256 amount) external {
+        _collateralFactor = amount;
+    }
+
+    function __increaseBorrow(address account, uint256 amount) external {
+        borrowBalanceCurrent[account] += amount;
+    }
+
+    function __addSupply(uint256 amount) external {
+        MockERC20(underlying).mint(address(this), amount);
     }
 }

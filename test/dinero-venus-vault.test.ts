@@ -233,5 +233,38 @@ describe('DineroVenusVault', () => {
         'Ownable: caller is not the owner'
       );
     });
+    it('can add and remove VTokens support', async () => {
+      expect(
+        await dineroVenusVault.isUnderlyingSupported(USDC.address)
+      ).to.be.equal(true);
+
+      expect(await dineroVenusVault.vTokenOf(USDC.address)).to.be.equal(
+        vUSDC.address
+      );
+
+      await expect(dineroVenusVault.removeVToken(vUSDC.address))
+        .to.emit(dineroVenusVault, 'RemoveVToken')
+        .withArgs(vUSDC.address, USDC.address);
+
+      expect(
+        await dineroVenusVault.isUnderlyingSupported(USDC.address)
+      ).to.be.equal(false);
+
+      expect(await dineroVenusVault.vTokenOf(USDC.address)).to.be.equal(
+        ethers.constants.AddressZero
+      );
+
+      await expect(dineroVenusVault.addVToken(vUSDC.address))
+        .to.emit(dineroVenusVault, 'AddVToken')
+        .withArgs(vUSDC.address, USDC.address);
+
+      expect(
+        await dineroVenusVault.isUnderlyingSupported(USDC.address)
+      ).to.be.equal(true);
+
+      expect(await dineroVenusVault.vTokenOf(USDC.address)).to.be.equal(
+        vUSDC.address
+      );
+    });
   });
 });

@@ -56,9 +56,13 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         uint256 vTokenAmount
     );
 
-    event CompoundDepth(uint256 oldValue, uint256 newValue);
+    event CompoundDepth(uint256 oldValue, uint256 indexed newValue);
 
-    event CollateralLimit(uint256 oldValue, uint256 newValue);
+    event CollateralLimit(uint256 oldValue, uint256 indexed newValue);
+
+    event AddVToken(IVToken indexed vToken, address indexed underlying);
+
+    event RemoveVToken(IVToken indexed vToken, address indexed underlying);
 
     /*///////////////////////////////////////////////////////////////
                                 STRUCT
@@ -722,6 +726,8 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // Update global state
         _underlyingWhitelist.add(underlying);
         vTokenOf[underlying] = vToken;
+
+        emit AddVToken(vToken, underlying);
     }
 
     /**
@@ -746,6 +752,8 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // Update global state
         _underlyingWhitelist.remove(underlying);
         delete vTokenOf[underlying];
+
+        emit RemoveVToken(vToken, underlying);
     }
 
     /**
