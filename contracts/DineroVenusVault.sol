@@ -56,6 +56,10 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         uint256 vTokenAmount
     );
 
+    event CompoundDepth(uint256 oldValue, uint256 newValue);
+
+    event CollateralLimit(uint256 oldValue, uint256 newValue);
+
     /*///////////////////////////////////////////////////////////////
                                 STRUCT
     //////////////////////////////////////////////////////////////*/
@@ -95,7 +99,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
     uint256 private constant NO_ERROR = 0;
 
     // How many times the contract is allowed to open loans backed by previous loans.
-    uint256 public compoundDepth; // No more than 5
+    uint8 public compoundDepth; // No more than 5
 
     // Stable coins supported by this contract.
     // BUSD - 0xe9e7cea3dedca5984780bafc599bd69add087d56 18 decimals
@@ -708,7 +712,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
      *
      * - Only the owner can call to assure proper issuance of Dinero (only support stable coins) and legitimacy of the markets.
      */
-    function addUnderlying(IVToken vToken) external onlyOwner {
+    function addVToken(IVToken vToken) external onlyOwner {
         // Get the underlying contract of the VToken.
         address underlying = vToken.underlying();
 
@@ -721,7 +725,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
     }
 
     /**
-     * @dev Removes support for an undrlying.
+     * @dev Removes support for an underlying.
      *
      * @param vToken The Vtoken market we wish to remove support for.
      *
@@ -729,7 +733,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
      *
      * - Only the owner can call to avoid griefing.
      */
-    function removeUnderlying(IVToken vToken) external onlyOwner {
+    function removeVToken(IVToken vToken) external onlyOwner {
         // Get the underlying contract of the VToken.
         address underlying = vToken.underlying();
 
@@ -841,8 +845,11 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
      * - Must be below 90%  to avoid liquidations. In reality will not be set above 70%.
      */
     function setCollateralLimit(uint256 _collateralLimit) external onlyOwner {
-        require(0.9e18 >= _collateralLimit, "DV: too high");
+        require(0.9e18 > _collateralLimit, "DV: must be lower than 90%");
+        uint256 previousValue = collateralLimit;
         collateralLimit = _collateralLimit;
+
+        emit CollateralLimit(previousValue, _collateralLimit);
     }
 
     /**
@@ -856,7 +863,11 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
      *
      * - Only the owner can call to ensure we do not hage highly leveraged positions.
      */
-    function setCompoundDepth(uint256 _compoundDepth) external onlyOwner {
+    function setCompoundDepth(uint8 _compoundDepth) external onlyOwner {
+        require(20 > _compoundDepth, "DV: must be lower than 20");
+        uint256 previousValue = compoundDepth;
         compoundDepth = _compoundDepth;
+
+        emit CompoundDepth(previousValue, _compoundDepth);
     }
 }

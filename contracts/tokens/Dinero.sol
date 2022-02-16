@@ -15,6 +15,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/draft-ERC20Permit.sol";
 /**
  * @dev This is the stable coin of Interest Protocol that has it's value pegged to the USD and guaranteed by collateral in various markets and vaults.
  * The goal is to have Vaults and Markets be able to mint and burn them to keep the price pegged to USD based on their collateral.
+ * The longer term vision for DINERO, is to give control to a DAO that will grant/revoke roles to other protocols to  grow this stable coin
  *
  * @notice Please note that roles have immense power and need to be granted to secure contracts, multisigs and timelocks.
  * @notice It supports https://eips.ethereum.org/EIPS/eip-2612[EIP-2612].

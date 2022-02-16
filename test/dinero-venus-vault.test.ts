@@ -1,5 +1,5 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-// import { expect } from 'chai';
+import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import {
@@ -44,7 +44,7 @@ describe('DineroVenusVault', () => {
   beforeEach(async () => {
     [
       [owner, alice, bob, feeTo],
-      [XVS, WBNB, WETH, USDC, DAI, vUSDC, vDAI, dinero, safeVenus],
+      [XVS, WBNB, USDC, DAI, vUSDC, vDAI, WETH, dinero, safeVenus],
     ] = await Promise.all([
       ethers.getSigners(),
       multiDeploy(
@@ -162,8 +162,76 @@ describe('DineroVenusVault', () => {
         owner.address,
         0
       ),
-      dineroVenusVault.connect(owner).addUnderlying(USDC.address),
-      dineroVenusVault.connect(owner).addUnderlying(DAI.address),
+      dineroVenusVault.connect(owner).addVToken(vUSDC.address),
+      dineroVenusVault.connect(owner).addVToken(vDAI.address),
     ]);
+  });
+
+  describe('Owner functions', () => {
+    it('updates the compoundDepth', async () => {
+      await expect(
+        dineroVenusVault.connect(alice).setCompoundDepth(0)
+      ).to.revertedWith('Ownable: caller is not the owner');
+
+      expect(await dineroVenusVault.compoundDepth()).to.be.equal(0);
+
+      await expect(dineroVenusVault.connect(owner).setCompoundDepth(5))
+        .to.emit(dineroVenusVault, 'CompoundDepth')
+        .withArgs(0, 5);
+
+      expect(await dineroVenusVault.compoundDepth()).to.be.equal(5);
+
+      await expect(
+        dineroVenusVault.connect(owner).setCompoundDepth(20)
+      ).to.revertedWith('DV: must be lower than 20');
+
+      await expect(
+        dineroVenusVault.connect(owner).setCompoundDepth(21)
+      ).to.revertedWith('DV: must be lower than 20');
+    });
+    it('updates the collateral limit', async () => {
+      await expect(
+        dineroVenusVault.connect(alice).setCollateralLimit(0)
+      ).to.revertedWith('Ownable: caller is not the owner');
+
+      expect(await dineroVenusVault.collateralLimit()).to.be.equal(
+        parseEther('0.5')
+      );
+
+      await expect(
+        dineroVenusVault.connect(owner).setCollateralLimit(parseEther('0.8'))
+      )
+        .to.emit(dineroVenusVault, 'CollateralLimit')
+        .withArgs(parseEther('0.5'), parseEther('0.8'));
+
+      expect(await dineroVenusVault.collateralLimit()).to.be.equal(
+        parseEther('0.8')
+      );
+
+      await expect(
+        dineroVenusVault.setCollateralLimit(parseEther('0.91'))
+      ).to.revertedWith('DV: must be lower than 90%');
+    });
+    it('can pause and unpause the contract', async () => {
+      expect(await dineroVenusVault.paused()).to.be.equal(false);
+
+      await expect(dineroVenusVault.connect(owner).pause())
+        .to.emit(dineroVenusVault, 'Paused')
+        .withArgs(owner.address);
+
+      expect(await dineroVenusVault.paused()).to.be.equal(true);
+
+      await expect(dineroVenusVault.connect(owner).unpause())
+        .to.emit(dineroVenusVault, 'Unpaused')
+        .withArgs(owner.address);
+
+      await expect(dineroVenusVault.connect(alice).unpause()).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+
+      await expect(dineroVenusVault.connect(alice).pause()).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
   });
 });
