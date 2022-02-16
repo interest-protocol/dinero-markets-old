@@ -478,7 +478,7 @@ describe('SafeVenus', () => {
         .to.emit(testSafeVenus, 'SupplyRewardPerBlock')
         .withArgs(0);
     });
-    it.only('returns the current supply reward', async () => {
+    it('returns the current supply reward', async () => {
       await Promise.all([
         vToken.__setExchangeRateCurrent(parseEther('1.1')),
         vToken.__setBalanceOfUnderlying(vault.address, parseEther('200')),
