@@ -50,7 +50,6 @@ describe('SafeVenus', () => {
         WBNB,
         BUSD,
         vToken,
-        venusTroller,
         TWAP,
         vault,
         xvsUSDFeed,
@@ -67,7 +66,6 @@ describe('SafeVenus', () => {
           'MockERC20',
           'MockERC20',
           'MockVenusToken',
-          'MockVenusTroller',
           'MockTWAP',
           'MockVenusVault',
           'MockChainLinkFeed',
@@ -82,7 +80,6 @@ describe('SafeVenus', () => {
           ['Binance USD', 'BUSD', INITIAL_SUPPLY],
           ['Venus BTC', 'vBTC', INITIAL_SUPPLY],
           [],
-          [],
           [parseEther('0.9')],
           [18, 'XSV/USD', 2],
           [18, 'ETH/USD', 2],
@@ -92,12 +89,13 @@ describe('SafeVenus', () => {
       ),
     ]);
 
-    oracle = await deploy('OracleV1', [
-      TWAP.address,
-      bnbUSDFeed.address,
-      WBNB.address,
-      BUSD.address,
-    ]);
+    [oracle, venusTroller] = await multiDeploy(
+      ['OracleV1', 'MockVenusTroller'],
+      [
+        [TWAP.address, bnbUSDFeed.address, WBNB.address, BUSD.address],
+        [XVS.address],
+      ]
+    );
 
     [safeVenus] = await Promise.all([
       deploy('SafeVenus', [venusTroller.address, XVS.address, oracle.address]),

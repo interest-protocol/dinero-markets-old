@@ -20,6 +20,7 @@ import "./SafeVenus.sol";
 
 /**
  * @dev This is a Vault to mint Dinero. The idea is to always keep the vault assets 1:1 to Dinero minted.
+ * This contract needs the {MINTER_ROLE} from {DINERO}.
  * Depositors will earn an interest on their deposits while losing 0 liquidity.
  * The vault employs Venus Protocol, https://app.venus.io/dashboard, to investment all it's assets by supplying them and opening loans of the same asset and keep doing this process as long as it is profitable.
  * We rely on the {SafeVenus} contract to safely interact with Venus to avoid liquidation. The vault employes a conservative strategy by always borrowing and supplying the same asset at a ratio lower than required by the Venus Protocol.
@@ -853,7 +854,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
      *
      * Requirements:
      *
-     * - Only the owner can call to risky
+     * - Only the owner can call to ensure we do not hage highly leveraged positions.
      */
     function setCompoundDepth(uint256 _compoundDepth) external onlyOwner {
         compoundDepth = _compoundDepth;

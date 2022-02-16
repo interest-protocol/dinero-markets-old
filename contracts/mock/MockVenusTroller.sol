@@ -2,6 +2,9 @@
 pragma solidity 0.8.10;
 
 import "../interfaces/IVenusTroller.sol";
+import "./MockERC20.sol";
+
+//solhint-disable
 
 contract MockVenusTroller is IVenusTroller {
     struct Market {
@@ -31,12 +34,25 @@ contract MockVenusTroller is IVenusTroller {
 
     mapping(address => uint256) public venusSpeeds;
 
+    uint256 private _enterValueReturn;
+
+    uint256 private _claimVenusAmount;
+
+    MockERC20 public immutable XVS;
+
+    constructor(MockERC20 xvs) {
+        XVS = xvs;
+    }
+
     function enterMarkets(address[] calldata)
         external
-        returns (uint256[] memory data)
-    //solhint-disable-next-line no-empty-blocks
+        view
+        returns (uint256[] memory)
     {
+        uint256[] memory data = new uint256[](1);
+        data[0] = _enterValueReturn;
 
+        return data;
     }
 
     //solhint-disable-next-line no-empty-blocks
@@ -58,7 +74,9 @@ contract MockVenusTroller is IVenusTroller {
     function claimVenus(address) external {}
 
     //solhint-disable-next-line no-empty-blocks
-    function claimVenus(address, address[] calldata) external {}
+    function claimVenus(address account, address[] calldata) external {
+        XVS.mint(account, _claimVenusAmount);
+    }
 
     function __setMarkets(
         address account,
@@ -87,5 +105,13 @@ contract MockVenusTroller is IVenusTroller {
 
     function __setVenusSpeeds(address vToken, uint256 amount) external {
         venusSpeeds[vToken] = amount;
+    }
+
+    function __setEnterMarketReturn(uint256 value) external {
+        _enterValueReturn = value;
+    }
+
+    function __setClaimVenusValue(uint256 value) external {
+        _claimVenusAmount = value;
     }
 }
