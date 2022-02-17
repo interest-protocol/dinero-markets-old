@@ -293,7 +293,7 @@ contract SafeVenus {
         // Get the current rewards given by borrowing in USD per block.
         uint256 xvsInUSDPerBlock = ORACLE.getTokenUSDPrice(
             XVS,
-            // Venus speed has 18
+            // Venus speed has 18 decimals
             VENUS_TROLLER.venusSpeeds(address(vToken)).mulDiv(
                 vaultBorrow,
                 totalBorrow
