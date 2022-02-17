@@ -98,6 +98,11 @@ contract MockVenusToken is ERC20 {
         return _seize;
     }
 
+    // To mimic the decimals of cEther
+    function decimals() public pure override(ERC20) returns (uint8) {
+        return 8;
+    }
+
     function mint(uint256 amount) external returns (uint256) {
         uint256 value = returnValues.mint;
 
