@@ -120,6 +120,10 @@ describe('DineroVenusVault', () => {
         liquidityRouter.address,
         ethers.constants.MaxUint256
       ),
+      USDC.connect(owner).approve(
+        dineroVenusVault.address,
+        ethers.constants.MaxUint256
+      ),
       DAI.connect(alice).approve(
         dineroVenusVault.address,
         ethers.constants.MaxUint256
@@ -139,6 +143,9 @@ describe('DineroVenusVault', () => {
       dineroVenusVault.connect(owner).setCollateralLimit(parseEther('0.5')),
       vDAI.__setUnderlying(DAI.address),
       vUSDC.__setUnderlying(USDC.address),
+      vDAI.__setCollateralFactor(parseEther('0.8')),
+      vUSDC.__setCollateralFactor(parseEther('0.9')),
+      dineroVenusVault.connect(owner).setCompoundDepth(3),
     ]);
 
     await Promise.all([
@@ -164,20 +171,29 @@ describe('DineroVenusVault', () => {
       ),
       dineroVenusVault.connect(owner).addVToken(vUSDC.address),
       dineroVenusVault.connect(owner).addVToken(vDAI.address),
+      // Taken from Venus https://bscscan.com/token/0xeca88125a5adbe82614ffc12d0db554e2e2867c8?a=0xea6f7275f790dd22efc363873ca9b35d3c196509#readProxyContract
+      vUSDC.__setExchangeRateCurrent(
+        ethers.BigNumber.from('213429808155036526652502393')
+      ),
+      vDAI.__setExchangeRateCurrent(
+        ethers.BigNumber.from('210574688941918400320722412')
+      ),
+      safeVenus.__setVTokenCollateralFactor(vUSDC.address, parseEther('0.9')),
+      safeVenus.__setVTokenCollateralFactor(vDAI.address, parseEther('0.8')),
     ]);
   });
 
-  describe('Owner functions', () => {
+  describe('Simple Owner functions', () => {
     it('updates the compoundDepth', async () => {
       await expect(
         dineroVenusVault.connect(alice).setCompoundDepth(0)
       ).to.revertedWith('Ownable: caller is not the owner');
 
-      expect(await dineroVenusVault.compoundDepth()).to.be.equal(0);
+      expect(await dineroVenusVault.compoundDepth()).to.be.equal(3);
 
       await expect(dineroVenusVault.connect(owner).setCompoundDepth(5))
         .to.emit(dineroVenusVault, 'CompoundDepth')
-        .withArgs(0, 5);
+        .withArgs(3, 5);
 
       expect(await dineroVenusVault.compoundDepth()).to.be.equal(5);
 
@@ -265,6 +281,187 @@ describe('DineroVenusVault', () => {
       expect(await dineroVenusVault.vTokenOf(USDC.address)).to.be.equal(
         vUSDC.address
       );
+    });
+  });
+  describe('function: emergencyRecovery', async () => {
+    it('allows only the owner to call when it is paused', async () => {
+      await expect(
+        dineroVenusVault.connect(alice).emergencyRecovery()
+      ).to.revertedWith('Ownable: caller is not the owner');
+
+      await expect(
+        dineroVenusVault.connect(owner).emergencyRecovery()
+      ).to.revertedWith('Pausable: not paused');
+    });
+    it('reverts if it fails to redeem or repay', async () => {
+      // vToken redeemUnderlying function will throw like Compound.
+      await Promise.all([
+        vUSDC.__setRedeemUnderlyingReturn(1),
+        dineroVenusVault
+          .connect(alice)
+          .deposit(USDC.address, parseEther('100000')),
+      ]);
+
+      await dineroVenusVault.leverage(vUSDC.address);
+      await dineroVenusVault.connect(owner).pause();
+
+      await expect(
+        dineroVenusVault.connect(owner).emergencyRecovery()
+      ).to.revertedWith('DV: failed to redeem');
+
+      // vToken redeemUnderlying function will throw like Compound.
+      await Promise.all([
+        vUSDC.__setRedeemUnderlyingReturn(0),
+        vUSDC.__setRepayReturnValue(1),
+      ]);
+      await expect(
+        dineroVenusVault.connect(owner).emergencyRecovery()
+      ).to.revertedWith('DV: failed to repay');
+
+      await Promise.all([
+        vUSDC.__setRedeemReturn(1),
+        vUSDC.__setRepayReturnValue(0),
+      ]);
+
+      await expect(
+        dineroVenusVault.connect(owner).emergencyRecovery()
+      ).to.revertedWith('DV: failed to redeem vtokens');
+    });
+    it('repays all USDC and DAI', async () => {
+      // vToken redeemUnderlying function will throw like Compound.
+      await Promise.all([
+        dineroVenusVault
+          .connect(alice)
+          .deposit(USDC.address, parseEther('100000')),
+        dineroVenusVault.connect(bob).deposit(DAI.address, parseEther('1000')),
+      ]);
+
+      const [vUSDCBalance, vDAIBalance] = await Promise.all([
+        vUSDC.balanceOf(dineroVenusVault.address),
+        vDAI.balanceOf(dineroVenusVault.address),
+      ]);
+
+      await dineroVenusVault.leverage(vUSDC.address);
+      await dineroVenusVault.connect(owner).pause();
+
+      await expect(dineroVenusVault.connect(owner).emergencyRecovery())
+        .to.emit(dineroVenusVault, 'EmergencyRecovery')
+        .withArgs(vUSDCBalance)
+        .to.emit(dineroVenusVault, 'EmergencyRecovery')
+        .withArgs(vDAIBalance);
+
+      const [vUSDCBalance2, vDAIBalance2] = await Promise.all([
+        vUSDC.balanceOf(dineroVenusVault.address),
+        vDAI.balanceOf(dineroVenusVault.address),
+      ]);
+
+      expect(vUSDCBalance2).to.be.equal(0);
+      expect(vDAIBalance2).to.be.equal(0);
+    });
+    it('repays all USDC and not DAI', async () => {
+      // vToken redeemUnderlying function will throw like Compound.
+      await dineroVenusVault
+        .connect(alice)
+        .deposit(USDC.address, parseEther('100000'));
+
+      await dineroVenusVault.leverage(vUSDC.address);
+      await dineroVenusVault.connect(owner).pause();
+
+      const receipt = await dineroVenusVault.connect(owner).emergencyRecovery();
+
+      const awaitedReceipt = await receipt.wait();
+      expect(
+        awaitedReceipt.events?.filter((x) => x.event === 'EmergencyRecovery')
+          .length
+      ).to.be.equal(1);
+
+      expect(await vUSDC.balanceOf(dineroVenusVault.address)).to.be.equal(0);
+    });
+  });
+  describe('function: repayAll', async () => {
+    it('reverts if the caller is not the owner', async () => {
+      await expect(
+        dineroVenusVault.connect(alice).repayAll(vUSDC.address)
+      ).to.revertedWith('Ownable: caller is not the owner');
+    });
+    it('does not repay if there if the vault did not borrow', async () => {
+      await dineroVenusVault
+        .connect(alice)
+        .deposit(USDC.address, parseEther('100000'));
+
+      const vUSDCBalance = await vUSDC.balanceOf(dineroVenusVault.address);
+
+      await expect(
+        dineroVenusVault.connect(owner).repayAll(vUSDC.address)
+      ).to.not.emit(dineroVenusVault, 'RepayAndRedeem');
+
+      expect(await vUSDC.balanceOf(dineroVenusVault.address)).to.be.equal(
+        vUSDCBalance
+      );
+    });
+    it('does not repay if there if the vault borrowed but safe redeem is 0', async () => {
+      await dineroVenusVault
+        .connect(alice)
+        .deposit(USDC.address, parseEther('100000'));
+
+      await Promise.all([
+        dineroVenusVault.leverage(vUSDC.address),
+        safeVenus.__setSafeRedeem(0),
+      ]);
+
+      const vUSDCBalance = await vUSDC.balanceOf(dineroVenusVault.address);
+
+      await expect(
+        dineroVenusVault.connect(owner).repayAll(vUSDC.address)
+      ).to.not.emit(dineroVenusVault, 'RepayAndRedeem');
+
+      expect(await vUSDC.balanceOf(dineroVenusVault.address)).to.be.equal(
+        vUSDCBalance
+      );
+    });
+    it('repays all debt', async () => {
+      await dineroVenusVault
+        .connect(alice)
+        .deposit(USDC.address, parseEther('100000'));
+
+      await dineroVenusVault.leverage(vUSDC.address);
+
+      await safeVenus.safeRedeem(dineroVenusVault.address, vUSDC.address);
+
+      const redeemAmount = await safeVenus.safeRedeemReturn();
+
+      await expect(dineroVenusVault.connect(owner).repayAll(vUSDC.address))
+        .to.emit(dineroVenusVault, 'RepayAndRedeem')
+        .withArgs(vUSDC.address, redeemAmount);
+
+      await safeVenus.borrowAndSupply(dineroVenusVault.address, vUSDC.address);
+
+      const [borrowBalance, supplyBalance] = await Promise.all([
+        safeVenus.borrowBalance(),
+        safeVenus.supplyBalance(),
+      ]);
+
+      expect(borrowBalance).to.be.equal(0);
+      expect(supplyBalance).to.be.equal(parseEther('100000'));
+    });
+    it('calls repay and redeem multiple times', async () => {
+      await dineroVenusVault
+        .connect(alice)
+        .deposit(USDC.address, parseEther('100000'));
+
+      await dineroVenusVault.leverage(vUSDC.address);
+
+      const receipt = await dineroVenusVault
+        .connect(owner)
+        .repayAll(vUSDC.address);
+
+      const awaitedReceipt = await receipt.wait();
+
+      const array =
+        awaitedReceipt.events?.filter((x) => x.event === 'RepayAndRedeem') ||
+        [];
+
+      expect(array.length > 1).to.be.equal(true);
     });
   });
 });

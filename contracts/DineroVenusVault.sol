@@ -18,6 +18,7 @@ import "./lib/IntERC20.sol";
 
 import "./tokens/Dinero.sol";
 import "./SafeVenus.sol";
+import "hardhat/console.sol";
 
 /**
  * @dev This is a Vault to mint Dinero. The idea is to always keep the vault assets 1:1 to Dinero minted.
@@ -74,6 +75,10 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         uint256 currentTotalUnderlying,
         uint256 loss
     );
+
+    event EmergencyRecovery(uint256 vTokenAmount);
+
+    event RepayAndRedeem(IVToken, uint256 amount);
 
     /*///////////////////////////////////////////////////////////////
                                 STRUCT
@@ -424,7 +429,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // VTokens have different decimals, so we need to be careful when dividing and multiplying.
         uint256 decimals = address(vToken).safeDecimals();
 
-        // Uniswap style ,block scoping, to prevent stack too deep local variable errors.
+        // Uniswap style, block scoping, to prevent stack too deep local variable errors.
         {
             bool hadLoss;
             // It has to be done before calculating losses.
@@ -454,7 +459,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
                 userAccount.rewardsPaid;
         }
 
-        // Uniswap style ,block scoping, to prevent stack too deep local variable errors.
+        // Uniswap style, block scoping, to prevent stack too deep local variable errors.
         {
             // Amount of Dinero that needs to be burned.
             // Need to calculate this before updating {userAccount.vTokens}.
@@ -493,7 +498,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
             vToken.exchangeRateCurrent()
         );
 
-        // Uniswap style ,block scoping, to prevent stack too deep local variable errors.
+        // Uniswap style, block scoping, to prevent stack too deep local variable errors.
         {
             // Save gas
             SafeVenus safeVenus = SAFE_VENUS;
@@ -735,6 +740,11 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // Claim XVS in the `vToken`.
         VENUS_TROLLER.claimVenus(address(this), vTokenArray);
 
+        uint256 xvsBalance = _contractBalanceOf(xvs);
+
+        // There is no point to continue if there are no XVS rewards.
+        if (xvsBalance == 0) return;
+
         address underlying = vToken.underlying();
 
         // Build the swap path XVS -> WBNB -> UNDERLYING
@@ -746,7 +756,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // Sell XVS to `underlying` to reinvest back to Venus, as this is a stable vault. We do not want volatile assets.
         ROUTER.swapExactTokensForTokens(
             // Assume all XVS in the contract are rewards.
-            _contractBalanceOf(xvs),
+            xvsBalance,
             // We do not care about slippage
             0,
             // WBNB being the bridge token in BSC. This path will be the most liquid.
@@ -848,7 +858,8 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
      */
     function _invariant(uint256 value, string memory message) private pure {
         // Revert for all values other than 0 with the `message`.
-        require(value == NO_ERROR, message);
+        if (value == NO_ERROR) return;
+        revert(message);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -913,30 +924,27 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
      * Requirements:
      *
      * - Only the owner can call to avoid investment losses.
-     * - The strategy must be currently unprofitable.
      */
     function repayAll(IVToken vToken) public onlyOwner {
         // Save gas.
         SafeVenus safeVenus = SAFE_VENUS;
-
-        // We do not want to repay our loans, if it is profitable.
-        if (safeVenus.isProfitable(this, vToken, 0)) return;
-
         // We will keep repaying as long as we have enough redeemable amount in our supply.
         uint256 redeemAmount = safeVenus.safeRedeem(this, vToken);
 
-        uint256 borrowAmount;
-
-        (borrowAmount, ) = safeVenus.borrowAndSupply(this, vToken);
+        (uint256 borrowAmount, ) = safeVenus.borrowAndSupply(this, vToken);
 
         // Value to store the maximum amount we want to loop in a single call
         uint256 maxTries;
 
         // Keep redeeming and repaying as long as we have an open loan position, have enough redeemable amount or have done it 10x in this call.
         // We intend to only have a compound depth of 3. So an upperbound of 10 is more than enough.
-        while (redeemAmount > 0 && borrowAmount > 0 && maxTries <= 10) {
+
+        while (redeemAmount > 0 && borrowAmount > 0 && maxTries <= 15) {
             // redeem and repay
             _redeemAndRepay(vToken, redeemAmount);
+
+            emit RepayAndRedeem(vToken, redeemAmount);
+
             // Update the redeem and borrow amount to see if we can get to net iteration
             redeemAmount = safeVenus.safeRedeem(this, vToken);
             (borrowAmount, ) = safeVenus.borrowAndSupply(this, vToken);
@@ -963,8 +971,17 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // Repay and remove all supply
         for (uint256 i = 0; i < len; i++) {
             IVToken vToken = vTokenOf[underlyingArray[i]];
+
             repayAll(vToken);
-            vToken.redeem(_contractBalanceOf(address(vToken)));
+
+            uint256 vTokenBalance = _contractBalanceOf(address(vToken));
+            // we do not want to try to redeem if we have no vToken
+            if (vTokenBalance == 0) continue;
+            _invariant(
+                vToken.redeem(vTokenBalance),
+                "DV: failed to redeem vtokens"
+            );
+            emit EmergencyRecovery(vTokenBalance);
         }
     }
 

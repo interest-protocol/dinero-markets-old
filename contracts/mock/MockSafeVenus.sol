@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
+import "../interfaces/IVToken.sol";
+import "../interfaces/IVenusVault.sol";
+
+import "../lib/IntMath.sol";
+import "hardhat/console.sol";
+
 //solhint-disable
 
 contract MockSafeVenus {
-    uint256 public _safeCollateralRatio;
+    using IntMath for uint256;
 
-    uint256 public _borrow;
-
-    uint256 public _supply;
+    uint256 public constant DEFAULT = 1234;
 
     bool public _isProfitable;
-
-    uint256 public _safeBorrow;
-
-    uint256 public _safeRedeem;
 
     uint256 public _borrowInterestPerBlockCost;
     uint256 public _borrowInterestPerBlockReward;
@@ -27,30 +27,31 @@ contract MockSafeVenus {
 
     uint256 public _deleverage;
 
-    function safeCollateralRatio(address, address)
+    uint256 public _safeReddem = DEFAULT;
+
+    uint256 public safeRedeemReturn;
+
+    uint256 public borrowBalance;
+    uint256 public supplyBalance;
+
+    mapping(IVToken => uint256) public vTokenCollateralFactor;
+
+    function safeCollateralRatio(IVenusVault vault, IVToken vToken)
         public
         view
         returns (uint256)
     {
-        return _safeCollateralRatio;
+        return vault.collateralLimit().bmul(vTokenCollateralFactor[vToken]);
     }
 
-    function __setSafeCollateralRatio(uint256 amount) external {
-        _safeCollateralRatio = amount;
-    }
-
-    function borrowAndSupply(address, address)
+    function borrowAndSupply(IVenusVault vault, IVToken vToken)
         public
-        view
         returns (uint256 borrow, uint256 supply)
     {
-        borrow = _borrow;
-        supply = _supply;
-    }
-
-    function __setBorrowAndSupply(uint256 borrow, uint256 supply) external {
-        _borrow = borrow;
-        _supply = supply;
+        borrow = vToken.borrowBalanceCurrent(address(vault));
+        supply = vToken.balanceOfUnderlying(address(vault));
+        borrowBalance = borrow;
+        supplyBalance = supply;
     }
 
     function isProfitable(
@@ -65,20 +66,35 @@ contract MockSafeVenus {
         _isProfitable = predicate;
     }
 
-    function safeBorrow(address, address) external view returns (uint256) {
-        return _safeBorrow;
+    function safeBorrow(IVenusVault vault, IVToken vToken)
+        external
+        returns (uint256)
+    {
+        (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
+        uint256 collateralRatio = safeCollateralRatio(vault, vToken);
+
+        return supply.bmul(collateralRatio) - borrow;
     }
 
-    function __setSafeBorrow(uint256 amount) external {
-        _safeBorrow = amount;
+    function safeRedeem(IVenusVault vault, IVToken vToken)
+        public
+        returns (uint256)
+    {
+        if (_safeReddem != DEFAULT) return _safeReddem;
+
+        (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
+
+        uint256 collateralRatio = safeCollateralRatio(vault, vToken);
+
+        uint256 result = supply - borrow.bdiv(collateralRatio);
+
+        safeRedeemReturn = result;
+
+        return result;
     }
 
-    function safeRedeem(address, address) public view returns (uint256) {
-        return _safeRedeem;
-    }
-
-    function __safeRedeem(uint256 amount) external {
-        _safeRedeem = amount;
+    function __setSafeRedeem(uint256 amount) external {
+        _safeReddem = amount;
     }
 
     function borrowInterestPerBlock(
@@ -130,5 +146,11 @@ contract MockSafeVenus {
 
     function __setDeleverage(uint256 amount) external {
         _deleverage = amount;
+    }
+
+    function __setVTokenCollateralFactor(IVToken vToken, uint256 amount)
+        external
+    {
+        vTokenCollateralFactor[vToken] = amount;
     }
 }

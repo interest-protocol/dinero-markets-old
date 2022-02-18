@@ -8,11 +8,16 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../lib/IntMath.sol";
 
 import "./MockERC20.sol";
+import "hardhat/console.sol";
 
 //solhint-disable-next-line max-states-count
 contract MockVenusToken is ERC20 {
     using IntMath for uint256;
     using SafeERC20 for IERC20;
+
+    event RedeemUnderlying(uint256 amount);
+    event RepayBorrow(uint256 amount);
+    event Redeem(uint256 amount);
 
     struct AccountSnapShot {
         uint256 error;
@@ -57,6 +62,7 @@ contract MockVenusToken is ERC20 {
 
     struct ReturnValue {
         uint128 borrow;
+        uint128 redeemUnderlying;
         uint128 redeem;
         uint128 repay;
         uint128 mint;
@@ -108,6 +114,8 @@ contract MockVenusToken is ERC20 {
 
         if (value > 0) return value;
 
+        balanceOfUnderlying[msg.sender] += amount;
+
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
 
         _mint(_msgSender(), amount.bdiv(exchangeRateCurrent));
@@ -120,16 +128,16 @@ contract MockVenusToken is ERC20 {
 
         if (value > 0) return value;
 
+        uint256 underlyingAmount = amount.bmul(exchangeRateCurrent);
+
         if (
-            (balanceOfUnderlying[msg.sender] - amount).bdiv(
+            (balanceOfUnderlying[msg.sender] - underlyingAmount).bdiv(
                 _collateralFactor
             ) >= borrowBalanceCurrent[msg.sender]
         ) {
-            IERC20(underlying).safeTransfer(
-                msg.sender,
-                amount.bmul(exchangeRateCurrent)
-            );
+            IERC20(underlying).safeTransfer(msg.sender, underlyingAmount);
             _burn(msg.sender, amount);
+            emit Redeem(amount);
             return 0;
         }
 
@@ -137,17 +145,19 @@ contract MockVenusToken is ERC20 {
     }
 
     function redeemUnderlying(uint256 amount) external returns (uint256) {
-        uint256 value = returnValues.redeem;
+        uint256 value = returnValues.redeemUnderlying;
 
         if (value > 0) return value;
 
         if (
-            (balanceOfUnderlying[msg.sender] - amount).bdiv(
+            (balanceOfUnderlying[msg.sender] - amount).bmul(
                 _collateralFactor
             ) >= borrowBalanceCurrent[msg.sender]
         ) {
+            balanceOfUnderlying[msg.sender] -= amount;
             IERC20(underlying).safeTransfer(msg.sender, amount);
             _burn(msg.sender, amount.bdiv(exchangeRateCurrent));
+            emit RedeemUnderlying(amount);
             return 0;
         }
 
@@ -160,9 +170,10 @@ contract MockVenusToken is ERC20 {
         if (value > 0) return value;
 
         if (
-            (balanceOfUnderlying[msg.sender]).bdiv(_collateralFactor) >=
+            (balanceOfUnderlying[msg.sender]).bmul(_collateralFactor) >=
             borrowBalanceCurrent[msg.sender] + amount
         ) {
+            borrowBalanceCurrent[msg.sender] += amount;
             IERC20(underlying).safeTransfer(msg.sender, amount);
             return 0;
         }
@@ -178,6 +189,8 @@ contract MockVenusToken is ERC20 {
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
 
         borrowBalanceCurrent[msg.sender] -= amount;
+
+        emit RepayBorrow(amount);
 
         return 0;
     }
@@ -278,6 +291,10 @@ contract MockVenusToken is ERC20 {
 
     function __setRedeemReturn(uint128 amount) external {
         returnValues.redeem = amount;
+    }
+
+    function __setRedeemUnderlyingReturn(uint128 amount) external {
+        returnValues.redeemUnderlying = amount;
     }
 
     function __setTotalBorrowsCurrent(uint256 amount) external {
