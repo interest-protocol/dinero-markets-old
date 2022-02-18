@@ -82,8 +82,8 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
     struct UserAccount {
         uint128 principal; // Amount of stable coins deposited - withdrawn
         uint128 vTokens; // Amount of VTokens supplied based on principal + rewards from XVS sales.
-        uint256 rewardsPaid; // All rewards (XVS sales), paid to user.
-        uint256 lossVTokensAccrued;
+        uint256 rewardsPaid; // Rewards paid to the user since his last interaction.
+        uint256 lossVTokensAccrued; // Losses paid to the user since his last interaction.
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -123,19 +123,19 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
     // DAI - 0x1af3f329e8be154074d8769d1ffa4ee058b1dbc3  18 decimals
     EnumerableSet.AddressSet private _underlyingWhitelist;
 
-    // Underlying -> USER -> UserAccount
+    // UNDERLYING -> USER -> UserAccount
     mapping(address => mapping(address => UserAccount)) public accountOf;
 
-    // Underlying -> AMOUNT
-    mapping(address => uint256) public totalFreeVTokenOf;
+    // VTOKEN -> AMOUNT
+    mapping(IVToken => uint256) public totalFreeVTokenOf;
 
-    // Underlying -> Amount
+    // UNDERLYING -> AMOUNT
     mapping(address => uint256) public totalFreeUnderlying;
 
-    //Underlying -> Loss
-    mapping(address => uint256) public totalLossOf;
+    // VTOKEN -> LOSS PER TOKEN
+    mapping(IVToken => uint256) public totalLossOf;
 
-    // VTOKEN -> AMOUNT
+    // VTOKEN -> REWARDS PER TOKEN
     mapping(IVToken => uint256) public rewardsOf;
 
     // UNDERLYING -> VTOKEN
@@ -282,10 +282,6 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
     {
         // There is no reason to call this function as "harvest" because we "compound" the rewards as they are already being supplied.
         require(amount > 0, "DV: no zero amount");
-
-        // Total Amount of VTokens minted through deposits from users. NOT FROM LOANS.
-        uint256 totalFreeVTokens = totalFreeVTokenOf[underlying];
-
         // Get the VToken of the `underlying`.
         IVToken vToken = vTokenOf[underlying];
 
@@ -295,16 +291,17 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // It has to be done before calculating losses.
         // Update loss losses before any mutations to fairly charge them.
         // This already updates the storage state.
-        (bool hadLoss, uint256 updatedTotalLossInVTokens) = _updateLoss(
-            underlying,
-            vToken
-        );
+        // {lossPerVToken} is vToken loss per vToken since genesis
+        (bool hadLoss, uint256 lossPerVToken) = _updateLoss(underlying, vToken);
+
+        // Total amount of VTokens minted by deposits from users. NOT FROM LOANS.
+        uint256 totalFreeVTokens = totalFreeVTokenOf[vToken];
 
         // Get User Account data
         UserAccount memory userAccount = accountOf[underlying][_msgSender()];
 
-        // Get current total rewards accrued since genesis.
-        uint256 vTokenRewards = rewardsOf[vToken];
+        // Get current total rewards accrued per vToken since genesis.
+        uint256 rewardPerVToken = rewardsOf[vToken];
 
         // VTokens have different decimals, so we need to be careful when dividing and multiplying.
         uint256 decimals = address(vToken).safeDecimals();
@@ -312,18 +309,13 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // If the user has deposited before. He is entitled to rewards from XVS sales.
         // This also checks for totalFreeVTokens not being 0.
         if (userAccount.vTokens > 0) {
-            // Find % of user vTokens balance to the total free vToken Balance. (vTokens not backed by loans).
-            uint256 vTokenFactor = uint256(userAccount.vTokens).mulDiv(
-                decimals,
-                totalFreeVTokens
-            );
-
             // If there was a loss, we need to charge the user.
             if (hadLoss) {
-                uint256 lossInVTokens = vTokenFactor.mulDiv(
-                    updatedTotalLossInVTokens,
+                uint256 lossInVTokens = uint256(userAccount.vTokens).mulDiv(
+                    lossPerVToken,
                     decimals
                 ) - userAccount.lossVTokensAccrued;
+
                 // Fairly calculate how much to charge the user, based on his balance and deposit length.
                 // Charge the user.
                 userAccount.vTokens -= lossInVTokens.toUint128();
@@ -331,15 +323,15 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
                 totalFreeVTokens -= lossInVTokens;
             }
 
-            uint256 rewardInVTokens = vTokenFactor.mulDiv(
-                vTokenRewards,
+            uint256 rewards = uint256(userAccount.vTokens).mulDiv(
+                rewardPerVToken,
                 decimals
             ) - userAccount.rewardsPaid;
 
             // We calculate the rewards based on the VToken rewards and give to the user.
-            userAccount.vTokens += rewardInVTokens.toUint128();
+            userAccount.vTokens += rewards.toUint128();
             // They will be given to the user so they became free.
-            totalFreeVTokens += rewardInVTokens;
+            totalFreeVTokens += rewards;
         }
 
         // We need to get the underlying from the `msg.sender` before we mint V Tokens.
@@ -359,30 +351,21 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         userAccount.principal += amount.toUint128();
         userAccount.vTokens += vTokensMinted.toUint128();
 
-        // Uniswap style block scoping
-        {
-            // Find the new user vToken % based on total free v tokens. Note this must happen after we properly update them. (totalFreeVtokens and userAccount.vTokens).
-            uint256 vTokenFactor = uint256(userAccount.vTokens).mulDiv(
-                decimals,
-                totalFreeVTokens
-            );
+        // Consider all rewards fairly paid to the user up to this point.
+        userAccount.rewardsPaid = uint256(userAccount.vTokens).mulDiv(
+            rewardPerVToken,
+            decimals
+        );
 
-            // Consider all rewards fairly paid to the user up to this point.
-            userAccount.rewardsPaid = vTokenFactor.mulDiv(
-                vTokenRewards,
-                decimals
-            );
-
-            // Consider all losses fairly charged to the user up to this point.
-            userAccount.lossVTokensAccrued = vTokenFactor.mulDiv(
-                updatedTotalLossInVTokens,
-                decimals
-            );
-        }
+        // Consider all losses fairly charged to the user up to this point.
+        userAccount.lossVTokensAccrued = uint256(userAccount.vTokens).mulDiv(
+            lossPerVToken,
+            decimals
+        );
 
         // Update global state
         accountOf[underlying][_msgSender()] = userAccount;
-        totalFreeVTokenOf[underlying] = totalFreeVTokens;
+        totalFreeVTokenOf[vToken] = totalFreeVTokens;
         totalFreeUnderlying[underlying] = _getTotalFreeUnderlying(vToken);
 
         // Give the same amount of `DINERO` to the `msg.sender`; essentially giving them liquidity to employ more strategies.
@@ -429,14 +412,14 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         _investXVS(vToken);
 
         // Get the V Token rewards from the sales of XVS.
-        uint256 vTokenRewards = rewardsOf[vToken];
+        uint256 rewardPerVToken = rewardsOf[vToken];
 
         // Total amount of VTokens minted by deposits from users. NOT FROM LOANS.
-        uint256 totalFreeVTokens = totalFreeVTokenOf[underlying];
+        uint256 totalFreeVTokens = totalFreeVTokenOf[vToken];
 
         // Store the rewards that will be given on this call on top of the `vTokenAmount` in underlying.
         uint256 rewards;
-        uint256 updatedTotalLossInVTokens;
+        uint256 lossPerVToken;
 
         // VTokens have different decimals, so we need to be careful when dividing and multiplying.
         uint256 decimals = address(vToken).safeDecimals();
@@ -448,51 +431,36 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
             // Best to be called after {_investXVS} as it increases the free underlying.
             // Update loss losses before any mutations to fairly charge them.
             // This already updates the storage state.
-            (hadLoss, updatedTotalLossInVTokens) = _updateLoss(
-                underlying,
-                vToken
-            );
-
-            // Find % of user vTokens balance to the total free vToken Balance. (vTokens not backed by loans).
-            uint256 vTokenFactor = uint256(userAccount.vTokens).mulDiv(
-                decimals,
-                totalFreeVTokens
-            );
+            (hadLoss, lossPerVToken) = _updateLoss(underlying, vToken);
 
             // If there was a loss, we need to charge the user.
             if (hadLoss) {
-                uint256 lossInVTokens = vTokenFactor.mulDiv(
-                    updatedTotalLossInVTokens,
+                // Fairly calculate how much to charge the user, based on his balance and deposit length.
+                uint256 lossInVTokens = uint256(userAccount.vTokens).mulDiv(
+                    lossPerVToken,
                     decimals
                 ) - userAccount.lossVTokensAccrued;
 
-                // Fairly calculate how much to charge the user, based on his balance and deposit length.
                 // Charge the user.
                 userAccount.vTokens -= lossInVTokens.toUint128();
                 // They are no longer free because they need were used to cover the loss.
                 totalFreeVTokens -= lossInVTokens;
             }
 
-            // Calculate the rewards the user is entitled to based on the current VTokens he holds and total amount of free V Tokens in the contract.
+            // Calculate the rewards the user is entitled to based on the current VTokens he holds and rewards per VTokens.
             // We do not need to update the {totalFreeVTokens} because we will give these rewards to the user.
             rewards =
-                vTokenFactor.mulDiv(vTokenRewards, decimals) -
+                uint256(userAccount.vTokens).mulDiv(rewardPerVToken, decimals) -
                 userAccount.rewardsPaid;
         }
 
         // Uniswap style ,block scoping, to prevent stack too deep local variable errors.
         {
-            // Find % of user vTokens balance to the total free vToken Balance. (vTokens not backed by loans).
-            uint256 vTokenFactor = uint256(userAccount.vTokens).mulDiv(
-                decimals,
-                totalFreeVTokens
-            );
-
             // Amount of Dinero that needs to be burned.
-            // We find the percentage of vToken being withdrawn vs current total amount of vTokens the user has in relation to the principal.
-            uint256 dineroToBurn = vTokenFactor.mulDiv(
-                userAccount.principal,
-                decimals
+            // Need to calculate this before updating {userAccount.vTokens}.
+            uint256 dineroToBurn = vTokenAmount.mulDiv(
+                decimals,
+                userAccount.vTokens
             );
 
             // We do effects before checks/updates here to save memory and we can trust this token.
@@ -502,22 +470,24 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
             // Update State
             totalFreeVTokens -= vTokenAmount;
             userAccount.principal -= dineroToBurn.toUint128();
+
             // Rewards are paid in this call; so we do not need to add here.
+            // We need to update the userAccount.vTokens before updating the {lossVTokensAccrued and rewardsPaid}
+            // Otherwise, the calculations for rewards and losses will be off in the next call for this user.
             userAccount.vTokens -= vTokenAmount.toUint128();
+
             // Consider all rewards fairly paid.
-            userAccount.rewardsPaid = vTokenFactor.mulDiv(
-                vTokenRewards,
+            userAccount.rewardsPaid = uint256(userAccount.vTokens).mulDiv(
+                rewardPerVToken,
                 decimals
             );
             // Consider all debt paid.
-            userAccount.lossVTokensAccrued = vTokenFactor.mulDiv(
-                updatedTotalLossInVTokens,
-                decimals
-            );
+            userAccount.lossVTokensAccrued = uint256(userAccount.vTokens)
+                .mulDiv(lossPerVToken, decimals);
         }
         // Update Global State
         accountOf[underlying][_msgSender()] = userAccount;
-        totalFreeVTokenOf[underlying] = totalFreeVTokens;
+        totalFreeVTokenOf[vToken] = totalFreeVTokens;
 
         uint256 amountOfUnderlyingToRedeem = (rewards + vTokenAmount).bmul(
             vToken.exchangeRateCurrent()
@@ -535,7 +505,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
             uint256 maxTries;
 
             // If we cannot redeem enough to cover the `amountOfUnderlyingToRedeem`. We will start to deleverage; up to 4x.
-            // Less borrowed amount, the higher % of supply we can withdraw.
+            // The less we are borrowing, the more we can redeem because the loans are overcollaterized.
             while (amountOfUnderlyingToRedeem > safeAmount && maxTries <= 4) {
                 _redeemAndRepay(vToken, safeAmount);
                 // update the safeAmout for the next iteration.
@@ -695,28 +665,53 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
                          PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /**
+     * @dev It checks if there was a loss in non-debt backed underlying. In the case there is one, it updates the global state accordingly.
+     *
+     * @param underlying The underlying of the `vToken`, which we will check if we incurred a loss or not.
+     * @param vToken The VToken market that holds the underlying.
+     * @return (bool, uint256) The first value indicates if there was a loss or not. The second value the current total loss per token.
+     */
     function _updateLoss(address underlying, IVToken vToken)
         private
         returns (bool, uint256)
     {
+        // Get previous recorded total non-debt underlying.
         uint256 prevFreeUnderlying = totalFreeUnderlying[underlying];
+        // Get current recorded total non-debt underlying.
         uint256 currentFreeUnderlying = _getTotalFreeUnderlying(vToken);
 
-        uint256 totalLoss = totalLossOf[underlying];
-        uint256 exchangeRate = vToken.exchangeRateCurrent();
+        // Get previous recorded total loss per vToken
+        uint256 totalLoss = totalLossOf[vToken];
 
+        // If our underlying balance decreases, we incurred a loss.
         if (prevFreeUnderlying > currentFreeUnderlying) {
-            uint256 loss = prevFreeUnderlying - currentFreeUnderlying;
+            // Need to find the difference, then convert to vTokens by multiplying by the {vToken.exchangeRateCurrent}. Lastly, we need to devide by the total free vTokens.
+            // Important to note the mantissa of exchangeRateCurrent is 18 while vTokens usually have a mantissa of 8.
+            uint256 loss = (prevFreeUnderlying - currentFreeUnderlying)
+                .bdiv(vToken.exchangeRateCurrent())
+                .mulDiv(
+                    address(vToken).safeDecimals(),
+                    totalFreeVTokenOf[vToken]
+                );
 
+            // Update the loss
             uint256 newTotalLoss = totalLoss + loss;
-            totalLossOf[underlying] = newTotalLoss;
+            totalLossOf[vToken] = newTotalLoss;
             emit Loss(prevFreeUnderlying, currentFreeUnderlying, loss);
-            return (true, newTotalLoss.bdiv(exchangeRate));
+            return (true, newTotalLoss);
         }
 
-        return (false, totalLoss.bdiv(exchangeRate));
+        // In the case of no loss recorded. Return the current values.
+        return (false, totalLoss);
     }
 
+    /**
+     * @dev A helper function to find out how much non-debt backed underlying we have in the `vToken`.
+     *
+     * @param vToken The market, which we want to check how much non-debt underlying we have.
+     * @return uint256 The total non-debt backed underlying.
+     */
     function _getTotalFreeUnderlying(IVToken vToken) private returns (uint256) {
         (uint256 borrowBalance, uint256 supplyBalance) = SAFE_VENUS
             .borrowAndSupply(this, vToken);
@@ -740,11 +735,13 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // Claim XVS in the `vToken`.
         VENUS_TROLLER.claimVenus(address(this), vTokenArray);
 
+        address underlying = vToken.underlying();
+
         // Build the swap path XVS -> WBNB -> UNDERLYING
         address[] memory path = new address[](3);
         path[0] = xvs;
         path[1] = WBNB;
-        path[2] = vToken.underlying();
+        path[2] = underlying;
 
         // Sell XVS to `underlying` to reinvest back to Venus, as this is a stable vault. We do not want volatile assets.
         ROUTER.swapExactTokensForTokens(
@@ -761,9 +758,14 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
             block.timestamp
         );
 
+        uint256 totalFreeVTokens = totalFreeVTokenOf[vToken];
+
         // Assume sall current underlying are from the XVS swap.
         // This contract should never have underlyings as they should always be converted to VTokens, unless it is paused and the owner calls {emergencyRecovery}.
-        rewardsOf[vToken] += _mintVToken(vToken);
+        rewardsOf[vToken] += _mintVToken(vToken).mulDiv(
+            address(vToken).safeDecimals(),
+            totalFreeVTokens
+        );
     }
 
     /**
