@@ -723,9 +723,15 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         address underlying = vToken.underlying();
 
         // Build the swap path XVS -> WBNB -> UNDERLYING
+        // WBNB/XVS Pair - 0x7EB5D86FD78f3852a3e0e064f2842d45a3dB6EA2 ~4M USD liquidity - 19/02/2022
+        // WBNB/USDC Pair - 0xd99c7F6C65857AC913a8f880A4cb84032AB2FC5b ~9M USD liquidity - 19/02/2022
+        // WBNB/BUSD Pair - 0x58F876857a02D6762E0101bb5C46A8c1ED44Dc16 ~ 350M USD liquidity - 19/02/2022
+        // WBNB/USDT Pair - 0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE ~ 190M USD liquidity - 19/02/2022
+        // WBNB/DAI Pair - 0xc7c3cCCE4FA25700fD5574DA7E200ae28BBd36A3 ~ 130k USDC liquidity - 19/02/2022
+        // DAI support will be done only if community agrees.
         address[] memory path = new address[](3);
         path[0] = xvs;
-        path[1] = WBNB;
+        path[1] = WBNB; // WBNB is the bridge token in BSC
         path[2] = underlying;
 
         // Sell XVS to `underlying` to reinvest back to Venus, as this is a stable vault. We do not want volatile assets.
