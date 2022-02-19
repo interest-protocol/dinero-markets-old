@@ -7,6 +7,10 @@ import "./MockERC20.sol";
 //solhint-disable
 
 contract MockVenusTroller is IVenusTroller {
+    event EnterMarket(address vToken);
+
+    event ExitMarket(address vToken);
+
     struct Market {
         /// @notice Whether or not this market is listed
         bool isListed;
@@ -34,9 +38,11 @@ contract MockVenusTroller is IVenusTroller {
 
     mapping(address => uint256) public venusSpeeds;
 
-    uint256 private _enterValueReturn;
+    uint256 private _enterMarketValueReturn;
 
     uint256 private _claimVenusAmount;
+
+    uint256 private _exitMarketValueReturn;
 
     MockERC20 public immutable XVS;
 
@@ -44,19 +50,27 @@ contract MockVenusTroller is IVenusTroller {
         XVS = xvs;
     }
 
-    function enterMarkets(address[] calldata)
+    function enterMarkets(address[] calldata _markets)
         external
-        view
         returns (uint256[] memory)
     {
+        uint256 len = _markets.length;
+
+        for (uint256 i = 0; i < len; i++) {
+            emit EnterMarket(_markets[i]);
+        }
+
         uint256[] memory data = new uint256[](1);
-        data[0] = _enterValueReturn;
+        data[0] = _enterMarketValueReturn;
 
         return data;
     }
 
     //solhint-disable-next-line no-empty-blocks
-    function exitMarket(address) external {}
+    function exitMarket(address vToken) external returns (uint256) {
+        emit ExitMarket(vToken);
+        return _exitMarketValueReturn;
+    }
 
     function getAccountLiquidity(address)
         external
@@ -108,10 +122,14 @@ contract MockVenusTroller is IVenusTroller {
     }
 
     function __setEnterMarketReturn(uint256 value) external {
-        _enterValueReturn = value;
+        _enterMarketValueReturn = value;
     }
 
     function __setClaimVenusValue(uint256 value) external {
         _claimVenusAmount = value;
+    }
+
+    function __setExitMarketReturn(uint256 value) external {
+        _exitMarketValueReturn = value;
     }
 }

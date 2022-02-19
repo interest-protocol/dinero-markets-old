@@ -555,35 +555,6 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
     }
 
     /**
-     * @dev Enters a Venus market to enable the Vtokens to be used as collateral
-     *
-     * @param underlying The underlying asset we wish to use as collateral.
-     *
-     * Requirements:
-     *
-     * - The underlying must have been whitelisted by the owner.
-     * - The contract must be unpaused.
-     */
-    function enterMarket(address underlying)
-        external
-        whenNotPaused
-        isWhitelisted(underlying)
-    {
-        // Get VToken associated with the `underlying`.
-        IVToken vToken = vTokenOf[underlying];
-
-        address[] memory vTokenArray = new address[](1);
-
-        vTokenArray[0] = address(vToken);
-
-        // Allow the `underlying` to be used as collateral to leverage.
-        uint256[] memory results = VENUS_TROLLER.enterMarkets(vTokenArray);
-
-        // Check if we successfully entered the market. If not we revert.
-        _invariant(results[0], "SF: failed to enter market");
-    }
-
-    /**
      * @dev It leverages the vault position in Venus. By using the current supply as collateral to borrow same token. Supply and borrow {compoundDepth} times.
      *
      * @param vToken The contract of the vToken we wish to leverage.
@@ -878,6 +849,23 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
     //////////////////////////////////////////////////////////////*/
 
     /**
+     * @dev Enters a Venus market to enable the Vtokens to be used as collateral
+     *
+     * @param vToken The address of the vToken market, we wish to enter
+     */
+    function _enterMarket(IVToken vToken) private {
+        address[] memory vTokenArray = new address[](1);
+
+        vTokenArray[0] = address(vToken);
+
+        // Allow the `underlying` to be used as collateral to leverage.
+        uint256[] memory results = VENUS_TROLLER.enterMarkets(vTokenArray);
+
+        // Check if we successfully entered the market. If not we revert.
+        _invariant(results[0], "DV: failed to enter market");
+    }
+
+    /**
      * @dev Adds support for an underlying/VToken to this contract.
      *
      * @param vToken The VToken contract we wish to support.
@@ -893,8 +881,12 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // Give full approval to `vToken` so we can mint on deposits.
         IERC20(underlying).safeApprove(address(vToken), type(uint256).max);
 
+        // Give permission to use the assets as collateral
+        _enterMarket(vToken);
+
         // Update global state
         _underlyingWhitelist.add(underlying);
+
         vTokenOf[underlying] = vToken;
 
         emit AddVToken(vToken, underlying);
@@ -917,6 +909,12 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         IERC20(underlying).safeDecreaseAllowance(
             address(vToken),
             IERC20(underlying).allowance(address(this), address(vToken))
+        );
+
+        // Remove permission to use it as collateral
+        _invariant(
+            VENUS_TROLLER.exitMarket(address(vToken)),
+            "DV: failed to exit market"
         );
 
         // Update global state

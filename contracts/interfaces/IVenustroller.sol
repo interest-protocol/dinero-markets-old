@@ -6,7 +6,7 @@ interface IVenusTroller {
         external
         returns (uint256[] memory);
 
-    function exitMarket(address _vtoken) external;
+    function exitMarket(address _vtoken) external returns (uint256);
 
     function markets(address vTokenAddress)
         external

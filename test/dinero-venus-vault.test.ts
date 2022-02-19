@@ -265,38 +265,132 @@ describe('DineroVenusVault', () => {
         'Ownable: caller is not the owner'
       );
     });
-    it('can add and remove VTokens support', async () => {
-      expect(
-        await dineroVenusVault.isUnderlyingSupported(USDC.address)
-      ).to.be.equal(true);
+  });
+  describe('function: removeVToken', () => {
+    it('reverts if it not called by the owner', async () => {
+      await expect(
+        dineroVenusVault.connect(alice).removeVToken(vUSDC.address)
+      ).to.revertedWith('Ownable: caller is not the owner');
+    });
+    it('reverts if the venus controllers fails to exit the market', async () => {
+      await venusController.__setExitMarketReturn(1);
+      const [isUSDCSupported, vTokenOfUSDC] = await Promise.all([
+        dineroVenusVault.isUnderlyingSupported(USDC.address),
+        dineroVenusVault.vTokenOf(USDC.address),
+      ]);
 
-      expect(await dineroVenusVault.vTokenOf(USDC.address)).to.be.equal(
-        vUSDC.address
-      );
+      expect(isUSDCSupported).to.be.equal(true);
 
-      await expect(dineroVenusVault.removeVToken(vUSDC.address))
+      expect(vTokenOfUSDC).to.be.equal(vUSDC.address);
+
+      await expect(
+        dineroVenusVault.removeVToken(vUSDC.address)
+      ).to.revertedWith('DV: failed to exit market');
+
+      const [isUSDCSupported2, vTokenOfUSDC2] = await Promise.all([
+        dineroVenusVault.isUnderlyingSupported(USDC.address),
+        dineroVenusVault.vTokenOf(USDC.address),
+      ]);
+
+      expect(isUSDCSupported2).to.be.equal(true);
+
+      expect(vTokenOfUSDC2).to.be.equal(vUSDC.address);
+    });
+    it('removes a VToken', async () => {
+      const [isUSDCSupported, vTokenOfUSDC] = await Promise.all([
+        dineroVenusVault.isUnderlyingSupported(USDC.address),
+        dineroVenusVault.vTokenOf(USDC.address),
+      ]);
+
+      expect(isUSDCSupported).to.be.equal(true);
+
+      expect(vTokenOfUSDC).to.be.equal(vUSDC.address);
+
+      await expect(dineroVenusVault.connect(owner).removeVToken(vUSDC.address))
         .to.emit(dineroVenusVault, 'RemoveVToken')
-        .withArgs(vUSDC.address, USDC.address);
+        .withArgs(vUSDC.address, USDC.address)
+        .to.emit(USDC, 'Approval')
+        .withArgs(dineroVenusVault.address, vUSDC.address, 0)
+        .to.emit(venusController, 'ExitMarket')
+        .withArgs(vUSDC.address);
 
-      expect(
-        await dineroVenusVault.isUnderlyingSupported(USDC.address)
-      ).to.be.equal(false);
+      const [isUSDCSupported2, vTokenOfUSDC2] = await Promise.all([
+        dineroVenusVault.isUnderlyingSupported(USDC.address),
+        dineroVenusVault.vTokenOf(USDC.address),
+      ]);
 
-      expect(await dineroVenusVault.vTokenOf(USDC.address)).to.be.equal(
-        ethers.constants.AddressZero
+      expect(isUSDCSupported2).to.be.equal(false);
+
+      expect(vTokenOfUSDC2).to.be.equal(ethers.constants.AddressZero);
+    });
+  });
+  describe('function: addVToken', () => {
+    it('reverts if it not called by the owner', async () => {
+      await expect(
+        dineroVenusVault.connect(alice).addVToken(vUSDC.address)
+      ).to.revertedWith('Ownable: caller is not the owner');
+    });
+    it('reverts if the venus controller fails to enter the market', async () => {
+      await Promise.all([
+        venusController.__setEnterMarketReturn(1),
+        dineroVenusVault.removeVToken(vUSDC.address),
+      ]);
+
+      const [isUSDCSupported, vTokenOfUSDC] = await Promise.all([
+        dineroVenusVault.isUnderlyingSupported(USDC.address),
+        dineroVenusVault.vTokenOf(USDC.address),
+      ]);
+
+      expect(isUSDCSupported).to.be.equal(false);
+
+      expect(vTokenOfUSDC).to.be.equal(ethers.constants.AddressZero);
+
+      await expect(dineroVenusVault.addVToken(vUSDC.address)).to.revertedWith(
+        'DV: failed to enter market'
       );
+
+      const [isUSDCSupported2, vTokenOfUSDC2] = await Promise.all([
+        dineroVenusVault.isUnderlyingSupported(USDC.address),
+        dineroVenusVault.vTokenOf(USDC.address),
+      ]);
+
+      expect(isUSDCSupported2).to.be.equal(false);
+
+      expect(vTokenOfUSDC2).to.be.equal(ethers.constants.AddressZero);
+    });
+    it('adds a vToken', async () => {
+      // We need to remove so we can test the {addVToken}
+      await dineroVenusVault.removeVToken(vUSDC.address);
+
+      const [isUSDCSupported, vTokenOfUSDC] = await Promise.all([
+        dineroVenusVault.isUnderlyingSupported(USDC.address),
+        dineroVenusVault.vTokenOf(USDC.address),
+      ]);
+
+      expect(isUSDCSupported).to.be.equal(false);
+
+      expect(vTokenOfUSDC).to.be.equal(ethers.constants.AddressZero);
 
       await expect(dineroVenusVault.addVToken(vUSDC.address))
         .to.emit(dineroVenusVault, 'AddVToken')
-        .withArgs(vUSDC.address, USDC.address);
+        .withArgs(vUSDC.address, USDC.address)
+        .to.emit(venusController, 'EnterMarket')
+        .withArgs(vUSDC.address)
+        .to.emit(USDC, 'Approval')
+        .withArgs(
+          dineroVenusVault.address,
+          vUSDC.address,
+          ethers.constants.MaxUint256
+        );
 
-      expect(
-        await dineroVenusVault.isUnderlyingSupported(USDC.address)
-      ).to.be.equal(true);
+      const [isUSDCSupported2, vTokenOfUSDC2] = await Promise.all([
+        dineroVenusVault.isUnderlyingSupported(USDC.address),
+        dineroVenusVault.vTokenOf(USDC.address),
+      ]);
 
-      expect(await dineroVenusVault.vTokenOf(USDC.address)).to.be.equal(
-        vUSDC.address
-      );
+      expect(isUSDCSupported2).to.be.equal(true);
+
+      expect(vTokenOfUSDC2).to.be.equal(vUSDC.address);
     });
   });
   describe('function: emergencyRecovery', async () => {
