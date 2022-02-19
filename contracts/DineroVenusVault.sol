@@ -290,17 +290,21 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // Get the VToken of the `underlying`.
         IVToken vToken = vTokenOf[underlying];
 
-        // Update the rewards before any state mutation, to fairly distribute them.
-        _investXVS(vToken);
+        // Total amount of VTokens minted by deposits from users. NOT FROM LOANS.
+        uint256 totalFreeVTokens = totalFreeVTokenOf[vToken];
+
+        // On first deposit or if the vault is empty. There should be no rewards to claim and give.
+        if (totalFreeVTokens != 0) {
+            // Update the rewards before any state mutation, to fairly distribute them.
+            _investXVS(vToken);
+        }
+
         // In the line above, we converted XVS to `underlying` and minted VTokens. This increases the free underlying.
         // It has to be done before calculating losses.
         // Update loss losses before any mutations to fairly charge them.
         // This already updates the storage state.
         // {lossPerVToken} is vToken loss per vToken since genesis
         (bool hadLoss, uint256 lossPerVToken) = _updateLoss(underlying, vToken);
-
-        // Total amount of VTokens minted by deposits from users. NOT FROM LOANS.
-        uint256 totalFreeVTokens = totalFreeVTokenOf[vToken];
 
         // Get User Account data
         UserAccount memory userAccount = accountOf[underlying][_msgSender()];
@@ -770,6 +774,12 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
 
         uint256 totalFreeVTokens = totalFreeVTokenOf[vToken];
 
+        // It should never happen, but since we will use it as a denominator, we need to consider it.
+        if (totalFreeVTokens == 0) {
+            _mintVToken(vToken);
+            return;
+        }
+
         // Assume sall current underlying are from the XVS swap.
         // This contract should never have underlyings as they should always be converted to VTokens, unless it is paused and the owner calls {emergencyRecovery}.
         rewardsOf[vToken] += _mintVToken(vToken).mulDiv(
@@ -842,10 +852,11 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
     /**
      * @dev Helper function to check the balance of a `token` this contract has.
      *
-     * @param token An ERC20 compliant token.
+     * @param token An ERC20 token.
+     * @return uint256 The number of `token` in this contract.
      */
     function _contractBalanceOf(address token) private view returns (uint256) {
-        // Find how many ERC20 complaint tokens this contract has.
+        // Find how many ERC20 tokens this contract has.
         return IERC20(token).balanceOf(address(this));
     }
 

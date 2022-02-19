@@ -7,6 +7,7 @@ import {
   DineroVenusVault,
   LiquidityRouter,
   MockERC20,
+  MockNoInfiniteAllowanceERC20,
   MockSafeVenus,
   MockVenusToken,
   MockVenusTroller,
@@ -23,7 +24,7 @@ const INITIAL_SUPPLY = parseEther('10000');
 describe('DineroVenusVault', () => {
   let dineroVenusVault: DineroVenusVault;
   let dinero: Dinero;
-  let XVS: MockERC20;
+  let XVS: MockNoInfiniteAllowanceERC20;
   let WBNB: MockERC20;
   let USDC: MockERC20;
   let DAI: MockERC20;
@@ -49,7 +50,7 @@ describe('DineroVenusVault', () => {
       ethers.getSigners(),
       multiDeploy(
         [
-          'MockERC20',
+          'MockNoInfiniteAllowanceERC20',
           'MockERC20',
           'MockERC20',
           'MockERC20',
@@ -101,13 +102,18 @@ describe('DineroVenusVault', () => {
       dinero
         .connect(owner)
         .grantRole(await dinero.MINTER_ROLE(), dineroVenusVault.address),
-      XVS.mint(owner.address, parseEther('200000')),
+      XVS.mint(owner.address, parseEther('500000')),
       DAI.mint(owner.address, parseEther('1000000')),
+      WBNB.mint(owner.address, parseEther('20000')),
       USDC.mint(owner.address, parseEther('1000000')),
       DAI.mint(alice.address, parseEther('1000000')),
       USDC.mint(alice.address, parseEther('1000000')),
       DAI.mint(bob.address, parseEther('1000000')),
       USDC.mint(bob.address, parseEther('1000000')),
+      WBNB.connect(owner).approve(
+        liquidityRouter.address,
+        ethers.constants.MaxUint256
+      ),
       XVS.connect(owner).approve(
         liquidityRouter.address,
         ethers.constants.MaxUint256
@@ -151,19 +157,29 @@ describe('DineroVenusVault', () => {
     await Promise.all([
       liquidityRouter.addLiquidity(
         XVS.address,
-        USDC.address,
-        parseEther('100000'), // 1 XVS = 10 USDC
-        parseEther('1000000'),
+        WBNB.address,
+        parseEther('200000'), // 1 XVS = 10 USD => 200_000 XVS is 1M usd
+        parseEther('4000'), // 1 BNB = 500 USD => 4_000 BNB is 1M usd
         0,
         0,
         owner.address,
         0
       ),
       liquidityRouter.addLiquidity(
-        XVS.address,
+        WBNB.address,
         DAI.address,
-        parseEther('100000'), // 1 XVS = 10 DAI
-        parseEther('1000000'),
+        parseEther('4000'), // 1 BNB = 500 USD => 4_000 BNB is 1M usd
+        parseEther('1000000'), // stable coin
+        0,
+        0,
+        owner.address,
+        0
+      ),
+      liquidityRouter.addLiquidity(
+        WBNB.address,
+        USDC.address,
+        parseEther('4000'), // 1 BNB = 500 USD => 4_000 BNB is 1M usd
+        parseEther('1000000'), // stable coin
         0,
         0,
         owner.address,
@@ -463,5 +479,42 @@ describe('DineroVenusVault', () => {
 
       expect(array.length > 1).to.be.equal(true);
     });
+  });
+  it('maximizes the allowance for PCS router for XVS', async () => {
+    const [allowance] = await Promise.all([
+      XVS.allowance(dineroVenusVault.address, router.address),
+      venusController.__setClaimVenusValue(parseEther('10000')),
+    ]);
+
+    // dineroVenusVault sold XVS on PCS - decreasing its allowance
+    await dineroVenusVault
+      .connect(alice)
+      .deposit(USDC.address, parseEther('10000'));
+
+    expect(allowance).to.be.equal(ethers.constants.MaxUint256);
+    // first deposit, the contract does not call {_investXVS}
+    expect(
+      await XVS.allowance(dineroVenusVault.address, router.address)
+    ).to.be.equal(ethers.constants.MaxUint256);
+
+    await dineroVenusVault
+      .connect(alice)
+      .deposit(USDC.address, parseEther('10000'));
+
+    expect(
+      await XVS.allowance(dineroVenusVault.address, router.address)
+    ).to.be.equal(ethers.constants.MaxUint256.sub(parseEther('10000')));
+
+    await expect(dineroVenusVault.connect(bob).approveXVS())
+      .to.emit(XVS, 'Approval')
+      .withArgs(
+        dineroVenusVault.address,
+        router.address,
+        ethers.constants.MaxUint256
+      );
+
+    expect(
+      await XVS.allowance(dineroVenusVault.address, router.address)
+    ).to.be.equal(ethers.constants.MaxUint256);
   });
 });
