@@ -25,8 +25,6 @@ contract MockSafeVenus {
 
     uint256 public _predictSupplyRate;
 
-    uint256 public _deleverage;
-
     uint256 public _safeReddem = DEFAULT;
 
     uint256 public safeRedeemReturn;
@@ -34,6 +32,7 @@ contract MockSafeVenus {
     uint256 public borrowBalance;
     uint256 public supplyBalance;
 
+    // Because we do not want to add complexity by mocking the Venus Controller
     mapping(IVToken => uint256) public vTokenCollateralFactor;
 
     function safeCollateralRatio(IVenusVault vault, IVToken vToken)
@@ -72,7 +71,6 @@ contract MockSafeVenus {
     {
         (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
         uint256 collateralRatio = safeCollateralRatio(vault, vToken);
-
         return supply.bmul(collateralRatio) - borrow;
     }
 
@@ -120,6 +118,25 @@ contract MockSafeVenus {
         return _supplyRewardPerBlock;
     }
 
+    function deleverage(IVenusVault vault, IVToken vToken)
+        external
+        returns (uint256)
+    {
+        uint256 _collateralLimit = safeCollateralRatio(vault, vToken);
+
+        (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
+
+        uint256 maxBorrowAmount = supply.bmul(_collateralLimit);
+
+        uint256 amount = borrow > maxBorrowAmount
+            ? borrow - maxBorrowAmount
+            : 0;
+
+        if (amount == 0) return 0;
+
+        return amount;
+    }
+
     function __setSupplyRewardPerBlock(uint256 amount) external {
         _supplyRewardPerBlock = amount;
     }
@@ -140,14 +157,7 @@ contract MockSafeVenus {
         _predictSupplyRate = amount;
     }
 
-    function deleverage(address, address) external view returns (uint256) {
-        return _deleverage;
-    }
-
-    function __setDeleverage(uint256 amount) external {
-        _deleverage = amount;
-    }
-
+    // Because we do not want to add complexity by mocking the Venus Controller
     function __setVTokenCollateralFactor(IVToken vToken, uint256 amount)
         external
     {

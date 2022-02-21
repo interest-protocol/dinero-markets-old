@@ -18,6 +18,7 @@ contract MockVenusToken is ERC20 {
     event RedeemUnderlying(uint256 amount);
     event RepayBorrow(uint256 amount);
     event Redeem(uint256 amount);
+    event Borrow(uint256 amount);
 
     struct AccountSnapShot {
         uint256 error;
@@ -58,6 +59,7 @@ contract MockVenusToken is ERC20 {
 
     uint256 public totalBorrowsCurrent;
 
+    // Because we do not want to add complexity by mocking the Venus Controller
     uint256 public _collateralFactor;
 
     struct ReturnValue {
@@ -175,6 +177,7 @@ contract MockVenusToken is ERC20 {
         ) {
             borrowBalanceCurrent[msg.sender] += amount;
             IERC20(underlying).safeTransfer(msg.sender, amount);
+            emit Borrow(amount);
             return 0;
         }
 
@@ -313,6 +316,7 @@ contract MockVenusToken is ERC20 {
         returnValues.mint = amount;
     }
 
+    // Because we do not want to add complexity by mocking the Venus Controller
     function __setCollateralFactor(uint256 amount) external {
         _collateralFactor = amount;
     }

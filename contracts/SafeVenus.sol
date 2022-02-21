@@ -444,17 +444,35 @@ contract SafeVenus {
         (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
 
         // Maximum amount we can borrow based on our supply.
-        uint256 maxBorrowAmount = supply.bmul(_collateralLimit);
-
-        // Check if we are above the safe maximum amount. We find the difference.
-        uint256 amount = borrow > maxBorrowAmount
-            ? borrow - maxBorrowAmount
-            : 0;
+        uint256 maxSafeBorrowAmount = supply.bmul(_collateralLimit);
 
         // If we are not above the maximum amount. We do not need to deleverage and return 0.
-        if (amount == 0) return 0;
+        if (maxSafeBorrowAmount >= borrow) return 0;
 
-        // Cannot remove more than the current liquidity.
-        return amount.min(vToken.getCash());
+        // Get the Venus Protocol collateral requirement before liquidation
+        (, uint256 venusCollateralFactor, ) = VENUS_TROLLER.markets(
+            address(vToken)
+        );
+
+        // Get all current liquidity
+        uint256 cash = vToken.getCash();
+
+        // We take 10% of Venus protocol to avoid liquidation.
+        // We assume vaults are using values below 0.8e18 for their collateral ratio
+        uint256 maxBorrow = venusCollateralFactor.bmul(0.9e18).bmul(supply);
+
+        // If we are borrowing more than 90% of {venusCollateralFactor} we need to take a risky approach
+        if (borrow > maxBorrow) {
+            // If borrows is still higher; then it should just throw.
+            uint256 riskyAmount = venusCollateralFactor.bmul(0.98e18).bmul(
+                supply
+            ) - borrow;
+
+            // Cannot withdraw more than liquidity
+            return riskyAmount.min(cash);
+        }
+
+        // Cannot withdraw more than liquidity
+        return (maxBorrow - borrow).min(cash);
     }
 }

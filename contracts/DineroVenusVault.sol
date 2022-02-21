@@ -567,7 +567,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // Save Gas
         uint256 depth = compoundDepth;
 
-        // We open an loan -> supply to the same market -> open a second loan -> ....
+        // We open a loan -> supply to the same market -> open a second loan -> ....
         // We do this process `depth` times. We will be conservative and have a value of around 3 or 4.
         // We do not need to store the information about these new minted vTokens as they loan-backed VTokens.
         for (uint256 i = 0; i < depth; i++) {

@@ -480,6 +480,7 @@ describe('DineroVenusVault', () => {
       const receipt = await dineroVenusVault.connect(owner).emergencyRecovery();
 
       const awaitedReceipt = await receipt.wait();
+
       expect(
         awaitedReceipt.events?.filter((x) => x.event === 'EmergencyRecovery')
           .length
@@ -610,5 +611,252 @@ describe('DineroVenusVault', () => {
     expect(
       await XVS.allowance(dineroVenusVault.address, router.address)
     ).to.be.equal(ethers.constants.MaxUint256);
+  });
+  describe('function: leverage', () => {
+    it('does not borrow if the safe borrow amount is 500 USD or less', async () => {
+      await dineroVenusVault
+        .connect(alice)
+        .deposit(USDC.address, parseEther('1000'));
+
+      await expect(dineroVenusVault.connect(bob).leverage(vUSDC.address))
+        .to.not.emit(vUSDC, 'Borrow')
+        // Transfer is emitted when supplying an asset because it mints {vUSDC}.
+        .to.not.emit(vUSDC, 'Transfer');
+    });
+    it('does not borrow if compoundDepth is 0', async () => {
+      await Promise.all([
+        dineroVenusVault.connect(owner).setCompoundDepth(0),
+        dineroVenusVault
+          .connect(alice)
+          // 2000 USD deposit amount gives enough room to leverage
+          .deposit(USDC.address, parseEther('2000')),
+      ]);
+
+      await expect(dineroVenusVault.connect(bob).leverage(vUSDC.address))
+        .to.not.emit(vUSDC, 'Borrow')
+        // Transfer is emitted when supplying an asset because it mints {vUSDC}.
+        .to.not.emit(vUSDC, 'Transfer');
+    });
+    it('reverts if the vToken fails to borrow or supply', async () => {
+      await Promise.all([
+        vUSDC.__setBorrowReturn(2),
+        dineroVenusVault
+          .connect(alice)
+          // 2000 USD deposit amount gives enough room to leverage
+          .deposit(USDC.address, parseEther('2000')),
+      ]);
+
+      await expect(
+        dineroVenusVault.connect(bob).leverage(vUSDC.address)
+      ).to.revertedWith('DV: failed to borrow');
+
+      await Promise.all([vUSDC.__setBorrowReturn(0), vUSDC.__setMintReturn(1)]);
+
+      await expect(
+        dineroVenusVault.connect(bob).leverage(vUSDC.address)
+      ).to.revertedWith('DV: failed to mint');
+    });
+    it('borrows and supplies a maximum of compoundDepth times', async () => {
+      const [compoundDepth] = await Promise.all([
+        dineroVenusVault.compoundDepth(),
+        dineroVenusVault
+          .connect(alice)
+          .deposit(USDC.address, parseEther('1000000')),
+        dineroVenusVault
+          .connect(bob)
+          .deposit(USDC.address, parseEther('1000000')),
+      ]);
+
+      const [supply, borrow] = await Promise.all([
+        vUSDC.balanceOfUnderlying(dineroVenusVault.address),
+        vUSDC.borrowBalanceCurrent(dineroVenusVault.address),
+      ]);
+
+      // 2_000_000 USD should allow the vault to leverage more than 3x if it was not limited by the {compoundDepth}
+      const receipt = await (
+        await dineroVenusVault.connect(bob).leverage(vUSDC.address)
+      ).wait();
+
+      const [supply2, borrow2] = await Promise.all([
+        vUSDC.balanceOfUnderlying(dineroVenusVault.address),
+        vUSDC.borrowBalanceCurrent(dineroVenusVault.address),
+      ]);
+
+      expect(supply).to.be.equal(parseEther('2000000'));
+      expect(borrow).to.be.equal(0);
+      // START: 2_000_000
+      // FIRST CYCLE: SUPPLY => 2_900_000 | BORROW => 900_000 | 2_000_000 * 0.45
+      // SECOND CYCLE: SUPPLY => 3_305_00 | BORROW => 405_000 | 2_900_000 * 0.45 - 900_000
+      // THIRD CYCLE: SUPPLY => 3_487_250 | BORROW => 182_250 | 3305000 * 0.45 - 900000 - 405000
+      expect(borrow2).to.be.equal(parseEther('1487250')); // 900_000 + 405_000 + 182_250
+      expect(supply2).to.be.equal(parseEther('3487250'));
+
+      const borrowTopic = vUSDC.interface.getEventTopic(
+        vUSDC.interface.getEvent('Borrow')
+      );
+      const supplyTopic = vUSDC.interface.getEventTopic(
+        vUSDC.interface.getEvent('Transfer')
+      );
+
+      expect(
+        receipt.events
+          ?.filter((x) => x.topics.includes(borrowTopic))
+          .filter(
+            (x) =>
+              x.address.toLocaleLowerCase() ===
+              vUSDC.address.toLocaleLowerCase()
+          ).length
+      ).to.be.equal(compoundDepth);
+      expect(
+        receipt.events
+          ?.filter((x) => x.topics.includes(supplyTopic))
+          .filter(
+            (x) =>
+              x.address.toLocaleLowerCase() ===
+              vUSDC.address.toLocaleLowerCase()
+          ).length
+      ).to.be.equal(compoundDepth);
+    });
+  });
+  it('calls leverage in all listed assets', async () => {
+    const [compoundDepth] = await Promise.all([
+      dineroVenusVault.compoundDepth(),
+      dineroVenusVault
+        .connect(alice)
+        .deposit(USDC.address, parseEther('1000000')),
+      dineroVenusVault
+        .connect(bob)
+        .deposit(USDC.address, parseEther('1000000')),
+      dineroVenusVault
+        .connect(alice)
+        .deposit(DAI.address, parseEther('1000000')),
+      dineroVenusVault.connect(bob).deposit(DAI.address, parseEther('1000000')),
+    ]);
+
+    const receipt = await (
+      await dineroVenusVault.connect(bob).leverageAll()
+    ).wait();
+
+    const USDCborrowTopic = vUSDC.interface.getEventTopic(
+      vUSDC.interface.getEvent('Borrow')
+    );
+    const USDCsupplyTopic = vUSDC.interface.getEventTopic(
+      vUSDC.interface.getEvent('Transfer')
+    );
+
+    const DAIborrowTopic = vDAI.interface.getEventTopic(
+      vDAI.interface.getEvent('Borrow')
+    );
+    const DAIsupplyTopic = vDAI.interface.getEventTopic(
+      vDAI.interface.getEvent('Transfer')
+    );
+
+    expect(
+      receipt.events
+        ?.filter((x) => x.topics.includes(USDCborrowTopic))
+        .filter(
+          (x) =>
+            x.address.toLocaleLowerCase() === vUSDC.address.toLocaleLowerCase()
+        ).length
+    ).to.be.equal(compoundDepth);
+    expect(
+      receipt.events
+        ?.filter((x) => x.topics.includes(USDCsupplyTopic))
+        .filter(
+          (x) =>
+            x.address.toLocaleLowerCase() === vUSDC.address.toLocaleLowerCase()
+        ).length
+    ).to.be.equal(compoundDepth);
+
+    expect(
+      receipt.events
+        ?.filter((x) => x.topics.includes(DAIborrowTopic))
+        .filter(
+          (x) =>
+            x.address.toLocaleLowerCase() === vDAI.address.toLocaleLowerCase()
+        ).length
+    ).to.be.equal(compoundDepth);
+    expect(
+      receipt.events
+        ?.filter((x) => x.topics.includes(DAIsupplyTopic))
+        .filter(
+          (x) =>
+            x.address.toLocaleLowerCase() === vDAI.address.toLocaleLowerCase()
+        ).length
+    ).to.be.equal(compoundDepth);
+  });
+  describe('function: deleverage', () => {
+    it('does nothing if the deleverage amount is 0', async () => {
+      await expect(
+        dineroVenusVault.connect(bob).deleverage(vUSDC.address)
+      ).to.not.emit(vUSDC, 'Redeem');
+
+      // Should not trigger a deleverage as it stays within the parameters
+      // Deleveraged is triggered if parameters change or USDC price of underlying
+      await dineroVenusVault.connect(bob).leverage(vUSDC.address);
+
+      await expect(
+        dineroVenusVault.connect(bob).deleverage(vUSDC.address)
+      ).to.not.emit(vUSDC, 'Redeem');
+    });
+    it('reverts if redeemUnderlying or repayBorrow from vToken revert', async () => {
+      // artificially set collateral ratio to 0.9 which will trigger a deleverage as our ratio is 0.45
+      // Safe Venus relies in these values to decide o the deleverage amount
+      await Promise.all([
+        vUSDC.__setBalanceOfUnderlying(
+          dineroVenusVault.address,
+          parseEther('100000')
+        ),
+        vUSDC.__setBorrowBalanceCurrent(
+          dineroVenusVault.address,
+          parseEther('90000')
+        ),
+        // will trigger the error
+        vUSDC.__setRedeemUnderlyingReturn(1),
+      ]);
+
+      await expect(
+        dineroVenusVault.connect(bob).deleverage(vUSDC.address)
+      ).to.revertedWith('DV: failed to redeem');
+
+      await Promise.all([
+        vUSDC.__setBalanceOfUnderlying(dineroVenusVault.address, 0),
+        vUSDC.__setBorrowBalanceCurrent(dineroVenusVault.address, 0),
+        vUSDC.__setRedeemUnderlyingReturn(0),
+        vUSDC.__setRepayReturnValue(1),
+      ]);
+
+      await Promise.all([
+        dineroVenusVault
+          .connect(alice)
+          .deposit(USDC.address, parseEther('1000000')),
+        dineroVenusVault
+          .connect(bob)
+          .deposit(USDC.address, parseEther('1000000')),
+      ]);
+
+      await dineroVenusVault.connect(bob).leverage(vUSDC.address);
+
+      await safeVenus.borrowAndSupply(dineroVenusVault.address, vUSDC.address);
+
+      const [borrow, supply] = await Promise.all([
+        safeVenus.borrowBalance(),
+        safeVenus.supplyBalance(),
+      ]);
+
+      await Promise.all([
+        // Manipulate the balances to be 0.9 collateral ratio
+        // This will trigger a safeVenus.deleverage positive value and will call redeemUnderlying and then repayBorrow
+        vUSDC.__setBorrowBalanceCurrent(
+          dineroVenusVault.address,
+          supply.mul(parseEther('0.9')).div(parseEther('1')).sub(borrow)
+        ),
+        vUSDC.__setRepayReturnValue(1),
+      ]);
+
+      await expect(
+        dineroVenusVault.connect(bob).deleverage(vUSDC.address)
+      ).to.revertedWith('DV: failed to repay');
+    });
   });
 });

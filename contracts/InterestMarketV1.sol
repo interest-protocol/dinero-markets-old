@@ -734,7 +734,7 @@ contract InterestMarketV1 is Initializable, Context {
                 block.timestamp
             );
 
-            // We need to approve to the token0 and token1 to the router for {router.swapExactTokensForTokens}
+            // We need to approve the router to {transferFrom} token0 and token1 to sell them for {DINERO}.
             IERC20(token0).safeIncreaseAllowance(address(router), amount0);
             IERC20(token1).safeIncreaseAllowance(address(router), amount1);
 

@@ -553,38 +553,81 @@ describe('SafeVenus', () => {
         parseEther('2')
       );
   });
-  it('returns a safe amount to deleverage from the supply', async () => {
-    await Promise.all([
-      // Safe collateral ratio of 0.75
-      vToken.__setSupplyRatePerBlock(parseEther('0.06')),
-      vToken.__setBorrowRatePerBlock(parseEther('0.08')),
-      venusTroller.__setMarkets(
-        vToken.address,
-        true,
-        parseEther('0.9'),
-        true,
-        true
-      ),
-      vToken.__setCash(parseEther('100')),
-      vToken.__setBorrowBalanceCurrent(vault.address, parseEther('40')),
-      vToken.__setBalanceOfUnderlying(vault.address, parseEther('100')), // we can  borrow up to 75 ether. (100 * 0.75)
-    ]);
+  describe('function: deleverage', () => {
+    it('returns 0 if you are borrowing below the safe maximum value', async () => {
+      await Promise.all([
+        // Safe collateral ratio of 0.75
+        vToken.__setSupplyRatePerBlock(parseEther('0.06')),
+        vToken.__setBorrowRatePerBlock(parseEther('0.08')),
+        venusTroller.__setMarkets(
+          vToken.address,
+          true,
+          parseEther('0.9'),
+          true,
+          true
+        ),
+        vToken.__setCash(parseEther('100')),
+        vToken.__setBorrowBalanceCurrent(vault.address, parseEther('40')),
+        vToken.__setBalanceOfUnderlying(vault.address, parseEther('100')), // we can  borrow up to 75 ether. (100 * 0.75)
+      ]);
 
-    await expect(testSafeVenus.deleverage(vault.address, vToken.address))
-      .to.emit(testSafeVenus, 'Deleverage')
-      .withArgs(0);
+      await expect(testSafeVenus.deleverage(vault.address, vToken.address))
+        .to.emit(testSafeVenus, 'Deleverage')
+        .withArgs(0);
+    });
+    it('returns redeem amount with 2% room if we are borrowing higher than 90% of venus collateral factor', async () => {
+      await Promise.all([
+        // Safe collateral ratio of 0.75
+        vToken.__setSupplyRatePerBlock(parseEther('0.06')),
+        vToken.__setBorrowRatePerBlock(parseEther('0.08')),
+        venusTroller.__setMarkets(
+          vToken.address,
+          true,
+          parseEther('0.9'),
+          true,
+          true
+        ),
+        vToken.__setCash(parseEther('100')),
+        vToken.__setBorrowBalanceCurrent(vault.address, parseEther('85')), // We are way above the safe collateral ratio of 0.675
+        vToken.__setBalanceOfUnderlying(vault.address, parseEther('100')),
+      ]);
 
-    // We are above the safe collateral ratio
-    await vToken.__setBorrowBalanceCurrent(vault.address, parseEther('80'));
+      await expect(testSafeVenus.deleverage(vault.address, vToken.address))
+        .to.emit(testSafeVenus, 'Deleverage')
+        .withArgs(parseEther('3.2')); // (0.9 * 0.98 * 100) - 85
 
-    await expect(testSafeVenus.deleverage(vault.address, vToken.address))
-      .to.emit(testSafeVenus, 'Deleverage')
-      .withArgs(parseEther('5'));
+      await vToken.__setCash(parseEther('2'));
 
-    await vToken.__setCash(parseEther('2'));
+      await expect(testSafeVenus.deleverage(vault.address, vToken.address))
+        .to.emit(testSafeVenus, 'Deleverage')
+        .withArgs(parseEther('2')); // min of 3.2 and 2
+    });
+    it('returns redeem amount with 10% room if we are NOT borrowing higher than 90% of venus collateral factor', async () => {
+      await Promise.all([
+        // Safe collateral ratio of 0.75
+        vToken.__setSupplyRatePerBlock(parseEther('0.06')),
+        vToken.__setBorrowRatePerBlock(parseEther('0.08')),
+        venusTroller.__setMarkets(
+          vToken.address,
+          true,
+          parseEther('0.9'),
+          true,
+          true
+        ),
+        vToken.__setCash(parseEther('100')),
+        vToken.__setBorrowBalanceCurrent(vault.address, parseEther('76')), // We are above 0.675
+        vToken.__setBalanceOfUnderlying(vault.address, parseEther('100')),
+      ]);
 
-    await expect(testSafeVenus.deleverage(vault.address, vToken.address))
-      .to.emit(testSafeVenus, 'Deleverage')
-      .withArgs(parseEther('2'));
+      await expect(testSafeVenus.deleverage(vault.address, vToken.address))
+        .to.emit(testSafeVenus, 'Deleverage')
+        .withArgs(parseEther('5')); // (0.9 * 0.9 * 100) - 76
+
+      await vToken.__setCash(parseEther('4'));
+
+      await expect(testSafeVenus.deleverage(vault.address, vToken.address))
+        .to.emit(testSafeVenus, 'Deleverage')
+        .withArgs(parseEther('4')); // (0.9 * 0.9 * 100) - 76
+    });
   });
 });
