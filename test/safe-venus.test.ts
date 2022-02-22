@@ -575,7 +575,7 @@ describe('SafeVenus', () => {
         .to.emit(testSafeVenus, 'Deleverage')
         .withArgs(0);
     });
-    it('returns redeem amount with 2% room if we are borrowing higher than 90% of venus collateral factor', async () => {
+    it('returns redeem amount with 5% room if our borrow amount is over (85% * venus collateral factor * supply)', async () => {
       await Promise.all([
         // Safe collateral ratio of 0.75
         vToken.__setSupplyRatePerBlock(parseEther('0.06')),
@@ -594,18 +594,18 @@ describe('SafeVenus', () => {
 
       await expect(testSafeVenus.deleverage(vault.address, vToken.address))
         .to.emit(testSafeVenus, 'Deleverage')
-        .withArgs(parseEther('3.2')); // (0.9 * 0.98 * 100) - 85
+        .withArgs(parseEther('0.584795321637426901')); // 100 - (85 / (0.9 * 0.95)) => ~0.5 Taken post fact for rounding purposes
 
-      await vToken.__setCash(parseEther('2'));
+      await vToken.__setCash(parseEther('0.5'));
 
       await expect(testSafeVenus.deleverage(vault.address, vToken.address))
         .to.emit(testSafeVenus, 'Deleverage')
-        .withArgs(parseEther('2')); // min of 3.2 and 2
+        .withArgs(parseEther('0.5')); // It will return cash if cash value is lower than the redeem amount.
     });
-    it('returns redeem amount with 10% room if we are NOT borrowing higher than 90% of venus collateral factor', async () => {
+    it.only('returns redeem amount with 15% room if we are NOT over (85% * venus collateral factor * supply)', async () => {
       await Promise.all([
-        // Safe collateral ratio of 0.75
-        vToken.__setSupplyRatePerBlock(parseEther('0.06')),
+        // Safe collateral ratio of 0.625
+        vToken.__setSupplyRatePerBlock(parseEther('0.05')),
         vToken.__setBorrowRatePerBlock(parseEther('0.08')),
         venusTroller.__setMarkets(
           vToken.address,
@@ -615,19 +615,19 @@ describe('SafeVenus', () => {
           true
         ),
         vToken.__setCash(parseEther('100')),
-        vToken.__setBorrowBalanceCurrent(vault.address, parseEther('76')), // We are above 0.675
-        vToken.__setBalanceOfUnderlying(vault.address, parseEther('100')),
+        vToken.__setBorrowBalanceCurrent(vault.address, parseEther('75')),
+        vToken.__setBalanceOfUnderlying(vault.address, parseEther('100')), // 0.9 * 0.85 * 100 => 76.5
       ]);
 
       await expect(testSafeVenus.deleverage(vault.address, vToken.address))
         .to.emit(testSafeVenus, 'Deleverage')
-        .withArgs(parseEther('5')); // (0.9 * 0.9 * 100) - 76
+        .withArgs(parseEther('1.960784313725490197')); // 100 - 75 / (0.9 * 0.85) => ~ 1.96. Taken post fact due to rounding
 
-      await vToken.__setCash(parseEther('4'));
+      await vToken.__setCash(parseEther('1.5'));
 
       await expect(testSafeVenus.deleverage(vault.address, vToken.address))
         .to.emit(testSafeVenus, 'Deleverage')
-        .withArgs(parseEther('4')); // (0.9 * 0.9 * 100) - 76
+        .withArgs(parseEther('1.5')); // It will return cash if cash value is lower than the redeem amount.
     });
   });
 });

@@ -618,7 +618,6 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // Deleverage function from safeVenus returns 0 when we are within a safe limit.
         while (amount > 0 && maxTries < 5) {
             _redeemAndRepay(vToken, amount);
-
             // Update the amount for the next iteration.
             amount = safeVenus.deleverage(this, vToken);
             maxTries += 1;

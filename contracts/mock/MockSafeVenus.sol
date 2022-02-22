@@ -9,6 +9,9 @@ import "hardhat/console.sol";
 
 //solhint-disable
 
+/**
+ * @dev We simplify this contract for easier calculations, but try to keep the core logic similar enough for testing
+ */
 contract MockSafeVenus {
     using IntMath for uint256;
 
@@ -40,7 +43,7 @@ contract MockSafeVenus {
         view
         returns (uint256)
     {
-        return vault.collateralLimit().bmul(vTokenCollateralFactor[vToken]);
+        return vTokenCollateralFactor[vToken].bmul(vault.collateralLimit());
     }
 
     function borrowAndSupply(IVenusVault vault, IVToken vToken)
@@ -122,19 +125,27 @@ contract MockSafeVenus {
         external
         returns (uint256)
     {
+        // Get a safe ratio between borrow amount and collateral required.
         uint256 _collateralLimit = safeCollateralRatio(vault, vToken);
 
+        // Get the current positions of the `vault` in the `vToken` market.
         (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
 
-        uint256 maxBorrowAmount = supply.bmul(_collateralLimit);
+        // Maximum amount we can borrow based on our supply.
+        uint256 maxSafeBorrowAmount = supply.bmul(_collateralLimit);
+        console.log(_collateralLimit, "_collateralLimit");
+        console.log(maxSafeBorrowAmount, "maxSafeBorrowAmount");
+        console.log(borrow, "borrow");
+        // If we are not above the maximum amount. We do not need to deleverage and return 0.
+        if (maxSafeBorrowAmount >= borrow) return 0;
 
-        uint256 amount = borrow > maxBorrowAmount
-            ? borrow - maxBorrowAmount
-            : 0;
+        // Get the Venus Protocol collateral requirement before liquidation
+        uint256 venusCollateralFactor = vTokenCollateralFactor[vToken];
 
-        if (amount == 0) return 0;
+        uint256 maxBorrow = venusCollateralFactor.bmul(supply);
 
-        return amount;
+        // Cannot withdraw more than liquidity
+        return maxBorrow - borrow;
     }
 
     function __setSupplyRewardPerBlock(uint256 amount) external {

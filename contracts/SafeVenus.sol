@@ -427,7 +427,8 @@ contract SafeVenus {
     }
 
     /**
-     * @dev Helper function to see if a vault should safely deleverage. It returns the amount to deleverage.
+     * @dev Helper function to see if a vault should delverage, it deleverages much faster than {safeRedeem}.
+     * It returns the amount to deleverage.
      * A 0 means the vault should not deleverage and should probably borrow.
      *
      * @param vault A vault contract
@@ -457,22 +458,20 @@ contract SafeVenus {
         // Get all current liquidity
         uint256 cash = vToken.getCash();
 
-        // We take 10% of Venus protocol to avoid liquidation.
+        // We add 15% safety room to the {venusCollateralFactor} to avoid liquidation.
         // We assume vaults are using values below 0.8e18 for their collateral ratio
-        uint256 maxBorrow = venusCollateralFactor.bmul(0.9e18).bmul(supply);
+        uint256 safeSupply = borrow.bdiv(venusCollateralFactor.bmul(0.85e18));
 
-        // If we are borrowing more than 90% of {venusCollateralFactor} we need to take a risky approach
-        if (borrow > maxBorrow) {
-            // If borrows is still higher; then it should just throw.
-            uint256 riskyAmount = venusCollateralFactor.bmul(0.98e18).bmul(
-                supply
-            ) - borrow;
+        if (safeSupply > supply) {
+            // if the supply is still lower, then it should throw
+            uint256 amount = supply -
+                borrow.bdiv(venusCollateralFactor.bmul(0.95e18));
 
             // Cannot withdraw more than liquidity
-            return riskyAmount.min(cash);
+            return amount.min(cash);
         }
 
         // Cannot withdraw more than liquidity
-        return (maxBorrow - borrow).min(cash);
+        return (supply - safeSupply).min(cash);
     }
 }

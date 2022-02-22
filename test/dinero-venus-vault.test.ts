@@ -4,7 +4,6 @@ import { ethers } from 'hardhat';
 
 import {
   Dinero,
-  DineroVenusVault,
   LiquidityRouter,
   MockERC20,
   MockNoInfiniteAllowanceERC20,
@@ -13,6 +12,7 @@ import {
   MockVenusTroller,
   PancakeFactory,
   PancakeRouter,
+  TestDineroVenusVault,
   WETH9,
 } from '../typechain';
 import { deploy, multiDeploy } from './lib/test-utils';
@@ -22,7 +22,7 @@ const { parseEther } = ethers.utils;
 const INITIAL_SUPPLY = parseEther('10000');
 
 describe('DineroVenusVault', () => {
-  let dineroVenusVault: DineroVenusVault;
+  let dineroVenusVault: TestDineroVenusVault;
   let dinero: Dinero;
   let XVS: MockNoInfiniteAllowanceERC20;
   let WBNB: MockERC20;
@@ -88,7 +88,7 @@ describe('DineroVenusVault', () => {
       ]
     );
 
-    dineroVenusVault = await deploy('DineroVenusVault', [
+    dineroVenusVault = await deploy('TestDineroVenusVault', [
       XVS.address,
       WBNB.address,
       router.address,
@@ -857,6 +857,33 @@ describe('DineroVenusVault', () => {
       await expect(
         dineroVenusVault.connect(bob).deleverage(vUSDC.address)
       ).to.revertedWith('DV: failed to repay');
+    });
+    it.only('deleverages the vault by redeeming and then repaying', async () => {
+      await Promise.all([
+        dineroVenusVault.connect(owner).setCollateralLimit(parseEther('0.8')),
+        dineroVenusVault
+          .connect(alice)
+          .deposit(USDC.address, parseEther('1000000')),
+      ]);
+
+      // safe collateral ratio will be 0.9 * 0.8 = 0.72
+
+      // We are supplying 1_000_000 and borrowing 800_000 => collateral ratio of 0.8 to trigger a deleverage
+      await dineroVenusVault
+        .connect(bob)
+        .borrow(vUSDC.address, parseEther('800000'));
+
+      await expect(dineroVenusVault.connect(bob).deleverage(vUSDC.address))
+        .to.emit(vUSDC, 'RedeemUnderlying')
+        // MAX SAFE BORROW => 720_000 (1_000_000 * 0.72)
+        // BORROW => 800_000
+        // CAP => 900_000
+        .withArgs(parseEther('100000')) // 900_000 - 800_000
+        .to.emit(vUSDC, 'RepayBorrow')
+        .withArgs(parseEther('100000'));
+      // MAX SAFE BORROW => 648_000 (900_000 * 0.72)
+      // BORROW => 700_000
+      // CAP => 900_000
     });
   });
 });
