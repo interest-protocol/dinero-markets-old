@@ -11,6 +11,8 @@ contract MockVenusTroller is IVenusTroller {
 
     event ExitMarket(address vToken);
 
+    event Claim(address account, uint256 amount);
+
     struct Market {
         /// @notice Whether or not this market is listed
         bool isListed;
@@ -90,6 +92,7 @@ contract MockVenusTroller is IVenusTroller {
     //solhint-disable-next-line no-empty-blocks
     function claimVenus(address account, address[] calldata) external {
         XVS.mint(account, _claimVenusAmount);
+        emit Claim(account, _claimVenusAmount);
     }
 
     function __setMarkets(

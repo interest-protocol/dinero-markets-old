@@ -10,7 +10,7 @@ import "../lib/IntMath.sol";
 import "./MockERC20.sol";
 import "hardhat/console.sol";
 
-//solhint-disable-next-line max-states-count
+//solhint-disable
 contract MockVenusToken is ERC20 {
     using IntMath for uint256;
     using SafeERC20 for IERC20;
