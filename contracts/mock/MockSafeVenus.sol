@@ -121,6 +121,9 @@ contract MockSafeVenus {
         return _supplyRewardPerBlock;
     }
 
+    /**
+     * @dev We simplify the logic to its core elements, to make sure the contract using it handles all scenarios.
+     */
     function deleverage(IVenusVault vault, IVToken vToken)
         external
         returns (uint256)
@@ -133,19 +136,19 @@ contract MockSafeVenus {
 
         // Maximum amount we can borrow based on our supply.
         uint256 maxSafeBorrowAmount = supply.bmul(_collateralLimit);
-        console.log(_collateralLimit, "_collateralLimit");
-        console.log(maxSafeBorrowAmount, "maxSafeBorrowAmount");
-        console.log(borrow, "borrow");
+
         // If we are not above the maximum amount. We do not need to deleverage and return 0.
         if (maxSafeBorrowAmount >= borrow) return 0;
 
         // Get the Venus Protocol collateral requirement before liquidation
         uint256 venusCollateralFactor = vTokenCollateralFactor[vToken];
 
-        uint256 maxBorrow = venusCollateralFactor.bmul(supply);
+        // We add 15% safety room to the {venusCollateralFactor} to avoid liquidation.
+        // We assume vaults are using values below 0.8e18 for their collateral ratio
+        uint256 safeSupply = borrow.bdiv(venusCollateralFactor.bmul(0.9e18));
 
         // Cannot withdraw more than liquidity
-        return maxBorrow - borrow;
+        return (supply - safeSupply);
     }
 
     function __setSupplyRewardPerBlock(uint256 amount) external {

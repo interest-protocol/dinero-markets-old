@@ -800,8 +800,7 @@ describe('DineroVenusVault', () => {
       ).to.not.emit(vUSDC, 'Redeem');
     });
     it('reverts if redeemUnderlying or repayBorrow from vToken revert', async () => {
-      // artificially set collateral ratio to 0.9 which will trigger a deleverage as our ratio is 0.45
-      // Safe Venus relies in these values to decide o the deleverage amount
+      // Set collateral ratio at 80% which will trigger a deleverage since our safe collateral ratio is at 45%
       await Promise.all([
         vUSDC.__setBalanceOfUnderlying(
           dineroVenusVault.address,
@@ -809,10 +808,11 @@ describe('DineroVenusVault', () => {
         ),
         vUSDC.__setBorrowBalanceCurrent(
           dineroVenusVault.address,
-          parseEther('90000')
+          parseEther('80000')
         ),
         // will trigger the error
         vUSDC.__setRedeemUnderlyingReturn(1),
+        safeVenus.__setVTokenCollateralFactor(vUSDC.address, parseEther('0.9')),
       ]);
 
       await expect(
@@ -835,55 +835,138 @@ describe('DineroVenusVault', () => {
           .deposit(USDC.address, parseEther('1000000')),
       ]);
 
-      await dineroVenusVault.connect(bob).leverage(vUSDC.address);
-
-      await safeVenus.borrowAndSupply(dineroVenusVault.address, vUSDC.address);
-
-      const [borrow, supply] = await Promise.all([
-        safeVenus.borrowBalance(),
-        safeVenus.supplyBalance(),
-      ]);
-
-      await Promise.all([
-        // Manipulate the balances to be 0.9 collateral ratio
-        // This will trigger a safeVenus.deleverage positive value and will call redeemUnderlying and then repayBorrow
-        vUSDC.__setBorrowBalanceCurrent(
-          dineroVenusVault.address,
-          supply.mul(parseEther('0.9')).div(parseEther('1')).sub(borrow)
-        ),
-        vUSDC.__setRepayReturnValue(1),
-      ]);
+      // 0.9 (vToken collateral factor) * 0.9 => 0.81. So we borrow up to 0.8 => 2_000_000 * 0.8. Should trigger a deleverage
+      await dineroVenusVault.borrow(vUSDC.address, parseEther('1600000'));
 
       await expect(
         dineroVenusVault.connect(bob).deleverage(vUSDC.address)
       ).to.revertedWith('DV: failed to repay');
     });
-    it.only('deleverages the vault by redeeming and then repaying', async () => {
+    it('deleverages the vault by redeeming and then repaying', async () => {
       await Promise.all([
-        dineroVenusVault.connect(owner).setCollateralLimit(parseEther('0.8')),
         dineroVenusVault
           .connect(alice)
           .deposit(USDC.address, parseEther('1000000')),
+        safeVenus.__setVTokenCollateralFactor(vUSDC.address, parseEther('0.9')),
       ]);
 
-      // safe collateral ratio will be 0.9 * 0.8 = 0.72
-
+      // safe collateral ratio will be 0.9 * 0.5 = 0.45
+      // Gonna leverage the vault to 0.7 collateral ratio which will trigger a deleverage
+      // Safe Venus will start deleveraging current supply minus (borrow / 0.81). 0.9 * 0.9 = 0.81
       // We are supplying 1_000_000 and borrowing 800_000 => collateral ratio of 0.8 to trigger a deleverage
       await dineroVenusVault
         .connect(bob)
-        .borrow(vUSDC.address, parseEther('800000'));
+        .borrow(vUSDC.address, parseEther('700000'));
 
       await expect(dineroVenusVault.connect(bob).deleverage(vUSDC.address))
+        // RATIO = 0.7 > 0.45
+        // BORROW => 700_000
+        // SAFE SUPPLY => ~864_197 (700_000 / 0.81)
+        // CURRENT SUPPLY => 1_000_000
+        // AMOUNT => ~135_802
         .to.emit(vUSDC, 'RedeemUnderlying')
-        // MAX SAFE BORROW => 720_000 (1_000_000 * 0.72)
-        // BORROW => 800_000
-        // CAP => 900_000
-        .withArgs(parseEther('100000')) // 900_000 - 800_000
+        .withArgs(parseEther('135802.469135802469135803'))
         .to.emit(vUSDC, 'RepayBorrow')
-        .withArgs(parseEther('100000'));
-      // MAX SAFE BORROW => 648_000 (900_000 * 0.72)
-      // BORROW => 700_000
-      // CAP => 900_000
+        .withArgs(parseEther('135802.469135802469135803'))
+        // RATIO = ~0.65 > 0.45
+        // BORROW => ~ 564_200
+        // SAFE SUPPLY => ~ 696_543 (564_200 / 0.81)
+        // CURRENT SUPPLY => ~864_198
+        // AMOUNT => ~ 167_655
+        .to.emit(vUSDC, 'RedeemUnderlying')
+        .withArgs(parseEther('167657.369303459838439263'))
+        .to.emit(vUSDC, 'RepayBorrow')
+        .withArgs(parseEther('167657.369303459838439263'))
+        // RATIO = ~0.65 > 0.45
+        // BORROW => ~ 396_545
+        // SAFE SUPPLY => ~ 489_561 (396_545 / 0.81)
+        // CURRENT SUPPLY => ~ 696_543
+        // AMOUNT => ~ 206_982
+        .to.emit(vUSDC, 'RedeemUnderlying')
+        .withArgs(parseEther('206984.406547481282023781'))
+        .to.emit(vUSDC, 'RepayBorrow')
+        .withArgs(parseEther('206984.406547481282023781'));
+      // RATIO = ~ 038 < 0.45. It will not deleverage anymore
+      // BORROW => ~ 189_561
+      // CURRENT SUPPLY => ~ 489_559
+    });
+    it('deleverages all listed assets', async () => {
+      await Promise.all([
+        dineroVenusVault
+          .connect(bob)
+          .deposit(USDC.address, parseEther('1000000')),
+        dineroVenusVault
+          .connect(alice)
+          .deposit(DAI.address, parseEther('1000000')),
+        // Need to adjust DAI collateral factor to behave like USDC
+        safeVenus.__setVTokenCollateralFactor(vUSDC.address, parseEther('0.9')),
+        safeVenus.__setVTokenCollateralFactor(vDAI.address, parseEther('0.9')),
+        vDAI.__setCollateralFactor(parseEther('0.9')),
+      ]);
+
+      await Promise.all([
+        dineroVenusVault
+          .connect(bob)
+          .borrow(vUSDC.address, parseEther('700000')),
+        dineroVenusVault
+          .connect(bob)
+          .borrow(vDAI.address, parseEther('700000')),
+      ]);
+
+      const receipt = await (
+        await dineroVenusVault.connect(bob).deleverageAll()
+      ).wait();
+
+      const USDCRedeemUnderlyingTopic = vUSDC.interface.getEventTopic(
+        vUSDC.interface.getEvent('RedeemUnderlying')
+      );
+      const USDCRepayBorrowTopic = vUSDC.interface.getEventTopic(
+        vUSDC.interface.getEvent('RepayBorrow')
+      );
+
+      const DAIRedeemUnderlyingTopic = vDAI.interface.getEventTopic(
+        vDAI.interface.getEvent('RedeemUnderlying')
+      );
+      const DAIRepayBorrowTopic = vDAI.interface.getEventTopic(
+        vDAI.interface.getEvent('RepayBorrow')
+      );
+
+      // Based on previous test calculations, it requires 3 loops of redeem and repay to deleverage a position with a  supply of 1m and 700k borrow.
+      expect(
+        receipt.events
+          ?.filter((x) => x.topics.includes(USDCRedeemUnderlyingTopic))
+          .filter(
+            (x) =>
+              x.address.toLocaleLowerCase() ===
+              vUSDC.address.toLocaleLowerCase()
+          ).length
+      ).to.be.equal(3);
+      expect(
+        receipt.events
+          ?.filter((x) => x.topics.includes(USDCRepayBorrowTopic))
+          .filter(
+            (x) =>
+              x.address.toLocaleLowerCase() ===
+              vUSDC.address.toLocaleLowerCase()
+          ).length
+      ).to.be.equal(3);
+
+      expect(
+        receipt.events
+          ?.filter((x) => x.topics.includes(DAIRedeemUnderlyingTopic))
+          .filter(
+            (x) =>
+              x.address.toLocaleLowerCase() === vDAI.address.toLocaleLowerCase()
+          ).length
+      ).to.be.equal(3);
+      expect(
+        receipt.events
+          ?.filter((x) => x.topics.includes(DAIRepayBorrowTopic))
+          .filter(
+            (x) =>
+              x.address.toLocaleLowerCase() === vDAI.address.toLocaleLowerCase()
+          ).length
+      ).to.be.equal(3);
     });
   });
 });
