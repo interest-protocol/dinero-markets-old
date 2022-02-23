@@ -1300,12 +1300,154 @@ describe('DineroVenusVault', () => {
       // The vault has no leverage
       expect(totalFreeUnderlying).to.be.within(
         // TS does not know that Chai supports big number in this matcher with waffle
-        // @ts-ignore
+        // @ts-expect-error
         vaultVUSDCBalance4.mul(exchangeRate).div(parseEther('1')),
         vaultVUSDCBalance4
           .mul(exchangeRate)
           .div(parseEther('1'))
           .add(parseEther('1'))
+      );
+    });
+    it('calculates losses proportionally', async () => {
+      // Need initial deposit to incur a loss
+      await dineroVenusVault
+        .connect(bob)
+        .deposit(USDC.address, parseEther('100000'));
+
+      // To emulate a real life scenario, losses only happen when we leverage the vault position.
+      await dineroVenusVault.connect(bob).leverage(vUSDC.address);
+
+      const [
+        vaultBalanceOfUnderlying,
+        totalFreeUnderlying,
+        vUSDCTotalLoss,
+        totalFreeVTokens,
+        exchangeRate,
+        decimals,
+      ] = await Promise.all([
+        vUSDC.balanceOfUnderlying(dineroVenusVault.address),
+        dineroVenusVault.totalFreeUnderlying(USDC.address),
+        dineroVenusVault.totalLossOf(vUSDC.address),
+        dineroVenusVault.totalFreeVTokenOf(vUSDC.address),
+        vUSDC.exchangeRateCurrent(),
+        vUSDC.decimals(),
+      ]);
+
+      // Artificially cause a 10% loss on the vault from 100_000 USDC -> 90_000 USDC
+      await vUSDC.__setBalanceOfUnderlying(
+        dineroVenusVault.address,
+        vaultBalanceOfUnderlying.sub(parseEther('10000'))
+      );
+
+      expect(vUSDCTotalLoss).to.be.equal(0);
+      expect(totalFreeUnderlying).to.be.equal(parseEther('100000'));
+
+      const oneVToken = ethers.BigNumber.from(10).pow(
+        ethers.BigNumber.from(decimals)
+      );
+
+      const lossPerVToken = parseEther('10000')
+        .mul(parseEther('1'))
+        .div(exchangeRate)
+        .mul(oneVToken)
+        .div(totalFreeVTokens);
+
+      // Alice should NOT incur a loss
+      // Loss should be calculated
+      await expect(
+        dineroVenusVault
+          .connect(alice)
+          .deposit(USDC.address, parseEther('50000'))
+      )
+        .to.emit(dineroVenusVault, 'Loss')
+        .withArgs(parseEther('100000'), parseEther('90000'), lossPerVToken);
+
+      const [
+        vaultBalanceOfUnderlying2,
+        totalFreeUnderlying2,
+        vUSDCTotalLoss2,
+        totalFreeVTokens2,
+        aliceAccount,
+      ] = await Promise.all([
+        vUSDC.balanceOfUnderlying(dineroVenusVault.address),
+        dineroVenusVault.totalFreeUnderlying(USDC.address),
+        dineroVenusVault.totalLossOf(vUSDC.address),
+        dineroVenusVault.totalFreeVTokenOf(vUSDC.address),
+        dineroVenusVault.accountOf(USDC.address, alice.address),
+      ]);
+
+      expect(vaultBalanceOfUnderlying2).to.be.equal(
+        vaultBalanceOfUnderlying
+          .sub(parseEther('10000'))
+          .add(parseEther('50000'))
+      );
+      expect(totalFreeUnderlying2).to.be.equal(parseEther('140000'));
+      expect(vUSDCTotalLoss2).to.be.equal(lossPerVToken);
+      // Loss essentially happens after minting the vTokens.
+      // Will look a bit different than real world because the exchange rate should change but should not change our calculations
+      expect(totalFreeVTokens2).to.be.closeTo(
+        totalFreeUnderlying2
+          .add(parseEther('10000'))
+          .mul(parseEther('1'))
+          .div(exchangeRate),
+        2
+      );
+      expect(aliceAccount.principal).to.be.equal(parseEther('50000'));
+      // Alice should not incur any loss
+      expect(aliceAccount.vTokens).to.be.equal(
+        parseEther('50000').mul(parseEther('1')).div(exchangeRate)
+      );
+      expect(aliceAccount.rewardsPaid).to.be.equal(0);
+      expect(aliceAccount.lossVTokensAccrued).to.be.equal(
+        vUSDCTotalLoss2.mul(aliceAccount.vTokens).div(oneVToken)
+      );
+
+      // Bob should incur a loss
+      // There should not record a second loss
+      await expect(
+        dineroVenusVault.connect(bob).deposit(USDC.address, parseEther('45000'))
+      ).to.not.emit(dineroVenusVault, 'Loss');
+
+      const [
+        vaultBalanceOfUnderlying3,
+        totalFreeUnderlying3,
+        vUSDCTotalLoss3,
+        totalFreeVTokens3,
+        bobAccount,
+      ] = await Promise.all([
+        vUSDC.balanceOfUnderlying(dineroVenusVault.address),
+        dineroVenusVault.totalFreeUnderlying(USDC.address),
+        dineroVenusVault.totalLossOf(vUSDC.address),
+        dineroVenusVault.totalFreeVTokenOf(vUSDC.address),
+        dineroVenusVault.accountOf(USDC.address, bob.address),
+      ]);
+
+      const loss = vUSDCTotalLoss3
+        .mul(parseEther('100000').mul(parseEther('1')).div(exchangeRate))
+        .div(oneVToken);
+
+      expect(vaultBalanceOfUnderlying3).to.be.equal(
+        vaultBalanceOfUnderlying2.add(parseEther('45000'))
+      );
+      expect(totalFreeUnderlying3).to.be.equal(
+        totalFreeUnderlying2.add(parseEther('45000'))
+      );
+      expect(vUSDCTotalLoss3).to.be.equal(vUSDCTotalLoss2);
+      expect(totalFreeVTokens3).to.be.equal(
+        totalFreeVTokens2
+          .add(parseEther('45000').mul(parseEther('1')).div(exchangeRate))
+          .sub(loss)
+      );
+
+      expect(bobAccount.principal).to.be.equal(parseEther('145000'));
+      // Bob should incur a loss
+      expect(bobAccount.vTokens).to.be.closeTo(
+        bobAccount.principal.mul(parseEther('1')).div(exchangeRate).sub(loss),
+        1
+      );
+      expect(bobAccount.rewardsPaid).to.be.equal(0);
+      expect(bobAccount.lossVTokensAccrued).to.be.equal(
+        bobAccount.vTokens.mul(vUSDCTotalLoss3).div(oneVToken)
       );
     });
   });
