@@ -38,6 +38,25 @@ export const deployUUPS = async (
   return instance;
 };
 
+export const multiDeployUUPS = async (
+  name: ReadonlyArray<string>,
+  parameters: Array<Array<unknown> | undefined> = []
+): Promise<any> => {
+  const factories = await Promise.all(
+    name.map((x) => ethers.getContractFactory(x))
+  );
+
+  const instances = await Promise.all(
+    factories.map((factory, index) =>
+      upgrades.deployProxy(factory, parameters[index], { kind: 'uups' })
+    )
+  );
+
+  await Promise.all([instances.map((x) => x.deployed())]);
+
+  return instances;
+};
+
 export const upgrade = async (
   proxy: ContractAddressOrInstance,
   name: string

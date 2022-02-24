@@ -12,9 +12,12 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 import "./lib/IntMath.sol";
 
@@ -34,7 +37,7 @@ import "./tokens/StakedInterestToken.sol";
  * @notice The {CasaDePapel} needs to get the ownership of both {InterestToken} and {StakedInterestToken} before the {startBlock}.
  * @notice New {InterestToken} are minted based on block and not on timestamps.
  */
-contract CasaDePapel is Ownable {
+contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -89,11 +92,11 @@ contract CasaDePapel is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line var-name-mixedcase
-    InterestToken public immutable INTEREST_TOKEN;
+    InterestToken public INTEREST_TOKEN;
 
     // Receipt token to represent how many INT tokens the user has staked. Only distributed when staking INT directly
     // solhint-disable-next-line var-name-mixedcase
-    StakedInterestToken public immutable STAKED_INTEREST_TOKEN;
+    StakedInterestToken public STAKED_INTEREST_TOKEN;
 
     // How many {InterestToken} to be minted per block.
     uint256 public interestTokenPerBlock;
@@ -116,7 +119,7 @@ contract CasaDePapel is Ownable {
     uint256 public startBlock;
 
     /*///////////////////////////////////////////////////////////////
-                                CONSTRUCTOR
+                                INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
     /**
@@ -126,13 +129,16 @@ contract CasaDePapel is Ownable {
      * @param _interestTokenPerBlock The amount of {InterestToken} to be minted per block.
      * @param _startBlock The block number that this contract will start minting {InterestToken}.
      */
-    constructor(
+    function initialize(
         InterestToken interestToken,
         StakedInterestToken stakedInterestToken,
         address _devAccount,
         uint256 _interestTokenPerBlock,
         uint256 _startBlock
-    ) {
+    ) external initializer {
+        __UUPSUpgradeable_init();
+        __Ownable_init();
+
         // Setup initial state
         INTEREST_TOKEN = interestToken;
         STAKED_INTEREST_TOKEN = stakedInterestToken;
@@ -709,6 +715,18 @@ contract CasaDePapel is Ownable {
 
         // update the pool 0.
         _updateStakingPool();
+    }
+
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must be the owner.
+     */
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyOwner
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 
     /*///////////////////////////////////////////////////////////////
