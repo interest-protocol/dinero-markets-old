@@ -7,8 +7,8 @@ import {
   MockERC20,
   MockInterestRateModel,
   MockTWAP,
+  MockVenusController,
   MockVenusToken,
-  MockVenusTroller,
   MockVenusVault,
   OracleV1,
   SafeVenus,
@@ -25,7 +25,7 @@ describe('SafeVenus', () => {
   // Wrapper contract to test the functionality of safeVenus via events
   let testSafeVenus: TestSafeVenus;
   let safeVenus: SafeVenus;
-  let venusTroller: MockVenusTroller;
+  let venusController: MockVenusController;
   let vault: MockVenusVault;
   let oracle: OracleV1;
   let vToken: MockVenusToken;
@@ -89,8 +89,8 @@ describe('SafeVenus', () => {
       ),
     ]);
 
-    [oracle, venusTroller] = await multiDeploy(
-      ['OracleV1', 'MockVenusTroller'],
+    [oracle, venusController] = await multiDeploy(
+      ['OracleV1', 'MockVenusController'],
       [
         [TWAP.address, bnbUSDFeed.address, WBNB.address, BUSD.address],
         [XVS.address],
@@ -98,7 +98,11 @@ describe('SafeVenus', () => {
     );
 
     [safeVenus] = await Promise.all([
-      deploy('SafeVenus', [venusTroller.address, XVS.address, oracle.address]),
+      deploy('SafeVenus', [
+        venusController.address,
+        XVS.address,
+        oracle.address,
+      ]),
       vToken.__setUnderlying(ETH.address),
       vToken.__setInterestRateModel(interestRateModel.address),
       vToken.__setReserveFactorMantissa(parseEther('1')),
@@ -115,7 +119,7 @@ describe('SafeVenus', () => {
     await Promise.all([
       vToken.__setSupplyRatePerBlock(parseEther('0.05')),
       vToken.__setBorrowRatePerBlock(parseEther('0.08')),
-      venusTroller.__setMarkets(
+      venusController.__setMarkets(
         vToken.address,
         true,
         parseEther('0.9'),
@@ -129,7 +133,7 @@ describe('SafeVenus', () => {
       await safeVenus.safeCollateralRatio(vault.address, vToken.address)
     ).to.be.equal(parseEther('0.625'));
 
-    venusTroller.__setMarkets(
+    venusController.__setMarkets(
       vToken.address,
       true,
       parseEther('0.6'),
@@ -166,7 +170,7 @@ describe('SafeVenus', () => {
       vToken.__setCash(parseEther('100')),
       vToken.__setExchangeRateCurrent(parseEther('1.1')),
       vToken.__setBalanceOfUnderlying(vault.address, parseEther('500')),
-      venusTroller.__setVenusSpeeds(vToken.address, parseEther('9')),
+      venusController.__setVenusSpeeds(vToken.address, parseEther('9')),
       interestRateModel.__setBorrowRate(parseEther('0.09')),
       interestRateModel.__setSupplyRate(parseEther('0.12')),
     ]);
@@ -187,7 +191,7 @@ describe('SafeVenus', () => {
       .withArgs(false);
 
     // Greatly increase the rewards so even tho borrow > supply rate. The rewards make up for it.
-    await venusTroller.__setVenusSpeeds(vToken.address, parseEther('9000'));
+    await venusController.__setVenusSpeeds(vToken.address, parseEther('9000'));
 
     await expect(
       testSafeVenus.isProfitable(vault.address, vToken.address, 1000)
@@ -202,7 +206,7 @@ describe('SafeVenus', () => {
         // Safe collateral ratio of 0.625
         vToken.__setSupplyRatePerBlock(parseEther('0.05')),
         vToken.__setBorrowRatePerBlock(parseEther('0.08')),
-        venusTroller.__setMarkets(
+        venusController.__setMarkets(
           vToken.address,
           true,
           parseEther('0.9'),
@@ -221,7 +225,7 @@ describe('SafeVenus', () => {
         // Safe collateral ratio of 0.625
         vToken.__setSupplyRatePerBlock(parseEther('0.05')),
         vToken.__setBorrowRatePerBlock(parseEther('0.08')),
-        venusTroller.__setMarkets(
+        venusController.__setMarkets(
           vToken.address,
           true,
           parseEther('0.9'),
@@ -244,7 +248,7 @@ describe('SafeVenus', () => {
         // Safe collateral ratio of 0.75
         vToken.__setSupplyRatePerBlock(parseEther('0.06')),
         vToken.__setBorrowRatePerBlock(parseEther('0.08')),
-        venusTroller.__setMarkets(
+        venusController.__setMarkets(
           vToken.address,
           true,
           parseEther('0.9'),
@@ -265,7 +269,7 @@ describe('SafeVenus', () => {
         // Safe collateral ratio of 0.75
         vToken.__setSupplyRatePerBlock(parseEther('0.06')),
         vToken.__setBorrowRatePerBlock(parseEther('0.08')),
-        venusTroller.__setMarkets(
+        venusController.__setMarkets(
           vToken.address,
           true,
           parseEther('0.9'),
@@ -287,7 +291,7 @@ describe('SafeVenus', () => {
         // Safe collateral ratio of 0.75
         vToken.__setSupplyRatePerBlock(parseEther('0.06')),
         vToken.__setBorrowRatePerBlock(parseEther('0.08')),
-        venusTroller.__setMarkets(
+        venusController.__setMarkets(
           vToken.address,
           true,
           parseEther('0.9'),
@@ -319,7 +323,7 @@ describe('SafeVenus', () => {
         // Safe collateral ratio of 0.75
         vToken.__setSupplyRatePerBlock(parseEther('0.06')),
         vToken.__setBorrowRatePerBlock(parseEther('0.08')),
-        venusTroller.__setMarkets(
+        venusController.__setMarkets(
           vToken.address,
           true,
           parseEther('0.9'),
@@ -345,7 +349,7 @@ describe('SafeVenus', () => {
         // Safe collateral ratio of 0.75
         vToken.__setSupplyRatePerBlock(parseEther('0.06')),
         vToken.__setBorrowRatePerBlock(parseEther('0.08')),
-        venusTroller.__setMarkets(
+        venusController.__setMarkets(
           vToken.address,
           true,
           parseEther('0.9'),
@@ -357,7 +361,7 @@ describe('SafeVenus', () => {
         vToken.__setBalanceOfUnderlying(vault.address, parseEther('100')),
         vToken.__setExchangeRateCurrent(parseEther('1.1')),
         // We make it profitable to borrow
-        venusTroller.__setVenusSpeeds(vToken.address, parseEther('900')),
+        venusController.__setVenusSpeeds(vToken.address, parseEther('900')),
         interestRateModel.__setBorrowRate(parseEther('0.09')),
         interestRateModel.__setSupplyRate(parseEther('0.08')),
       ]);
@@ -394,7 +398,7 @@ describe('SafeVenus', () => {
 
     it('returns 0 if we are underwater', async () => {
       await Promise.all([
-        venusTroller.__setMarkets(
+        venusController.__setMarkets(
           vToken.address,
           true,
           parseEther('0.9'),
@@ -414,7 +418,7 @@ describe('SafeVenus', () => {
 
     it('safe redeem amount', async () => {
       await Promise.all([
-        venusTroller.__setMarkets(
+        venusController.__setMarkets(
           vToken.address,
           true,
           parseEther('0.95'),
@@ -452,7 +456,7 @@ describe('SafeVenus', () => {
       await Promise.all([
         vToken.__setTotalBorrowsCurrent(parseEther('1000')),
         vToken.__setBorrowBalanceCurrent(vault.address, parseEther('150')),
-        venusTroller.__setVenusSpeeds(vToken.address, parseEther('40')),
+        venusController.__setVenusSpeeds(vToken.address, parseEther('40')),
         interestRateModel.__setBorrowRate(parseEther('0.07')),
       ]);
 
@@ -482,7 +486,7 @@ describe('SafeVenus', () => {
       await Promise.all([
         vToken.__setExchangeRateCurrent(parseEther('1.1')),
         vToken.__setBalanceOfUnderlying(vault.address, parseEther('200')),
-        venusTroller.__setVenusSpeeds(vToken.address, parseEther('400')),
+        venusController.__setVenusSpeeds(vToken.address, parseEther('400')),
         interestRateModel.__setSupplyRate(parseEther('0.05')),
       ]);
 
@@ -559,7 +563,7 @@ describe('SafeVenus', () => {
         // Safe collateral ratio of 0.75
         vToken.__setSupplyRatePerBlock(parseEther('0.06')),
         vToken.__setBorrowRatePerBlock(parseEther('0.08')),
-        venusTroller.__setMarkets(
+        venusController.__setMarkets(
           vToken.address,
           true,
           parseEther('0.9'),
@@ -580,7 +584,7 @@ describe('SafeVenus', () => {
         // Safe collateral ratio of 0.75
         vToken.__setSupplyRatePerBlock(parseEther('0.06')),
         vToken.__setBorrowRatePerBlock(parseEther('0.08')),
-        venusTroller.__setMarkets(
+        venusController.__setMarkets(
           vToken.address,
           true,
           parseEther('0.9'),
@@ -607,7 +611,7 @@ describe('SafeVenus', () => {
         // Safe collateral ratio of 0.625
         vToken.__setSupplyRatePerBlock(parseEther('0.05')),
         vToken.__setBorrowRatePerBlock(parseEther('0.08')),
-        venusTroller.__setMarkets(
+        venusController.__setMarkets(
           vToken.address,
           true,
           parseEther('0.9'),

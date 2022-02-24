@@ -27,7 +27,7 @@ import "./lib/Rebase.sol";
 import "./lib/IntMath.sol";
 import "./lib/IntERC20.sol";
 
-import "./vaults/Vault.sol";
+import "./master-chef-vaults/MasterChefVault.sol";
 
 import "./OracleV1.sol";
 import "./InterestGovernorV1.sol";
@@ -161,7 +161,7 @@ contract InterestMarketV1 is Initializable, Context {
     IERC20 public COLLATERAL; // Token to be used to cover the loan.
 
     // solhint-disable-next-line var-name-mixedcase
-    Vault public VAULT; // A vault to interact with PCS master chef.
+    MasterChefVault public VAULT; // A vault to interact with PCS master chef.
 
     // Clone only variable
     uint256 public totalCollateral; // Total amount of collateral in this market.
@@ -241,7 +241,10 @@ contract InterestMarketV1 is Initializable, Context {
             loan.INTEREST_RATE,
             maxLTVRatio,
             liquidationFee
-        ) = abi.decode(data, (IERC20, Vault, uint64, uint256, uint256));
+        ) = abi.decode(
+            data,
+            (IERC20, MasterChefVault, uint64, uint256, uint256)
+        );
 
         // Collateral must not be zero address.
         require(address(COLLATERAL) != address(0), "MKT: no zero address");
@@ -612,7 +615,7 @@ contract InterestMarketV1 is Initializable, Context {
             // The rewards go to the `account`.
             // The collateral comes to this contract.
             // If the collateral is in this contract do nothing.
-            if (Vault(address(0)) != VAULT) {
+            if (MasterChefVault(address(0)) != VAULT) {
                 VAULT.withdraw(account, address(this), collateralToCover);
             }
 
@@ -833,7 +836,7 @@ contract InterestMarketV1 is Initializable, Context {
         address to,
         uint256 amount
     ) private {
-        if (Vault(address(0)) == VAULT) {
+        if (MasterChefVault(address(0)) == VAULT) {
             COLLATERAL.safeTransferFrom(from, address(this), amount);
         } else {
             VAULT.deposit(from, to, amount);
@@ -854,7 +857,7 @@ contract InterestMarketV1 is Initializable, Context {
         address recipient,
         uint256 amount
     ) private {
-        if (Vault(address(0)) == VAULT) {
+        if (MasterChefVault(address(0)) == VAULT) {
             COLLATERAL.safeTransfer(recipient, amount);
         } else {
             VAULT.withdraw(account, recipient, amount);

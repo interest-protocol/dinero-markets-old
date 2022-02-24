@@ -8,8 +8,8 @@ import {
   MockERC20,
   MockNoInfiniteAllowanceERC20,
   MockSafeVenus,
+  MockVenusController,
   MockVenusToken,
-  MockVenusTroller,
   PancakeFactory,
   PancakeRouter,
   TestDineroVenusVault,
@@ -34,7 +34,7 @@ describe('DineroVenusVault', () => {
   let router: PancakeRouter;
   let WETH: WETH9;
   let factory: PancakeFactory;
-  let venusController: MockVenusTroller;
+  let venusController: MockVenusController;
   let safeVenus: MockSafeVenus;
 
   let owner: SignerWithAddress;
@@ -76,7 +76,7 @@ describe('DineroVenusVault', () => {
     ]);
 
     [factory, venusController] = await multiDeploy(
-      ['PancakeFactory', 'MockVenusTroller'],
+      ['PancakeFactory', 'MockVenusController'],
       [[feeTo.address], [XVS.address]]
     );
 

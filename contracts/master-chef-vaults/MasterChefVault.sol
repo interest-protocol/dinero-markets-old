@@ -16,7 +16,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "../interfaces/IMasterChef.sol";
-import "../interfaces/IVault.sol";
+import "../interfaces/IMasterChefVault.sol";
 
 import "../lib/IntMath.sol";
 
@@ -30,7 +30,7 @@ import "../lib/IntMath.sol";
  * @notice It is meant to work with the {CAKE_MASTER_CHEF} deployed at 0x73feaa1eE314F8c655E354234017bE2193C9E24E.
  * @notice It is meant to be used only with tokens supported by tge {CAKE_MASTER_CHEF}.
  */
-abstract contract Vault is IVault, Ownable {
+abstract contract MasterChefVault is IMasterChefVault, Ownable {
     /*///////////////////////////////////////////////////////////////
                                 LIBRARIES
     //////////////////////////////////////////////////////////////*/

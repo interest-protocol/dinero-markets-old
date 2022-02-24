@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-import "./interfaces/IVenusTroller.sol";
+import "./interfaces/IVenusController.sol";
 import "./interfaces/IVToken.sol";
 import "./interfaces/IVenusVault.sol";
 import "./interfaces/IPancakeRouter02.sol";
@@ -104,7 +104,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
     IPancakeRouter02 public immutable ROUTER; // PCS router 0x10ED43C718714eb63d5aA57B78B54704E256024E
 
     // solhint-disable-next-line var-name-mixedcase
-    IVenusTroller public immutable VENUS_TROLLER; // 0xfD36E2c2a6789Db23113685031d7F16329158384
+    IVenusController public immutable VENUS_CONTROLLER; // 0xfD36E2c2a6789Db23113685031d7F16329158384
 
     //solhint-disable-next-line var-name-mixedcase
     Dinero public immutable DINERO; // 18 decimals
@@ -156,7 +156,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
      * @param xvs The contract of th Venus Token
      * @param wbnb The contract for Wrapped BNB token
      * @param router The contract of PCS router v2
-     * @param venusTroller The contract of the Venus Controller
+     * @param venusController The contract of the Venus Controller
      * @param dinero The contract of the dinero stable coin
      * @param safeVenus The helper contract address to interact with Venus
      * @param feeTo The address that will collect the fee
@@ -165,7 +165,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         address xvs,
         address wbnb,
         IPancakeRouter02 router,
-        IVenusTroller venusTroller,
+        IVenusController venusController,
         Dinero dinero,
         SafeVenus safeVenus,
         address feeTo
@@ -173,7 +173,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         XVS = xvs;
         WBNB = wbnb;
         ROUTER = router;
-        VENUS_TROLLER = venusTroller;
+        VENUS_CONTROLLER = venusController;
         DINERO = dinero;
         SAFE_VENUS = safeVenus;
         FEE_TO = feeTo;
@@ -739,7 +739,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         vTokenArray[0] = address(vToken);
 
         // Claim XVS in the `vToken`.
-        VENUS_TROLLER.claimVenus(address(this), vTokenArray);
+        VENUS_CONTROLLER.claimVenus(address(this), vTokenArray);
 
         uint256 xvsBalance = _contractBalanceOf(xvs);
 
@@ -905,7 +905,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         vTokenArray[0] = address(vToken);
 
         // Allow the `underlying` to be used as collateral to leverage.
-        uint256[] memory results = VENUS_TROLLER.enterMarkets(vTokenArray);
+        uint256[] memory results = VENUS_CONTROLLER.enterMarkets(vTokenArray);
 
         // Check if we successfully entered the market. If not we revert.
         _invariant(results[0], "DV: failed to enter market");
@@ -959,7 +959,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
 
         // Remove permission to use it as collateral
         _invariant(
-            VENUS_TROLLER.exitMarket(address(vToken)),
+            VENUS_CONTROLLER.exitMarket(address(vToken)),
             "DV: failed to exit market"
         );
 

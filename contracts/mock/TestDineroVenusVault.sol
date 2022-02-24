@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
-import "../interfaces/IVenusTroller.sol";
+import "../interfaces/IVenusController.sol";
 import "../interfaces/IVToken.sol";
 import "../interfaces/IPancakeRouter02.sol";
 
@@ -17,7 +17,7 @@ contract TestDineroVenusVault is DineroVenusVault {
         address xvs,
         address wbnb,
         IPancakeRouter02 router,
-        IVenusTroller venusTroller,
+        IVenusController venusController,
         Dinero dinero,
         SafeVenus safeVenus,
         address feeTo
@@ -26,7 +26,7 @@ contract TestDineroVenusVault is DineroVenusVault {
             xvs,
             wbnb,
             router,
-            venusTroller,
+            venusController,
             dinero,
             safeVenus,
             feeTo

@@ -2,8 +2,10 @@
   "name": "v1-core",
   "version": "1.0.0",
   "main": "index.js",
-  "license": "MIT",
-  "scripts": {
+  "publishConfig": {
+    "access": "public"
+  },  
+"scripts": {
     "prepare": "husky install",
     "lint": "eslint --fix --ext .js,.ts .",
     "type-check": "tsc --pretty --noEmit",

@@ -1,12 +1,12 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
-import "../interfaces/IVenusTroller.sol";
+import "../interfaces/IVenusController.sol";
 import "./MockERC20.sol";
 
 //solhint-disable
 
-contract MockVenusTroller is IVenusTroller {
+contract MockVenusController is IVenusController {
     event EnterMarket(address vToken);
 
     event ExitMarket(address vToken);

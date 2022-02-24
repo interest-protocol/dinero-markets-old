@@ -17,7 +17,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "../lib/IntMath.sol";
 
-import "./Vault.sol";
+import "./MasterChefVault.sol";
 
 /**
  * @dev This vault is designed to work with PCS {MasterChef} contract, 0x73feaa1eE314F8c655E354234017bE2193C9E24E, pool id 0.
@@ -28,7 +28,7 @@ import "./Vault.sol";
  * @notice We use the Open Zeppelin {SafeERC20} to interact with the Cake token, which follows the {IERC20} interface.
  * @notice The pool id 0, accepts {CAKE} and rewards {CAKE}.
  */
-contract CakeVault is Vault {
+contract CakeVault is MasterChefVault {
     /*///////////////////////////////////////////////////////////////
                                  LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -45,7 +45,7 @@ contract CakeVault is Vault {
      * @param cake the address of the {CakeToken}
      */
     constructor(IMasterChef cakeMasterChef, IERC20 cake)
-        Vault(cakeMasterChef, cake)
+        MasterChefVault(cakeMasterChef, cake)
     {
         // Master chef needs full approval for us to deposit tokens on it.
         cake.safeApprove(address(cakeMasterChef), type(uint256).max);
@@ -60,7 +60,12 @@ contract CakeVault is Vault {
      *
      * @return The number of `CAKE` the contract has as rewards in the pool
      */
-    function getPendingRewards() public view override(Vault) returns (uint256) {
+    function getPendingRewards()
+        public
+        view
+        override(MasterChefVault)
+        returns (uint256)
+    {
         return CAKE_MASTER_CHEF.pendingCake(0, address(this));
     }
 
@@ -132,7 +137,7 @@ contract CakeVault is Vault {
         address from,
         address to,
         uint256 amount
-    ) internal override(Vault) {
+    ) internal override(MasterChefVault) {
         // Save the storage state in memory to save gas.
         User memory user = userInfo[to];
         uint256 _totalAmount = totalAmount;
@@ -195,7 +200,7 @@ contract CakeVault is Vault {
         address from,
         address to,
         uint256 amount
-    ) internal override(Vault) {
+    ) internal override(MasterChefVault) {
         User memory user = userInfo[from];
 
         // It is impossible to withdraw more than what the `account` owns.

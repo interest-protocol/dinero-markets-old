@@ -17,7 +17,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "../lib/IntMath.sol";
 
-import "./Vault.sol";
+import "./MasterChefVault.sol";
 
 /**
  * @dev This vault is designed to work with PCS {MasterChef} contract, 0x73feaa1eE314F8c655E354234017bE2193C9E24E, PancakePairs pools.
@@ -29,7 +29,7 @@ import "./Vault.sol";
  * @notice This contract inherits the {Vault} contract and overrides the {_withdraw} and {_deposit} functions.
  * @notice We use the Open Zeppelin {SafeERC20} to interact with the {CAKE} token and the {PancakePair} tokens, which follow the {IERC20} interface.
  */
-contract LPVault is Vault {
+contract LPVault is MasterChefVault {
     /*///////////////////////////////////////////////////////////////
                                  LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -64,7 +64,7 @@ contract LPVault is Vault {
         IERC20 cake,
         IERC20 stakingToken,
         uint256 poolId
-    ) Vault(cakeMasterChef, cake) {
+    ) MasterChefVault(cakeMasterChef, cake) {
         require(poolId != 0, "LPVault: this is a LP vault");
         STAKING_TOKEN = stakingToken;
         POOL_ID = poolId;
@@ -81,7 +81,12 @@ contract LPVault is Vault {
      *
      * @return The number of {CAKE} this contract has accrued as rewards in the {CAKE_MASTER_CHEF}.
      */
-    function getPendingRewards() public view override(Vault) returns (uint256) {
+    function getPendingRewards()
+        public
+        view
+        override(MasterChefVault)
+        returns (uint256)
+    {
         return
             CAKE_MASTER_CHEF.pendingCake(POOL_ID, address(this)) +
             CAKE_MASTER_CHEF.pendingCake(0, address(this));
@@ -209,7 +214,7 @@ contract LPVault is Vault {
         address from,
         address to,
         uint256 amount
-    ) internal override(Vault) {
+    ) internal override(MasterChefVault) {
         // Save storage state in memory to save gas.
         User memory user = userInfo[to];
         uint256 _totalAmount = totalAmount;
@@ -278,7 +283,7 @@ contract LPVault is Vault {
         address from,
         address to,
         uint256 amount
-    ) internal override(Vault) {
+    ) internal override(MasterChefVault) {
         User memory user = userInfo[from];
 
         // Illogical to allow `amount` to be higher than the amount the `account` has deposited in the contract.
