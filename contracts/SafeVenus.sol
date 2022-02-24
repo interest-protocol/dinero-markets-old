@@ -260,6 +260,7 @@ contract SafeVenus {
 
         // We cannot redeem more than the current liquidity in the market.
         // This value can be used to safely redeem from the supply or borrow.
+        // C
         return redeemAmount.min(vToken.getCash()).bmul(0.95e18);
     }
 

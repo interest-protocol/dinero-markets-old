@@ -602,7 +602,7 @@ describe('SafeVenus', () => {
         .to.emit(testSafeVenus, 'Deleverage')
         .withArgs(parseEther('0.5')); // It will return cash if cash value is lower than the redeem amount.
     });
-    it.only('returns redeem amount with 15% room if we are NOT over (85% * venus collateral factor * supply)', async () => {
+    it('returns redeem amount with 15% room if we are NOT over (85% * venus collateral factor * supply)', async () => {
       await Promise.all([
         // Safe collateral ratio of 0.625
         vToken.__setSupplyRatePerBlock(parseEther('0.05')),

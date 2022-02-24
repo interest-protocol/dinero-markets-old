@@ -18,7 +18,6 @@ import "./lib/IntERC20.sol";
 
 import "./tokens/Dinero.sol";
 import "./SafeVenus.sol";
-import "hardhat/console.sol";
 
 /**
  * @dev This is a Vault to mint Dinero. The idea is to always keep the vault assets 1:1 to Dinero minted.
@@ -419,6 +418,8 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // Get User Account data
         UserAccount memory userAccount = accountOf[underlying][_msgSender()];
 
+        require(userAccount.vTokens >= vTokenAmount, "DV: not enough balance");
+
         // Find the vToken of the underlying.
         IVToken vToken = vTokenOf[underlying];
 
@@ -474,9 +475,9 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         // Uniswap style, block scoping, to prevent stack too deep local variable errors.
         {
             // Amount of Dinero that needs to be burned.
-            // Need to calculate this before updating {userAccount.vTokens}.
+            // Need to calculate this before updating {userAccount.vTokens} and {userAccount.principal}.
             uint256 dineroToBurn = vTokenAmount.mulDiv(
-                decimalsFactor,
+                userAccount.principal,
                 userAccount.vTokens
             );
 
@@ -522,9 +523,10 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
             // Upper bound to prevent infinite loops.
             uint256 maxTries;
 
-            // If we cannot redeem enough to cover the `amountOfUnderlyingToRedeem`. We will start to deleverage; up to 4x.
+            // If we cannot redeem enough to cover the `amountOfUnderlyingToRedeem`. We will start to deleverage; up to 10x.
             // The less we are borrowing, the more we can redeem because the loans are overcollaterized.
-            while (amountOfUnderlyingToRedeem > safeAmount && maxTries <= 4) {
+            // Vault needs good liquidity and moderate leverage to avoid this lofic.
+            while (amountOfUnderlyingToRedeem > safeAmount && maxTries <= 10) {
                 _redeemAndRepay(vToken, safeAmount);
                 // update the safeAmout for the next iteration.
                 safeAmount = safeVenus.safeRedeem(this, vToken);
@@ -538,8 +540,13 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
             );
 
             // Redeem the underlying. It will revert if we are unable to withdraw.
+            // For dust we need to withdraw the min amount.
             _invariant(
-                vToken.redeemUnderlying(amountOfUnderlyingToRedeem),
+                vToken.redeemUnderlying(
+                    amountOfUnderlyingToRedeem.min(
+                        vToken.balanceOfUnderlying(address(this))
+                    )
+                ),
                 "DV: failed to redeem"
             );
         }
@@ -559,7 +566,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
             // Send fee to the protocol treasury.
             IERC20(underlying).safeTransfer(FEE_TO, fee);
 
-            emit Withdraw(_msgSender(), underlying, vTokenAmount, amountToSend);
+            emit Withdraw(_msgSender(), underlying, amountToSend, vTokenAmount);
         }
     }
 
@@ -582,6 +589,11 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         for (uint256 i = 0; i < depth; i++) {
             _borrowAndSupply(vToken);
         }
+
+        // Keep the data fresh
+        totalFreeUnderlying[vToken.underlying()] = _getTotalFreeUnderlying(
+            vToken
+        );
     }
 
     /**
@@ -631,6 +643,11 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
             amount = safeVenus.deleverage(this, vToken);
             maxTries += 1;
         }
+
+        // Keep the data fresh
+        totalFreeUnderlying[vToken.underlying()] = _getTotalFreeUnderlying(
+            vToken
+        );
     }
 
     /**
@@ -807,11 +824,23 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
      * @param amount The amount of the  loan we wish to pay.
      */
     function _redeemAndRepay(IVToken vToken, uint256 amount) private {
+        uint256 underlyingBalance = vToken.balanceOfUnderlying(address(this));
+
         // Redeem `amount` from `vToken`. It will revert on failure.
-        _invariant(vToken.redeemUnderlying(amount), "DV: failed to redeem");
+        // To avoid errors due to dust. Cannot withdraw more than what we have
+        _invariant(
+            vToken.redeemUnderlying(amount.min(underlyingBalance)),
+            "DV: failed to redeem"
+        );
+
+        uint256 borrowAmount = vToken.borrowBalanceCurrent(address(this));
 
         // Repay a portion, the `amount`, of the loan. It will revert on failure.
-        _invariant(vToken.repayBorrow(amount), "DV: failed to repay");
+        // We need to consider dust in here. We cannot repay more than what we owe.
+        _invariant(
+            vToken.repayBorrow(amount.min(borrowAmount)),
+            "DV: failed to repay"
+        );
     }
 
     /**

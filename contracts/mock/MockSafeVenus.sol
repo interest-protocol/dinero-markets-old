@@ -5,7 +5,6 @@ import "../interfaces/IVToken.sol";
 import "../interfaces/IVenusVault.sol";
 
 import "../lib/IntMath.sol";
-import "hardhat/console.sol";
 
 //solhint-disable
 
