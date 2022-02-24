@@ -137,21 +137,21 @@ describe('PancakeOracle', () => {
         'Update'
       );
 
-      await advanceBlockAndTime(PERIOD_SIZE + 50, ethers);
+      await advanceBlockAndTime(PERIOD_SIZE, ethers);
 
       await expect(oracle.update(btc.address, usdc.address)).to.emit(
         oracle,
         'Update'
       );
 
-      await advanceBlockAndTime(PERIOD_SIZE + 50, ethers);
+      await advanceBlockAndTime(PERIOD_SIZE, ethers);
 
       await expect(oracle.update(btc.address, usdc.address)).to.emit(
         oracle,
         'Update'
       );
 
-      await advanceBlockAndTime(PERIOD_SIZE + 50, ethers);
+      await advanceBlockAndTime(PERIOD_SIZE, ethers);
 
       await expect(oracle.update(btc.address, usdc.address)).to.emit(
         oracle,
@@ -165,19 +165,33 @@ describe('PancakeOracle', () => {
         oracle.pairObservations(btcUSDCPair, 3),
       ]);
 
+      const currentIndex = await oracle.observationIndexOf(
+        (
+          await ethers.provider.getBlock(await ethers.provider.getBlockNumber())
+        ).timestamp
+      );
+
+      const previousIndex = currentIndex === 0 ? 3 : currentIndex - 1;
+
       // All values have been updated
       expect(
         observations.filter((x) => !x.price0Cumulative.isZero()).length
       ).to.be.equal(4);
 
       expect(
-        observations[3].timestamp.gt(observations[2].timestamp)
+        observations[currentIndex].timestamp.gt(
+          observations[previousIndex].timestamp
+        )
       ).to.be.equal(true);
       expect(
-        observations[3].price0Cumulative.gt(observations[2].price0Cumulative)
+        observations[currentIndex].price0Cumulative.gt(
+          observations[previousIndex].price0Cumulative
+        )
       ).to.be.equal(true);
       expect(
-        observations[3].price1Cumulative.gt(observations[2].price1Cumulative)
+        observations[currentIndex].price1Cumulative.gt(
+          observations[previousIndex].price1Cumulative
+        )
       ).to.be.equal(true);
     });
   });
@@ -187,26 +201,38 @@ describe('PancakeOracle', () => {
       await oracle.update(btc.address, usdc.address);
 
       // Miss one observation
-      await advanceBlockAndTime(PERIOD_SIZE + PERIOD_SIZE + 50, ethers);
+      await advanceBlockAndTime(PERIOD_SIZE + PERIOD_SIZE, ethers);
 
       await oracle.update(btc.address, usdc.address);
-      await advanceBlockAndTime(PERIOD_SIZE + 50, ethers);
+      await advanceBlockAndTime(PERIOD_SIZE, ethers);
 
       await oracle.update(btc.address, usdc.address);
 
-      // Index 1  feed is missing.
-      await advanceBlockAndTime(PERIOD_SIZE + 50, ethers);
+      await advanceBlockAndTime(PERIOD_SIZE, ethers);
 
+      // Example: Time delays might change the specific indexes.
+      // 0 - update
+      // 6 - NO UPDATE
+      // 12 - update
+      // 18 - update
+      // 24 - Consult fails here
+
+      // 0 -  set
+      // 1 - set
+      // 2 - NO DATA
+      // 3 - set
+
+      // The index is missing because we skipped a period.
       await expect(
         oracle.consult(btc.address, parseEther('1'), usdc.address)
       ).to.revertedWith('PO: missing observation');
 
-      // Index 0  feed is outdated.
       await advanceBlockAndTime(
         PERIOD_SIZE + PERIOD_SIZE + PERIOD_SIZE + 50,
         ethers
       );
 
+      // It has been over 24 hours since the last update.
       await expect(
         oracle.consult(btc.address, parseEther('1'), usdc.address)
       ).to.revertedWith('PO: missing observation');

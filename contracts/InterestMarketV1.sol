@@ -721,11 +721,6 @@ contract InterestMarketV1 is Initializable, Context {
             // save gas
             IPancakeRouter02 router = ROUTER;
 
-            // We need to approve to remove liquidity and swap
-            // We can trust the PCS router
-            IPancakePair(token0).approve(address(router), type(uint256).max);
-            IPancakePair(token1).approve(address(router), type(uint256).max);
-
             // Even if one of the tokens is WBNB. We dont want BNB because we want to use {swapExactTokensForTokens} for Dinero after.
             // Avoids unecessary routing through WBNB {deposit} and {withdraw}.
             (uint256 amount0, uint256 amount1) = router.removeLiquidity(
@@ -739,13 +734,17 @@ contract InterestMarketV1 is Initializable, Context {
                 block.timestamp
             );
 
+            // We need to approve the router to {transferFrom} token0 and token1 to sell them for {DINERO}.
+            IERC20(token0).safeIncreaseAllowance(address(router), amount0);
+            IERC20(token1).safeIncreaseAllowance(address(router), amount1);
+
             router.swapExactTokensForTokens(
                 // Sell all token0 removed from the liquidity.
                 amount0,
                 // The liquidator will pay for the slippage.
                 0,
                 // Sell token0 -> ... -> DINERO
-                path,
+                path[0] == token0 ? path : path2,
                 // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
                 recipient,
                 // This TX must happen in this block.
@@ -759,7 +758,7 @@ contract InterestMarketV1 is Initializable, Context {
                 // The liquidator will pay for the slippage.
                 0,
                 // Sell token1 -> ... -> DINERO
-                path2,
+                path[0] == token0 ? path2 : path,
                 // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
                 recipient,
                 // This TX must happen in this block.

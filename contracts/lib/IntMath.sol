@@ -27,6 +27,14 @@ library IntMath {
         return mulDiv(x, BASE, y);
     }
 
+    /**
+     * @dev Returns the smallest of two numbers.
+     * Taken from https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/math/Math.sol
+     */
+    function min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a < b ? a : b;
+    }
+
     //solhint-disable
     /// @notice Calculates floor(a×b÷denominator) with full precision. Throws if result overflows a uint256 or denominator == 0
     /// @param a The multiplicand
