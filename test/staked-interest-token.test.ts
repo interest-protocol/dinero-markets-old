@@ -2,8 +2,9 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { StakedInterestToken } from '../typechain';
-import { deploy } from './lib/test-utils';
+import { StakedInterestToken, TestStakedInterestTokenV2 } from '../typechain';
+import { BURNER_ROLE, DEVELOPER_ROLE, MINTER_ROLE } from './lib/constants';
+import { deployUUPS, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
@@ -16,23 +17,30 @@ describe('Staked Interest Token', () => {
   beforeEach(async () => {
     [[owner, alice], stakedInterestToken] = await Promise.all([
       ethers.getSigners(),
-      deploy('StakedInterestToken'),
+      deployUUPS('StakedInterestToken'),
     ]);
   });
 
   describe('function: mint', () => {
-    it('reverts if the is not called by the owner', async () => {
+    it('reverts it is called by a caller without the MINTER_ROLE', async () => {
       await expect(
         stakedInterestToken
           .connect(alice)
           .mint(alice.address, parseEther('100'))
-      ).to.revertedWith('Ownable: caller is not the owner');
+      ).to.revertedWith(
+        'AccessControl: account 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 is missing role 0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6'
+      );
     });
     it('mints tokens', async () => {
+      await stakedInterestToken
+        .connect(owner)
+        .grantRole(MINTER_ROLE, alice.address);
+
       expect(await stakedInterestToken.balanceOf(alice.address)).to.be.equal(0);
+
       await expect(
         stakedInterestToken
-          .connect(owner)
+          .connect(alice)
           .mint(alice.address, parseEther('100'))
       )
         .to.emit(stakedInterestToken, 'Transfer')
@@ -53,15 +61,28 @@ describe('Staked Interest Token', () => {
         stakedInterestToken
           .connect(alice)
           .burn(alice.address, parseEther('100'))
-      ).to.revertedWith('Ownable: caller is not the owner');
+      ).to.revertedWith(
+        'AccessControl: account 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 is missing role 0x3c11d16cbaffd01df69ce1c404f6340ee057498f5f00246190ea54220576a848'
+      );
     });
     it('burns tokens', async () => {
+      await Promise.all([
+        stakedInterestToken
+          .connect(owner)
+          .grantRole(BURNER_ROLE, owner.address),
+        stakedInterestToken
+          .connect(owner)
+          .grantRole(MINTER_ROLE, owner.address),
+      ]);
+
       await stakedInterestToken
         .connect(owner)
         .mint(alice.address, parseEther('100'));
+
       expect(await stakedInterestToken.balanceOf(alice.address)).to.be.equal(
         parseEther('100')
       );
+
       await expect(
         stakedInterestToken.connect(owner).burn(alice.address, parseEther('50'))
       )
@@ -76,5 +97,29 @@ describe('Staked Interest Token', () => {
         parseEther('50')
       );
     });
+  });
+  it('upgrades to version 2', async () => {
+    await stakedInterestToken
+      .connect(owner)
+      .grantRole(MINTER_ROLE, alice.address);
+
+    await stakedInterestToken
+      .connect(alice)
+      .mint(alice.address, parseEther('100'));
+
+    const stakedInterestTokenV2: TestStakedInterestTokenV2 = await upgrade(
+      stakedInterestToken,
+      'TestStakedInterestTokenV2'
+    );
+
+    const [developerRole, version, aliceBalance] = await Promise.all([
+      stakedInterestTokenV2.DEVELOPER_ROLE(),
+      stakedInterestTokenV2.version(),
+      stakedInterestTokenV2.balanceOf(alice.address),
+    ]);
+
+    expect(developerRole).to.be.equal(DEVELOPER_ROLE);
+    expect(version).to.be.equal('V2');
+    expect(aliceBalance).to.be.equal(parseEther('100'));
   });
 });

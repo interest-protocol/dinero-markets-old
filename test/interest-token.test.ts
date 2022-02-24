@@ -3,6 +3,7 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { InterestToken, TestInterestTokenV2 } from '../typechain';
+import { DEVELOPER_ROLE, MINTER_ROLE } from './lib/constants';
 import { deployUUPS, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
@@ -38,9 +39,7 @@ describe('Interest Token', () => {
     it('mints tokens if the caller has the role', async () => {
       expect(await interestToken.balanceOf(alice.address)).to.be.equal(0);
 
-      await interestToken
-        .connect(owner)
-        .grantRole(await interestToken.MINTER_ROLE(), alice.address);
+      await interestToken.connect(owner).grantRole(MINTER_ROLE, alice.address);
 
       await interestToken.connect(alice).mint(alice.address, parseEther('100'));
 
@@ -51,9 +50,7 @@ describe('Interest Token', () => {
   });
 
   it('updates to version 2', async () => {
-    await interestToken
-      .connect(owner)
-      .grantRole(await interestToken.MINTER_ROLE(), alice.address);
+    await interestToken.connect(owner).grantRole(MINTER_ROLE, alice.address);
 
     await interestToken.connect(alice).mint(alice.address, parseEther('100'));
 
@@ -62,12 +59,14 @@ describe('Interest Token', () => {
       'TestInterestTokenV2'
     );
 
-    const [version, balance] = await Promise.all([
+    const [version, balance, developerRole] = await Promise.all([
       interestTokenV2.version(),
       interestTokenV2.balanceOf(alice.address),
+      interestTokenV2.DEVELOPER_ROLE(),
     ]);
 
     expect(version).to.be.equal('V2');
     expect(balance).to.be.equal(parseEther('100'));
+    expect(developerRole).to.be.equal(DEVELOPER_ROLE);
   });
 });

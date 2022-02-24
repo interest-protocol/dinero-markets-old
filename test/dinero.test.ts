@@ -3,6 +3,7 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { Dinero, TestDineroV2 } from '../typechain';
+import { BURNER_ROLE, DEVELOPER_ROLE, MINTER_ROLE } from './lib/constants';
 import { deployUUPS, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
@@ -44,9 +45,7 @@ describe('Dinero', () => {
       expect(await dinero.balanceOf(alice.address)).to.be.equal(0);
 
       // Admin needs to grant the `MINTER_ROLE`
-      await dinero
-        .connect(owner)
-        .grantRole(await dinero.MINTER_ROLE(), owner.address);
+      await dinero.connect(owner).grantRole(MINTER_ROLE, owner.address);
 
       await dinero.connect(owner).mint(alice.address, amount);
 
@@ -66,12 +65,8 @@ describe('Dinero', () => {
     it('creates new tokens', async () => {
       const amount = parseEther('10');
       await Promise.all([
-        dinero
-          .connect(owner)
-          .grantRole(await dinero.BURNER_ROLE(), owner.address),
-        dinero
-          .connect(owner)
-          .grantRole(await dinero.MINTER_ROLE(), owner.address),
+        dinero.connect(owner).grantRole(BURNER_ROLE, owner.address),
+        dinero.connect(owner).grantRole(MINTER_ROLE, owner.address),
       ]);
 
       await dinero.connect(owner).mint(alice.address, amount);
@@ -90,11 +85,7 @@ describe('Dinero', () => {
     });
   });
   it('updates to version 2', async () => {
-    await dinero
-      .connect(owner)
-      .grantRole(await dinero.MINTER_ROLE(), owner.address);
-
-    const developerRole = await dinero.DEVELOPER_ROLE();
+    await dinero.connect(owner).grantRole(MINTER_ROLE, owner.address);
 
     await dinero.connect(owner).mint(alice.address, parseEther('1000'));
 
@@ -114,7 +105,7 @@ describe('Dinero', () => {
       'AccessControl: account 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 is missing role 0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6'
     );
 
-    const [aliceBalance, state, version, developerRole2] = await Promise.all([
+    const [aliceBalance, state, version, developerRole] = await Promise.all([
       dineroV2.balanceOf(alice.address),
       dineroV2.state(),
       dineroV2.version(),
@@ -125,6 +116,6 @@ describe('Dinero', () => {
     expect(aliceBalance).to.be.equal(parseEther('1250'));
     expect(state).to.be.equal(1);
     expect(version).to.be.equal('V2');
-    expect(developerRole2).to.be.equal(developerRole);
+    expect(developerRole).to.be.equal(DEVELOPER_ROLE);
   });
 });
