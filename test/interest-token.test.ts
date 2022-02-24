@@ -2,8 +2,8 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { InterestToken } from '../typechain';
-import { deploy } from './lib/test-utils';
+import { InterestToken, TestInterestTokenV2 } from '../typechain';
+import { deployUUPS, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
@@ -17,22 +17,57 @@ describe('Interest Token', () => {
   beforeEach(async () => {
     [[owner, alice], interestToken] = await Promise.all([
       ethers.getSigners(),
-      deploy('InterestToken'),
+      deployUUPS('InterestToken'),
     ]);
   });
 
+  it('reverts if you try to initialize', async () => {
+    await expect(interestToken.initialize()).to.revertedWith(
+      'Initializable: contract is already initialized'
+    );
+  });
+
   describe('function: mint', () => {
-    it('reverts if the caller is not the owner', async () => {
+    it('reverts if the caller does not have the MINTER ROLE', async () => {
       await expect(
         interestToken.connect(alice).mint(alice.address, 1000)
-      ).to.revertedWith('Ownable: caller is not the owner');
+      ).to.revertedWith(
+        'AccessControl: account 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 is missing role 0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6'
+      );
     });
-    it('mints tokens if it called by the owner', async () => {
+    it('mints tokens if the caller has the role', async () => {
       expect(await interestToken.balanceOf(alice.address)).to.be.equal(0);
-      await interestToken.connect(owner).mint(alice.address, parseEther('100'));
+
+      await interestToken
+        .connect(owner)
+        .grantRole(await interestToken.MINTER_ROLE(), alice.address);
+
+      await interestToken.connect(alice).mint(alice.address, parseEther('100'));
+
       expect(await interestToken.balanceOf(alice.address)).to.be.equal(
         parseEther('100')
       );
     });
+  });
+
+  it('updates to version 2', async () => {
+    await interestToken
+      .connect(owner)
+      .grantRole(await interestToken.MINTER_ROLE(), alice.address);
+
+    await interestToken.connect(alice).mint(alice.address, parseEther('100'));
+
+    const interestTokenV2: TestInterestTokenV2 = await upgrade(
+      interestToken,
+      'TestInterestTokenV2'
+    );
+
+    const [version, balance] = await Promise.all([
+      interestTokenV2.version(),
+      interestTokenV2.balanceOf(alice.address),
+    ]);
+
+    expect(version).to.be.equal('V2');
+    expect(balance).to.be.equal(parseEther('100'));
   });
 });

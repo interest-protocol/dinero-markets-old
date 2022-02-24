@@ -145,7 +145,7 @@ contract CasaDePapel is Ownable {
         // Setup the first pool. Stake {InterestToken} to get {InterestToken}.
         pools.push(
             Pool({
-                stakingToken: IERC20(interestToken),
+                stakingToken: IERC20(address(interestToken)),
                 allocationPoints: 1000,
                 lastRewardBlock: _startBlock,
                 accruedIntPerShare: 0,
@@ -432,7 +432,7 @@ contract CasaDePapel is Ownable {
     ) external {
         require(
             account == _msgSender() ||
-                IERC20(INTEREST_TOKEN).allowance(account, _msgSender()) ==
+                INTEREST_TOKEN.allowance(account, _msgSender()) ==
                 type(uint256).max,
             "CP: no max allowance"
         );

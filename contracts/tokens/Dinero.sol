@@ -21,7 +21,8 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
  *
  * @notice Please note that roles have immense power and need to be granted to secure contracts, multisigs and timelocks.
  * @notice It supports https://eips.ethereum.org/EIPS/eip-2612[EIP-2612].
- * @notice We use the contract version 4.5.0-rc.0, which the allowance does not go down on {transferFrom} if the allowance is the max uint256.
+ * @notice We use the contract version 4.5.0, which gives an infinite allowance.
+ * @notice This contract is upgradeable using the UUPS pattern with Open Zeppelin plugins. For security, the address with the {DEVELOPER_ROLE} will be a timelock.
  */
 contract Dinero is
     Initializable,
@@ -94,6 +95,9 @@ contract Dinero is
         _burn(account, amount);
     }
 
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must have the {DEVELOPER_ROLE}.
+     */
     function _authorizeUpgrade(address)
         internal
         override

@@ -88,8 +88,6 @@ describe('Case de Papel', () => {
         .approve(casaDePapel.address, constants.MaxUint256),
       lpToken2.connect(bob).approve(casaDePapel.address, constants.MaxUint256),
       // Casa de papel can mint/burn
-      interestToken.connect(owner).transferOwnership(casaDePapel.address),
-      sInterestToken.connect(owner).transferOwnership(casaDePapel.address),
     ]);
   });
 
