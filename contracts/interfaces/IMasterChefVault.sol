@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
-interface IVault {
+interface IMasterChefVault {
     function deposit(
         address from,
         address to,

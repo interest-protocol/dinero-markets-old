@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-import "./interfaces/IVenusTroller.sol";
+import "./interfaces/IVenusController.sol";
 import "./interfaces/IVToken.sol";
 import "./interfaces/IVenusVault.sol";
 import "./interfaces/IVenusInterestRateModel.sol";
@@ -40,7 +40,7 @@ contract SafeVenus {
      * @dev This is the Venus controller 0xfD36E2c2a6789Db23113685031d7F16329158384
      */
     // solhint-disable-next-line var-name-mixedcase
-    IVenusTroller public immutable VENUS_TROLLER;
+    IVenusController public immutable VENUS_CONTROLLER;
 
     /**
      * @dev This is the oracle we use in the entire project. It uses Chainlink as the primary source.
@@ -54,16 +54,16 @@ contract SafeVenus {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @param venustroller The address of the Venus controller
+     * @param venusController The address of the Venus controller
      * @param xvs The address of the Venus token
      * @param oracle The address of our maintained oracle address
      */
     constructor(
-        IVenusTroller venustroller,
+        IVenusController venusController,
         address xvs,
         OracleV1 oracle
     ) {
-        VENUS_TROLLER = venustroller;
+        VENUS_CONTROLLER = venusController;
         XVS = xvs;
         ORACLE = oracle;
     }
@@ -85,7 +85,7 @@ contract SafeVenus {
         returns (uint256)
     {
         // Get the Venus Protocol collateral requiement before liquidation
-        (, uint256 venusCollateralFactor, ) = VENUS_TROLLER.markets(
+        (, uint256 venusCollateralFactor, ) = VENUS_CONTROLLER.markets(
             address(vToken)
         );
 
@@ -295,7 +295,7 @@ contract SafeVenus {
         uint256 xvsInUSDPerBlock = ORACLE.getTokenUSDPrice(
             XVS,
             // Venus speed has 18 decimals
-            VENUS_TROLLER.venusSpeeds(address(vToken)).mulDiv(
+            VENUS_CONTROLLER.venusSpeeds(address(vToken)).mulDiv(
                 vaultBorrow,
                 totalBorrow
             )
@@ -346,7 +346,7 @@ contract SafeVenus {
         // Current amount of rewards being paid by supplying in `vToken` in XVS in USD terms per block
         uint256 xvsAmountInUSD = ORACLE.getTokenUSDPrice(
             XVS,
-            VENUS_TROLLER.venusSpeeds(address(vToken)).mulDiv(
+            VENUS_CONTROLLER.venusSpeeds(address(vToken)).mulDiv(
                 vaultUnderlyingBalance,
                 totalSupplyAmount
             )
@@ -452,7 +452,7 @@ contract SafeVenus {
         if (maxSafeBorrowAmount >= borrow) return 0;
 
         // Get the Venus Protocol collateral requirement before liquidation
-        (, uint256 venusCollateralFactor, ) = VENUS_TROLLER.markets(
+        (, uint256 venusCollateralFactor, ) = VENUS_CONTROLLER.markets(
             address(vToken)
         );
 

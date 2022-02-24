@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
-interface IVenusTroller {
+interface IVenusController {
     function enterMarkets(address[] memory _vtokens)
         external
         returns (uint256[] memory);
