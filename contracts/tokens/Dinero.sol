@@ -9,8 +9,10 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/draft-ERC20Permit.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/draft-ERC20PermitUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /**
  * @dev This is the stable coin of Interest Protocol that has it's value pegged to the USD and guaranteed by collateral in various markets and vaults.
@@ -21,20 +23,33 @@ import "@openzeppelin/contracts/token/ERC20/extensions/draft-ERC20Permit.sol";
  * @notice It supports https://eips.ethereum.org/EIPS/eip-2612[EIP-2612].
  * @notice We use the contract version 4.5.0-rc.0, which the allowance does not go down on {transferFrom} if the allowance is the max uint256.
  */
-contract Dinero is AccessControl, ERC20Permit {
+contract Dinero is
+    Initializable,
+    AccessControlUpgradeable,
+    ERC20PermitUpgradeable,
+    UUPSUpgradeable
+{
     /*///////////////////////////////////////////////////////////////
                                 ROLES
     //////////////////////////////////////////////////////////////*/
 
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
+    bytes32 public constant DEVELOPER_ROLE = keccak256("DEVELOPER_ROLE");
 
     /*///////////////////////////////////////////////////////////////
-                            CONSTRUCTOR
+                            INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
-    constructor() ERC20("Dinero", "DNR") ERC20Permit("Dinero") {
-        _setupRole(DEFAULT_ADMIN_ROLE, _msgSender());
+    function initialize() external initializer {
+        __Context_init();
+        __UUPSUpgradeable_init();
+        __ERC20_init("Dinero", "DNR");
+        __ERC20Permit_init("Dinero");
+        __AccessControl_init();
+
+        _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());
+        _grantRole(DEVELOPER_ROLE, _msgSender());
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -77,5 +92,14 @@ contract Dinero is AccessControl, ERC20Permit {
         onlyRole(BURNER_ROLE)
     {
         _burn(account, amount);
+    }
+
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyRole(DEVELOPER_ROLE)
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 }

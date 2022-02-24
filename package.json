@@ -4,8 +4,8 @@
   "main": "index.js",
   "publishConfig": {
     "access": "public"
-  },  
-"scripts": {
+  },
+  "scripts": {
     "prepare": "husky install",
     "lint": "eslint --fix --ext .js,.ts .",
     "type-check": "tsc --pretty --noEmit",
@@ -51,7 +51,9 @@
     "typescript": "^4.5.2"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^4.5.0"
+    "@openzeppelin/contracts": "^4.5.0",
+    "@openzeppelin/contracts-upgradeable": "^4.5.1",
+    "@openzeppelin/hardhat-upgrades": "^1.14.0"
   },
   "engines": {
     "node": ">=14.15.1"

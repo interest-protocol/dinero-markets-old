@@ -11,7 +11,6 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 //SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -61,7 +60,7 @@ import "./InterestGovernorV1.sol";
  * PCS Pairs of all this tokens with WBNB - 0xA527a61703D82139F8a06Bc30097cC9CAA2df5A6
  * ADA - 0x3ee2200efb3400fabb9aacf31297cbdd1d435d47
  */
-contract InterestMarketV1 is Initializable, Context {
+contract InterestMarketV1 is Context {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -232,7 +231,7 @@ contract InterestMarketV1 is Initializable, Context {
      * - {maxLTVRatio} needs to be checked because it can cause a total failure of the system if set up wrongly.
      *
      */
-    function initialize(bytes calldata data) external initializer {
+    function initialize(bytes calldata data) external {
         require(address(MASTER_CONTRACT) != address(this), "MKT: not allowed");
 
         (

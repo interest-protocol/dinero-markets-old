@@ -1,6 +1,7 @@
 // eslint-disable-next-line node/no-unpublished-import
+import { ContractAddressOrInstance } from '@openzeppelin/hardhat-upgrades/dist/utils';
 import { BigNumber } from 'ethers';
-import { ethers } from 'hardhat';
+import { ethers, upgrades } from 'hardhat';
 
 export const multiDeploy = async (
   x: ReadonlyArray<string>,
@@ -23,6 +24,26 @@ export const deploy = async (
 ): Promise<any> => {
   const factory = await ethers.getContractFactory(name);
   return await factory.deploy(...parameters);
+};
+
+export const deployUUPS = async (
+  name: string,
+  parameters: Array<unknown> = []
+): Promise<any> => {
+  const factory = await ethers.getContractFactory(name);
+  const instance = await upgrades.deployProxy(factory, parameters, {
+    kind: 'uups',
+  });
+  await instance.deployed();
+  return instance;
+};
+
+export const upgrade = async (
+  proxy: ContractAddressOrInstance,
+  name: string
+): Promise<any> => {
+  const factory = await ethers.getContractFactory(name);
+  return upgrades.upgradeProxy(proxy, factory);
 };
 
 export const advanceTime = (time: number, _ethers: typeof ethers) =>

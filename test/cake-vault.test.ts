@@ -11,7 +11,7 @@ const CAKE_PER_BLOCK = parseEther('40');
 
 const START_BLOCK = 1;
 
-describe('CakeVault', () => {
+describe('Master Chef CakeVault', () => {
   let cake: CakeToken;
   let syrup: SyrupBar;
   let masterChef: MasterChef;

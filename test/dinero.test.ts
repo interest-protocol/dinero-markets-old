@@ -2,8 +2,8 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { Dinero } from '../typechain';
-import { deploy } from './lib/test-utils';
+import { Dinero, TestDineroV2 } from '../typechain';
+import { deployUUPS, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
@@ -18,8 +18,14 @@ describe('Dinero', () => {
   beforeEach(async () => {
     [[owner, alice], dinero] = await Promise.all([
       ethers.getSigners(),
-      deploy('Dinero'),
+      deployUUPS('Dinero'),
     ]);
+  });
+
+  it('reverts if you try to initialize', async () => {
+    await expect(dinero.initialize()).to.revertedWith(
+      'Initializable: contract is already initialized'
+    );
   });
 
   describe('function: mint', () => {
@@ -82,5 +88,43 @@ describe('Dinero', () => {
         parseEther('2')
       );
     });
+  });
+  it('updates to version 2', async () => {
+    await dinero
+      .connect(owner)
+      .grantRole(await dinero.MINTER_ROLE(), owner.address);
+
+    const developerRole = await dinero.DEVELOPER_ROLE();
+
+    await dinero.connect(owner).mint(alice.address, parseEther('1000'));
+
+    expect(await dinero.balanceOf(alice.address)).to.be.equal(
+      parseEther('1000')
+    );
+
+    const dineroV2: TestDineroV2 = await upgrade(dinero, 'TestDineroV2');
+
+    await dineroV2.connect(owner).initializeV2(1);
+
+    await dineroV2.connect(owner).mint(alice.address, parseEther('250'));
+
+    await expect(
+      dineroV2.connect(alice).mint(alice.address, parseEther('111'))
+    ).to.revertedWith(
+      'AccessControl: account 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 is missing role 0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6'
+    );
+
+    const [aliceBalance, state, version, developerRole2] = await Promise.all([
+      dineroV2.balanceOf(alice.address),
+      dineroV2.state(),
+      dineroV2.version(),
+      dineroV2.DEVELOPER_ROLE(),
+    ]);
+
+    // Maintains the same state
+    expect(aliceBalance).to.be.equal(parseEther('1250'));
+    expect(state).to.be.equal(1);
+    expect(version).to.be.equal('V2');
+    expect(developerRole2).to.be.equal(developerRole);
   });
 });
