@@ -12,8 +12,11 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 import "../lib/IntMath.sol";
 
@@ -28,12 +31,17 @@ import "./MasterChefVault.sol";
  * @notice We use the Open Zeppelin {SafeERC20} to interact with the Cake token, which follows the {IERC20} interface.
  * @notice The pool id 0, accepts {CAKE} and rewards {CAKE}.
  */
-contract CakeVault is MasterChefVault {
+contract CakeVault is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    MasterChefVault
+{
     /*///////////////////////////////////////////////////////////////
                                  LIBRARIES
     //////////////////////////////////////////////////////////////*/
 
-    using SafeERC20 for IERC20;
+    using SafeERC20Upgradeable for IERC20Upgradeable;
     using IntMath for uint256;
 
     /*///////////////////////////////////////////////////////////////
@@ -43,10 +51,21 @@ contract CakeVault is MasterChefVault {
     /**
      * @param cakeMasterChef the address of the cake {MasterChef}
      * @param cake the address of the {CakeToken}
+     *
+     * Requirements:
+     *
+     * - Can only be called at once and should be called during creation to prevent front running.
      */
-    constructor(IMasterChef cakeMasterChef, IERC20 cake)
-        MasterChefVault(cakeMasterChef, cake)
+    function initialize(IMasterChef cakeMasterChef, IERC20Upgradeable cake)
+        external
+        initializer
     {
+        __UUPSUpgradeable_init();
+        __Ownable_init();
+
+        CAKE_MASTER_CHEF = cakeMasterChef;
+        CAKE = cake;
+
         // Master chef needs full approval for us to deposit tokens on it.
         cake.safeApprove(address(cakeMasterChef), type(uint256).max);
     }
@@ -272,5 +291,33 @@ contract CakeVault is MasterChefVault {
         userInfo[from] = user;
 
         emit Withdraw(from, to, amount);
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                          OWNER ONLY FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev A hook to guard the setter function for the market.
+     */
+    function _authorizeSetMarket()
+        internal
+        override
+        onlyOwner
+    //solhint-disable-next-line no-empty-blocks
+    {
+
+    }
+
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must be the owner.
+     */
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyOwner
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 }
