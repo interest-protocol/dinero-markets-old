@@ -1,7 +1,10 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 
 import "./interfaces/IVenusController.sol";
 import "./interfaces/IVToken.sol";
@@ -20,7 +23,7 @@ import "./OracleV1.sol";
  * The functions in this contract assume a very safe strategy of supplying and borrowing the same asset within 1 vToken contract.
  * It requires chainlink feeds to convert all amounts in USD.
  */
-contract SafeVenus {
+contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -36,20 +39,20 @@ contract SafeVenus {
      * @dev It is the ERC20 address of the Venus token 0xcf6bb5389c92bdda8a3747ddb454cb7a64626c63
      */
     // solhint-disable-next-line var-name-mixedcase
-    address public immutable XVS;
+    address public XVS;
 
     /**
      * @dev This is the Venus controller 0xfD36E2c2a6789Db23113685031d7F16329158384
      */
     // solhint-disable-next-line var-name-mixedcase
-    IVenusController public immutable VENUS_CONTROLLER;
+    IVenusController public VENUS_CONTROLLER;
 
     /**
      * @dev This is the oracle we use in the entire project. It uses Chainlink as the primary source.
      * It uses PCS TWAP only when Chainlink fails.
      */
     // solhint-disable-next-line var-name-mixedcase
-    OracleV1 public immutable ORACLE;
+    OracleV1 public ORACLE;
 
     /*///////////////////////////////////////////////////////////////
                             CONSTRUCTOR
@@ -59,12 +62,19 @@ contract SafeVenus {
      * @param venusController The address of the Venus controller
      * @param xvs The address of the Venus token
      * @param oracle The address of our maintained oracle address
+     *
+     * Requirements:
+     *
+     * - Can only be called at once and should be called during creation to prevent front running.
      */
-    constructor(
+    function initialize(
         IVenusController venusController,
         address xvs,
         OracleV1 oracle
-    ) {
+    ) external initializer {
+        __UUPSUpgradeable_init();
+        __Ownable_init();
+
         VENUS_CONTROLLER = venusController;
         XVS = xvs;
         ORACLE = oracle;
@@ -333,9 +343,9 @@ contract SafeVenus {
         uint256 borrowAmount
     ) public returns (uint256) {
         // Total amount of supply amount in the `vToken`.
-        uint256 totalSupplyAmount = IERC20(address(vToken)).totalSupply().bmul(
-            vToken.exchangeRateCurrent()
-        );
+        uint256 totalSupplyAmount = IERC20Upgradeable(address(vToken))
+            .totalSupply()
+            .bmul(vToken.exchangeRateCurrent());
 
         // Current amount of underlying the `vault` is supplying in the `vToken` market.
         uint256 vaultUnderlyingBalance = IVToken(vToken).balanceOfUnderlying(
@@ -476,5 +486,21 @@ contract SafeVenus {
 
         // Cannot withdraw more than liquidity
         return (supply - safeSupply).min(cash);
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                          OWNER ONLY FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must be the owner.
+     */
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyOwner
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 }

@@ -13,8 +13,9 @@ import {
   OracleV1,
   SafeVenus,
   TestSafeVenus,
+  TestSafeVenusV2,
 } from '../typechain';
-import { deploy, multiDeploy } from './lib/test-utils';
+import { deploy, deployUUPS, multiDeploy, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
@@ -89,16 +90,18 @@ describe('SafeVenus', () => {
       ),
     ]);
 
-    [oracle, venusController] = await multiDeploy(
-      ['OracleV1', 'MockVenusController'],
-      [
-        [TWAP.address, bnbUSDFeed.address, WBNB.address, BUSD.address],
-        [XVS.address],
-      ]
-    );
+    [oracle, venusController] = await Promise.all([
+      deployUUPS('OracleV1', [
+        TWAP.address,
+        bnbUSDFeed.address,
+        WBNB.address,
+        BUSD.address,
+      ]),
+      deploy('MockVenusController', [XVS.address]),
+    ]);
 
     [safeVenus] = await Promise.all([
-      deploy('SafeVenus', [
+      deployUUPS('SafeVenus', [
         venusController.address,
         XVS.address,
         oracle.address,
@@ -633,5 +636,35 @@ describe('SafeVenus', () => {
         .to.emit(testSafeVenus, 'Deleverage')
         .withArgs(parseEther('1.5')); // It will return cash if cash value is lower than the redeem amount.
     });
+  });
+  it('upgrades to version 2', async () => {
+    const safeVenusV2: TestSafeVenusV2 = await upgrade(
+      safeVenus,
+      'TestSafeVenusV2'
+    );
+
+    const testSafeVenusV2: TestSafeVenusV2 = await deploy('TestSafeVenus', [
+      safeVenusV2.address,
+    ]);
+
+    await Promise.all([
+      venusController.__setMarkets(
+        vToken.address,
+        true,
+        parseEther('0.9'),
+        true,
+        true
+      ),
+      vToken.__setCash(parseEther('100')),
+      vToken.__setBorrowBalanceCurrent(vault.address, parseEther('90')),
+      vToken.__setBalanceOfUnderlying(vault.address, parseEther('100')),
+    ]);
+
+    // Current safe collateral is 81% but we are at 90%
+    await expect(testSafeVenusV2.safeRedeem(vault.address, vToken.address))
+      .to.emit(testSafeVenusV2, 'SafeRedeem')
+      .withArgs(0);
+
+    expect(await safeVenusV2.version()).to.be.equal('V2');
   });
 });
