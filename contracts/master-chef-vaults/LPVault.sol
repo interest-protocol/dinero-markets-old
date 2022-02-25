@@ -81,6 +81,8 @@ contract LPVault is
         __Ownable_init();
 
         require(poolId != 0, "LPVault: this is a LP vault");
+        CAKE_MASTER_CHEF = cakeMasterChef;
+        CAKE = cake;
         STAKING_TOKEN = stakingToken;
         POOL_ID = poolId;
         stakingToken.safeApprove(address(cakeMasterChef), type(uint256).max);

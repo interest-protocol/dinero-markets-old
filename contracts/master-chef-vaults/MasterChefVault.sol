@@ -106,9 +106,7 @@ abstract contract MasterChefVault {
      *
      * @notice The implementation of this function is supposed to be implemented by the child contract.
      */
-    function getPendingRewards() public view virtual returns (uint256) {
-        return 0;
-    }
+    function getPendingRewards() public view virtual returns (uint256);
 
     /**
      * @dev It checks how many pending {CAKE] an `account` is entitled to by calculating
