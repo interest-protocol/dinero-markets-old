@@ -13,9 +13,11 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20MetadataUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
 
 import "./interfaces/AggregatorV3Interface.sol";
 import "./interfaces/IPancakePair.sol";
@@ -38,11 +40,11 @@ import "./PancakeOracle.sol";
  * @notice Only supports tokens supported by Chainlink  https://docs.chain.link/docs/binance-smart-chain-addresses/.
  * @notice We assume that BUSD is USD - 0x4Fabb145d64652a948d72533023f6E7A623C7C53
  */
-contract OracleV1 is Ownable {
+contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
-    using SafeCast for *;
+    using SafeCastUpgradeable for *;
     using IntMath for uint256;
     using IntERC20 for address;
 
@@ -61,16 +63,16 @@ contract OracleV1 is Ownable {
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line var-name-mixedcase
-    PancakeOracle public immutable TWAP;
+    PancakeOracle public TWAP;
 
     // solhint-disable-next-line var-name-mixedcase
-    AggregatorV3Interface public immutable BNB_USD;
+    AggregatorV3Interface public BNB_USD;
 
     // solhint-disable-next-line var-name-mixedcase
-    address public immutable WBNB;
+    address public WBNB;
 
     // solhint-disable-next-line var-name-mixedcase
-    address public immutable BUSD;
+    address public BUSD;
 
     // Token Address -> Chainlink feed with USD base.
     mapping(address => AggregatorV3Interface) public getUSDFeeds;
@@ -78,20 +80,25 @@ contract OracleV1 is Ownable {
     mapping(address => AggregatorV3Interface) public getBNBFeeds;
 
     /*///////////////////////////////////////////////////////////////
-                            CONSTRUCTOR
+                            INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
     /**
+     * @param twap The address of our internal PCS TWAP
      * @param bnb_usd The chainlink feed for bnb/usd.
      * @param wbnb The address for WBNB.
+     * @param busd The address for ERC20 Binance pegged USD
      */
-    constructor(
+    function initialize(
         PancakeOracle twap,
         // solhint-disable-next-line var-name-mixedcase
         AggregatorV3Interface bnb_usd,
         address wbnb,
         address busd
-    ) {
+    ) external initializer {
+        __UUPSUpgradeable_init();
+        __Ownable_init();
+
         TWAP = twap;
         BNB_USD = bnb_usd;
         WBNB = wbnb;
@@ -382,5 +389,17 @@ contract OracleV1 is Ownable {
         } else {
             getUSDFeeds[asset] = feed;
         }
+    }
+
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must be the owner.
+     */
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyOwner
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 }

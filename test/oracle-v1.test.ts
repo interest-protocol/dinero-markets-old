@@ -9,8 +9,9 @@ import {
   MockSimplePair,
   MockTWAP,
   OracleV1,
+  TestOracleV2,
 } from '../typechain';
-import { deploy, multiDeploy } from './lib/test-utils';
+import { deploy, deployUUPS, multiDeploy, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
@@ -85,19 +86,14 @@ describe('OracleV1', () => {
       ethers.getSigners(),
     ]);
 
-    [[mockCakeBnbPair, oracleV1]] = await Promise.all([
-      multiDeploy(
-        ['MockSimplePair', 'OracleV1'],
-        [
-          [mockCake.address, mockWbnb.address, 'Cake-LP'],
-          [
-            mockTWAP.address,
-            mockBnbUsdDFeed.address,
-            mockWbnb.address,
-            mockBUSD.address,
-          ],
-        ]
-      ),
+    [mockCakeBnbPair, oracleV1] = await Promise.all([
+      deploy('MockSimplePair', [mockCake.address, mockWbnb.address, 'Cake-LP']),
+      deployUUPS('OracleV1', [
+        mockTWAP.address,
+        mockBnbUsdDFeed.address,
+        mockWbnb.address,
+        mockBUSD.address,
+      ]),
       // 1 BNB === ~528.18 USD
       mockBnbUsdDFeed.setAnswer(BNB_USD_PRICE),
       // 1 CAKE === ~12.67 USD
@@ -219,7 +215,7 @@ describe('OracleV1', () => {
     });
 
     it('calls the TWAP as a back up and properly returns the price of BNB in USD', async () => {
-      const oracle: OracleV1 = await deploy('OracleV1', [
+      const oracle: OracleV1 = await deployUUPS('OracleV1', [
         mockTWAP.address,
         mockErrorFeed.address,
         mockWbnb.address,
@@ -273,4 +269,18 @@ describe('OracleV1', () => {
       );
     });
   });
-});
+  it('upgrades to version 2', async () => {
+    const oracleV2: TestOracleV2 = await upgrade(oracleV1, 'TestOracleV2');
+
+    const [version, price] = await Promise.all([
+      oracleV2.version(),
+      oracleV2.getBNBUSDPrice(parseEther('2')),
+    ]);
+
+    expect(version).to.be.equal('V2');
+    // 18 decimals
+    expect(price).to.be.equal(BNB_USD_PRICE.mul(2).mul(1e10));
+  });
+})
+  // Increase the time out for the entire tests
+  .timeout(5000);
