@@ -127,6 +127,10 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @param _devAccount The address of the account that will get 10% of all new minted tokens.
      * @param _interestTokenPerBlock The amount of {InterestToken} to be minted per block.
      * @param _startBlock The block number that this contract will start minting {InterestToken}.
+     *
+     * Requirements:
+     *
+     * - Can only be called at once and should be called during creation to prevent front running.
      */
     function initialize(
         InterestToken interestToken,

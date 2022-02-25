@@ -1,6 +1,10 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+
 import "./interfaces/IPancakeFactory.sol";
 import "./interfaces/IPancakePair.sol";
 
@@ -13,7 +17,7 @@ import "./LibraryWrapper.sol";
  * @notice We make the library a seperate contract to be able to test it properly.
  * It has some modifications for new solidity and changes to follow the UPPS pattern
  */
-contract PancakeOracle {
+contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -45,15 +49,15 @@ contract PancakeOracle {
 
     // Pancake Swap Factory
     // solhint-disable-next-line var-name-mixedcase
-    address public immutable FACTORY;
+    address public FACTORY;
 
     // Pancake Swap Library
     // solhint-disable-next-line var-name-mixedcase
-    LibraryWrapper public immutable LIBRARY_WRAPPER;
+    LibraryWrapper public LIBRARY_WRAPPER;
 
     // Time that will be used to compute the window of the moving average. 24 hours is enough to make an attack impractical.
     // solhint-disable-next-line var-name-mixedcase
-    uint256 public immutable WINDOW_SIZE;
+    uint256 public WINDOW_SIZE;
     // the number of observations stored for each pair, i.e. how many price observations are stored for the window.
     // as granularity increases from 1, more frequent updates are needed, but moving averages become more precise.
     // averages are computed over intervals with sizes in the range:
@@ -62,10 +66,10 @@ contract PancakeOracle {
     //   the period:
     //   [now - [22 hours, 24 hours], now]
     // solhint-disable-next-line var-name-mixedcase
-    uint8 public immutable GRANULARITY;
+    uint8 public GRANULARITY;
     // this is redundant with granularity and windowSize, but stored for gas savings & informational purposes.
     // solhint-disable-next-line var-name-mixedcase
-    uint256 public immutable PERIOD_SIZE;
+    uint256 public PERIOD_SIZE;
 
     // mapping from pair address to a list of price observations of that pair
     mapping(address => Observation[]) public pairObservations;
@@ -79,13 +83,17 @@ contract PancakeOracle {
      * @param windowSize The time used to calculate the moving average.
      * @param granularity How many data points to record during the `windowSize`.
      * @param libraryWrapper The address of a contract that stores core library functions
+     *
+     * Requirements:
+     *
+     * - Can only be called at once and should be called during creation to prevent front running.
      */
-    constructor(
+    function initialize(
         address factory,
         uint256 windowSize,
         uint8 granularity,
         LibraryWrapper libraryWrapper
-    ) {
+    ) external initializer {
         // `_granularity` lower than makes no sense in the context of moxing average: [windowSize - (windowSize / granularity) * 2, windowSize]
         require(granularity > 1, "PO: granularity > 1");
         // Make sure to use numbers that do not require rounding.
@@ -94,6 +102,9 @@ contract PancakeOracle {
                 windowSize,
             "PO: uneven number"
         );
+
+        __UUPSUpgradeable_init();
+        __Ownable_init();
 
         FACTORY = factory;
         WINDOW_SIZE = windowSize;
@@ -290,5 +301,21 @@ contract PancakeOracle {
             uint224((priceCumulativeEnd - priceCumulativeStart) / timeElapsed)
         );
         return priceAverage.mul(amountIn).decode144();
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                          OWNER ONLY FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must be the owner.
+     */
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyOwner
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 }

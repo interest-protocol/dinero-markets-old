@@ -181,11 +181,16 @@ contract NFTMarket is
 
     /**
      * @param feeTo The address that will collect the fees.
+     *
+     * Requirements:
+     *
+     * - Can only be called at once and should be called during creation to prevent front running.
      */
     function initialize(address feeTo) external initializer {
         __UUPSUpgradeable_init();
         __Ownable_init();
         __ERC721Holder_init();
+
         FEE_TO = feeTo;
     }
 

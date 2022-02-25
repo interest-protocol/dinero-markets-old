@@ -42,11 +42,6 @@
       "kind": "uups"
     },
     {
-      "address": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
-      "txHash": "0x5e98328135b1129dc3d8e7fbe2528a40990b17b2358ff145330fa2c3ac941844",
-      "kind": "uups"
-    },
-    {
       "address": "0x162700d1613DfEC978032A909DE02643bC55df1A",
       "txHash": "0x172a1d644b31c7740fe407c3004aa4804611cd038020514a103c6b67b7c82cc9",
       "kind": "uups"
@@ -234,11 +229,6 @@
     {
       "address": "0xf953b3A269d80e3eB0F2947630Da976B896A8C5b",
       "txHash": "0x49d9020257508accce5044c0007a9bd26038c18b225e396e94e82d57944dd1e9",
-      "kind": "uups"
-    },
-    {
-      "address": "0xc96304e3c037f81dA488ed9dEa1D8F2a48278a75",
-      "txHash": "0x5d1a5d496c7977facfdabd4fb0c5b6b082a2ea1ff8eccfd5c6d5ca6b1bc336f3",
       "kind": "uups"
     },
     {
@@ -992,11 +982,6 @@
       "kind": "uups"
     },
     {
-      "address": "0x7A9Ec1d04904907De0ED7b6839CcdD59c3716AC9",
-      "txHash": "0x6d8867d70468b7c5a28f99fdeeb67f6eb0b0929919ee6ca876dd194acfbae372",
-      "kind": "uups"
-    },
-    {
       "address": "0xB2b580ce436E6F77A5713D80887e14788Ef49c9A",
       "txHash": "0x30b568216dfb4a88ccf38585c66191cbb2cbaf69c2e7551e257ca83c01555810",
       "kind": "uups"
@@ -1397,11 +1382,6 @@
       "kind": "uups"
     },
     {
-      "address": "0xDC11f7E700A4c898AE5CAddB1082cFfa76512aDD",
-      "txHash": "0x26a8a70b9f1234e7b1d94e73dbd64077ab84612927e363d51143487b1b97cef7",
-      "kind": "uups"
-    },
-    {
       "address": "0x49fd2BE640DB2910c2fAb69bB8531Ab6E76127ff",
       "txHash": "0x6e0f2d3d220c81200e34190366b554463d382348704ef633e426685b5e531196",
       "kind": "uups"
@@ -1474,6 +1454,41 @@
     {
       "address": "0xA3307BF348ACC4bEDdd67CCA2f7F0c4349d347Db",
       "txHash": "0x884aab602ad1bc3c6f65820dfe7bff27d29e1e44d09fa8d030143539a7766f70",
+      "kind": "uups"
+    },
+    {
+      "address": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+      "txHash": "0x56245ae7d4a7847eee1f8c2e41e57aece2193af488209a5dc98e706220207cdf",
+      "kind": "uups"
+    },
+    {
+      "address": "0x4ed7c70F96B99c776995fB64377f0d4aB3B0e1C1",
+      "txHash": "0x415b2d71de01cf286fb2306d2c586fdadd7aafe1bdc8d0a1cd640324ed7afa93",
+      "kind": "uups"
+    },
+    {
+      "address": "0x99bbA657f2BbC93c02D617f8bA121cB8Fc104Acf",
+      "txHash": "0xf1d5fbb276389bdab7c1527118f8d315eb5dc04f6ba8a5ec83eaeafd806b2f1c",
+      "kind": "uups"
+    },
+    {
+      "address": "0x7bc06c482DEAd17c0e297aFbC32f6e63d3846650",
+      "txHash": "0xe88ada50d8c8729db67cd2181f0d8c4cadacaeb4ff9fe72179e60df7d62746b5",
+      "kind": "uups"
+    },
+    {
+      "address": "0xDC11f7E700A4c898AE5CAddB1082cFfa76512aDD",
+      "txHash": "0x2efb34080e17adb679f775c0565e6cfccc5f1747883afea46a3ea2aa20f0b843",
+      "kind": "uups"
+    },
+    {
+      "address": "0x7A9Ec1d04904907De0ED7b6839CcdD59c3716AC9",
+      "txHash": "0x96c8a38df96b51c99fa045a2b32e6423a0a8c5ab296f39ea1dfab92d245d7151",
+      "kind": "uups"
+    },
+    {
+      "address": "0xc96304e3c037f81dA488ed9dEa1D8F2a48278a75",
+      "txHash": "0xbb54ae661814f375ca504ab72f10a06a6a511a571ea426cabbc8633798ae95ce",
       "kind": "uups"
     }
   ],
@@ -3469,6 +3484,270 @@
           },
           "t_uint256": {
             "label": "uint256"
+          },
+          "t_array(t_uint256)49_storage": {
+            "label": "uint256[49]"
+          },
+          "t_bool": {
+            "label": "bool"
+          }
+        }
+      }
+    },
+    "164f48c49bd39ccae0e39f971896c437e50eebc16245bf3d167b413c1d8509e3": {
+      "address": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+      "txHash": "0x06b36204ea261667711a580d6ceccac06bafca63f31eb610d928b21946844edf",
+      "layout": {
+        "storage": [
+          {
+            "contract": "Initializable",
+            "label": "_initialized",
+            "type": "t_bool",
+            "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:39"
+          },
+          {
+            "contract": "Initializable",
+            "label": "_initializing",
+            "type": "t_bool",
+            "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:44"
+          },
+          {
+            "contract": "ContextUpgradeable",
+            "label": "__gap",
+            "type": "t_array(t_uint256)50_storage",
+            "src": "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol:36"
+          },
+          {
+            "contract": "OwnableUpgradeable",
+            "label": "_owner",
+            "type": "t_address",
+            "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:22"
+          },
+          {
+            "contract": "OwnableUpgradeable",
+            "label": "__gap",
+            "type": "t_array(t_uint256)49_storage",
+            "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:87"
+          },
+          {
+            "contract": "ERC1967UpgradeUpgradeable",
+            "label": "__gap",
+            "type": "t_array(t_uint256)50_storage",
+            "src": "@openzeppelin/contracts-upgradeable/proxy/ERC1967/ERC1967UpgradeUpgradeable.sol:211"
+          },
+          {
+            "contract": "UUPSUpgradeable",
+            "label": "__gap",
+            "type": "t_array(t_uint256)50_storage",
+            "src": "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol:107"
+          },
+          {
+            "contract": "PancakeOracle",
+            "label": "FACTORY",
+            "type": "t_address",
+            "src": "contracts/PancakeOracle.sol:52"
+          },
+          {
+            "contract": "PancakeOracle",
+            "label": "LIBRARY_WRAPPER",
+            "type": "t_contract(LibraryWrapper)16231",
+            "src": "contracts/PancakeOracle.sol:56"
+          },
+          {
+            "contract": "PancakeOracle",
+            "label": "WINDOW_SIZE",
+            "type": "t_uint256",
+            "src": "contracts/PancakeOracle.sol:60"
+          },
+          {
+            "contract": "PancakeOracle",
+            "label": "GRANULARITY",
+            "type": "t_uint8",
+            "src": "contracts/PancakeOracle.sol:69"
+          },
+          {
+            "contract": "PancakeOracle",
+            "label": "PERIOD_SIZE",
+            "type": "t_uint256",
+            "src": "contracts/PancakeOracle.sol:72"
+          },
+          {
+            "contract": "PancakeOracle",
+            "label": "pairObservations",
+            "type": "t_mapping(t_address,t_array(t_struct(Observation)18528_storage)dyn_storage)",
+            "src": "contracts/PancakeOracle.sol:75"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address"
+          },
+          "t_contract(LibraryWrapper)16231": {
+            "label": "contract LibraryWrapper"
+          },
+          "t_uint256": {
+            "label": "uint256"
+          },
+          "t_uint8": {
+            "label": "uint8"
+          },
+          "t_mapping(t_address,t_array(t_struct(Observation)18528_storage)dyn_storage)": {
+            "label": "mapping(address => struct PancakeOracle.Observation[])"
+          },
+          "t_array(t_struct(Observation)18528_storage)dyn_storage": {
+            "label": "struct PancakeOracle.Observation[]"
+          },
+          "t_struct(Observation)18528_storage": {
+            "label": "struct PancakeOracle.Observation",
+            "members": [
+              {
+                "label": "timestamp",
+                "type": "t_uint256"
+              },
+              {
+                "label": "price0Cumulative",
+                "type": "t_uint256"
+              },
+              {
+                "label": "price1Cumulative",
+                "type": "t_uint256"
+              }
+            ]
+          },
+          "t_array(t_uint256)50_storage": {
+            "label": "uint256[50]"
+          },
+          "t_array(t_uint256)49_storage": {
+            "label": "uint256[49]"
+          },
+          "t_bool": {
+            "label": "bool"
+          }
+        }
+      }
+    },
+    "62ed4115353a4293a915b8408ebebdd39dc3a02d908889558b86303b8ac04d14": {
+      "address": "0x9E545E3C0baAB3E08CdfD552C960A1050f373042",
+      "txHash": "0xcbb6f4fac2210e4c1179a84f96c3d713c57f777658588d1cce730236c58c6d62",
+      "layout": {
+        "storage": [
+          {
+            "contract": "Initializable",
+            "label": "_initialized",
+            "type": "t_bool",
+            "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:39"
+          },
+          {
+            "contract": "Initializable",
+            "label": "_initializing",
+            "type": "t_bool",
+            "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:44"
+          },
+          {
+            "contract": "ContextUpgradeable",
+            "label": "__gap",
+            "type": "t_array(t_uint256)50_storage",
+            "src": "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol:36"
+          },
+          {
+            "contract": "OwnableUpgradeable",
+            "label": "_owner",
+            "type": "t_address",
+            "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:22"
+          },
+          {
+            "contract": "OwnableUpgradeable",
+            "label": "__gap",
+            "type": "t_array(t_uint256)49_storage",
+            "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:87"
+          },
+          {
+            "contract": "ERC1967UpgradeUpgradeable",
+            "label": "__gap",
+            "type": "t_array(t_uint256)50_storage",
+            "src": "@openzeppelin/contracts-upgradeable/proxy/ERC1967/ERC1967UpgradeUpgradeable.sol:211"
+          },
+          {
+            "contract": "UUPSUpgradeable",
+            "label": "__gap",
+            "type": "t_array(t_uint256)50_storage",
+            "src": "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol:107"
+          },
+          {
+            "contract": "PancakeOracle",
+            "label": "FACTORY",
+            "type": "t_address",
+            "src": "contracts/PancakeOracle.sol:52"
+          },
+          {
+            "contract": "PancakeOracle",
+            "label": "LIBRARY_WRAPPER",
+            "type": "t_contract(LibraryWrapper)16231",
+            "src": "contracts/PancakeOracle.sol:56"
+          },
+          {
+            "contract": "PancakeOracle",
+            "label": "WINDOW_SIZE",
+            "type": "t_uint256",
+            "src": "contracts/PancakeOracle.sol:60"
+          },
+          {
+            "contract": "PancakeOracle",
+            "label": "GRANULARITY",
+            "type": "t_uint8",
+            "src": "contracts/PancakeOracle.sol:69"
+          },
+          {
+            "contract": "PancakeOracle",
+            "label": "PERIOD_SIZE",
+            "type": "t_uint256",
+            "src": "contracts/PancakeOracle.sol:72"
+          },
+          {
+            "contract": "PancakeOracle",
+            "label": "pairObservations",
+            "type": "t_mapping(t_address,t_array(t_struct(Observation)18528_storage)dyn_storage)",
+            "src": "contracts/PancakeOracle.sol:75"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address"
+          },
+          "t_contract(LibraryWrapper)16231": {
+            "label": "contract LibraryWrapper"
+          },
+          "t_uint256": {
+            "label": "uint256"
+          },
+          "t_uint8": {
+            "label": "uint8"
+          },
+          "t_mapping(t_address,t_array(t_struct(Observation)18528_storage)dyn_storage)": {
+            "label": "mapping(address => struct PancakeOracle.Observation[])"
+          },
+          "t_array(t_struct(Observation)18528_storage)dyn_storage": {
+            "label": "struct PancakeOracle.Observation[]"
+          },
+          "t_struct(Observation)18528_storage": {
+            "label": "struct PancakeOracle.Observation",
+            "members": [
+              {
+                "label": "timestamp",
+                "type": "t_uint256"
+              },
+              {
+                "label": "price0Cumulative",
+                "type": "t_uint256"
+              },
+              {
+                "label": "price1Cumulative",
+                "type": "t_uint256"
+              }
+            ]
+          },
+          "t_array(t_uint256)50_storage": {
+            "label": "uint256[50]"
           },
           "t_array(t_uint256)49_storage": {
             "label": "uint256[49]"

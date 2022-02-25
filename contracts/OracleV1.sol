@@ -88,6 +88,10 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @param bnb_usd The chainlink feed for bnb/usd.
      * @param wbnb The address for WBNB.
      * @param busd The address for ERC20 Binance pegged USD
+     *
+     * Requirements:
+     *
+     * - Can only be called at once and should be called during creation to prevent front running.
      */
     function initialize(
         PancakeOracle twap,

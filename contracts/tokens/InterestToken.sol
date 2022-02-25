@@ -45,6 +45,11 @@ contract InterestToken is
                             INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
+    /**
+     * Requirements:
+     *
+     * - Can only be called at once and should be called during creation to prevent front running.
+     */
     function initialize() external initializer {
         __Context_init();
         __UUPSUpgradeable_init();
