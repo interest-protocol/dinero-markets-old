@@ -2,8 +2,13 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { MockERC20, MockNFT, NFTMarket } from '../typechain';
-import { advanceBlockAndTime, deploy, multiDeploy } from './lib/test-utils';
+import { MockERC20, MockNFT, NFTMarket, TestNFTMarketV2 } from '../typechain';
+import {
+  advanceBlockAndTime,
+  deployUUPS,
+  multiDeploy,
+  upgrade,
+} from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
@@ -36,7 +41,7 @@ describe('NFTMarket', () => {
       ethers.getSigners(),
     ]);
 
-    nftMarket = await deploy('NFTMarket', [feeTo.address]);
+    nftMarket = await deployUUPS('NFTMarket', [feeTo.address]);
 
     await Promise.all([
       nft.mint(alice.address, 1),
@@ -701,7 +706,7 @@ describe('NFTMarket', () => {
           ONE_DAY.mul(15)
         );
 
-      nftMarket
+      await nftMarket
         .connect(bob)
         .counterOffer(
           nft.address,
@@ -1615,5 +1620,37 @@ describe('NFTMarket', () => {
         expect(nftOwner2).to.be.equal(alice.address);
       });
     });
+  });
+  it('upgrades to version 2', async () => {
+    await nftMarket
+      .connect(alice)
+      .proposeLoan(
+        nft.address,
+        ethers.constants.AddressZero,
+        1,
+        TEN_BTC,
+        INTEREST_RATE,
+        ONE_DAY.mul(15)
+      );
+
+    const nftMarketV2: TestNFTMarketV2 = await upgrade(
+      nftMarket,
+      'TestNFTMarketV2'
+    );
+
+    const [loan, version] = await Promise.all([
+      nftMarketV2.loans(nft.address, 1),
+      nftMarketV2.version(),
+    ]);
+
+    expect(version).to.be.equal('V2');
+    expect(loan.lender).to.be.equal(ethers.constants.AddressZero);
+    expect(loan.borrower).to.be.equal(alice.address);
+    expect(loan.loanToken).to.be.equal(ethers.constants.AddressZero);
+    expect(loan.interestRate).to.be.equal(INTEREST_RATE);
+    expect(loan.tokenId).to.be.equal(1);
+    expect(loan.maturity).to.be.equal(ONE_DAY.mul(15));
+    expect(loan.startDate).to.be.equal(0);
+    expect(loan.principal).to.be.equal(TEN_BTC);
   });
 });

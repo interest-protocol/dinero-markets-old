@@ -1,13 +1,15 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/utils/Context.sol";
-import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
-import "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/utils/ERC721HolderUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 import "./lib/IntMath.sol";
 
@@ -24,71 +26,76 @@ import "./lib/IntMath.sol";
  * @notice Interest protocol will not show fake collections nor unverified ERC20s. However, the contract is permissionless.
  * @notice The protocol charges a 0.5% fee once the loan starts and 1% on repayment. Note that liquidations have no fee.
  */
-contract NFTMarket is ERC721Holder, Context {
+contract NFTMarket is
+    Initializable,
+    ERC721HolderUpgradeable,
+    OwnableUpgradeable,
+    UUPSUpgradeable
+{
     /*///////////////////////////////////////////////////////////////
                             EVENTS
     //////////////////////////////////////////////////////////////*/
 
     event ProposeLoan(
-        IERC721 indexed collection,
+        IERC721Upgradeable indexed collection,
         address indexed borrower,
         uint256 indexed tokenId,
-        IERC20 loanToken,
+        IERC20Upgradeable loanToken,
         uint128 principal,
         uint64 interestRate,
         uint64 maturity
     );
 
     event CounterOffer(
-        IERC721 indexed collection,
+        IERC721Upgradeable indexed collection,
         address indexed lender,
         uint256 indexed tokenId,
-        IERC20 loanToken,
+        IERC20Upgradeable loanToken,
         uint128 principal,
         uint64 interestRate,
         uint64 maturity
     );
 
     event LenderStartLoan(
-        IERC721 indexed collection,
+        IERC721Upgradeable indexed collection,
         uint256 indexed tokenId,
         address indexed lender,
         address borrower,
-        IERC20 token,
+        IERC20Upgradeable token,
         uint256 amount
     );
 
     event BorrowerStartLoan(
-        IERC721 indexed collection,
+        IERC721Upgradeable indexed collection,
         uint256 indexed tokenId,
         address lender,
         address indexed borrower,
-        IERC20 token,
+        IERC20Upgradeable token,
         uint256 amount
     );
 
     event WithdrawNFT(
-        IERC721 indexed collection,
+        IERC721Upgradeable indexed collection,
         uint256 indexed tokenId,
         address indexed owner
     );
 
     event WithdrawBNB(
-        IERC721 indexed collection,
+        IERC721Upgradeable indexed collection,
         uint256 indexed tokenId,
         address indexed proposer,
         uint256 amount
     );
 
     event Liquidate(
-        IERC721 indexed collection,
+        IERC721Upgradeable indexed collection,
         uint256 indexed tokenId,
         address indexed lender,
         address borrower
     );
 
     event Repay(
-        IERC721 indexed collection,
+        IERC721Upgradeable indexed collection,
         uint256 indexed tokenId,
         address lender,
         address indexed borrower,
@@ -100,11 +107,11 @@ contract NFTMarket is ERC721Holder, Context {
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
 
-    using SafeCast for uint256;
+    using SafeCastUpgradeable for uint256;
     using IntMath for uint256;
-    using EnumerableSet for EnumerableSet.UintSet;
-    using EnumerableSet for EnumerableSet.AddressSet;
-    using SafeERC20 for IERC20;
+    using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
+    using EnumerableSetUpgradeable for EnumerableSetUpgradeable.AddressSet;
+    using SafeERC20Upgradeable for IERC20Upgradeable;
 
     /*///////////////////////////////////////////////////////////////
                                 STRUCTS & ENUMS
@@ -116,7 +123,7 @@ contract NFTMarket is ERC721Holder, Context {
     struct Loan {
         address lender; // Person who will supply the {Loan.loanToken} to the {Loan.loantoken}.
         address borrower; // Person who owns the NFT id {Loan.tokenId}.
-        IERC20 loanToken; // The token that will be borrowed.
+        IERC20Upgradeable loanToken; // The token that will be borrowed.
         uint64 interestRate; // Interest rate charged PER SECOND.
         uint64 tokenId; // NFT that will be used as collateral for the loan.
         uint64 maturity; // Will be used to calculate the timestamp in which the {Loan.lender} can liquidate the {Loan.borrower}.
@@ -125,7 +132,7 @@ contract NFTMarket is ERC721Holder, Context {
     }
 
     struct Proposal {
-        IERC20 loanToken; // The token that will be lent out.
+        IERC20Upgradeable loanToken; // The token that will be lent out.
         address lender; // The address of the lender.
         uint64 maturity; // It will be used to find the expiration date of the loan | startDate + maturity
         uint64 interestRate; // The rate to charge every second
@@ -138,14 +145,14 @@ contract NFTMarket is ERC721Holder, Context {
 
     // The address that will collect all fees accrued by the protocol.
     //solhint-disable-next-line var-name-mixedcase
-    address public immutable FEE_TO;
+    address public FEE_TO;
 
     /**
      * @dev It stores all the open  loans a user is currently in.
      * @notice both for lenders and borrowers for UI purposes. We need to filter if tokenId actually has a loan
      *  collection -> User -> tokenId
      */
-    mapping(address => mapping(address => EnumerableSet.UintSet))
+    mapping(address => mapping(address => EnumerableSetUpgradeable.UintSet))
         private _users;
 
     /**
@@ -158,7 +165,7 @@ contract NFTMarket is ERC721Holder, Context {
      * @dev It stores all accounts that have offered a proposal for a loan
      *  collection -> tokenId -> []address
      */
-    mapping(address => mapping(uint256 => EnumerableSet.AddressSet))
+    mapping(address => mapping(uint256 => EnumerableSetUpgradeable.AddressSet))
         private _allProposals;
 
     /**
@@ -169,13 +176,16 @@ contract NFTMarket is ERC721Holder, Context {
         public proposals;
 
     /*///////////////////////////////////////////////////////////////
-                                CONSTRUCTOR
+                                INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
     /**
      * @param feeTo The address that will collect the fees.
      */
-    constructor(address feeTo) {
+    function initialize(address feeTo) external initializer {
+        __UUPSUpgradeable_init();
+        __Ownable_init();
+        __ERC721Holder_init();
         FEE_TO = feeTo;
     }
 
@@ -268,8 +278,8 @@ contract NFTMarket is ERC721Holder, Context {
      * - Key values of the loan such as principal, interest rate and maturity must be greater than 0.
      */
     function proposeLoan(
-        IERC721 collection,
-        IERC20 loanToken,
+        IERC721Upgradeable collection,
+        IERC20Upgradeable loanToken,
         uint256 tokenId,
         uint128 principal,
         uint64 interestRate,
@@ -330,8 +340,8 @@ contract NFTMarket is ERC721Holder, Context {
      * - The proposer must have enough funds and allows this contract to use. This is to make sure it is a serious offer.
      */
     function counterOffer(
-        IERC721 collection,
-        IERC20 loanToken,
+        IERC721Upgradeable collection,
+        IERC20Upgradeable loanToken,
         uint256 tokenId,
         uint128 principal,
         uint64 interestRate,
@@ -407,7 +417,7 @@ contract NFTMarket is ERC721Holder, Context {
      * - Can only start a loan that has not been started
      * - The loan must exist and lender cannot be the borrower
      */
-    function lenderStartLoan(IERC721 collection, uint256 tokenId)
+    function lenderStartLoan(IERC721Upgradeable collection, uint256 tokenId)
         external
         payable
     {
@@ -471,7 +481,7 @@ contract NFTMarket is ERC721Holder, Context {
      * - Only the borrower can accept a proposal
      */
     function borrowerStartLoan(
-        IERC721 collection,
+        IERC721Upgradeable collection,
         uint256 tokenId,
         address proposer
     ) external {
@@ -550,7 +560,7 @@ contract NFTMarket is ERC721Holder, Context {
      * - Must be the creator of the proposal
      */
     function withdrawBNB(
-        IERC721 collection,
+        IERC721Upgradeable collection,
         uint256 tokenId,
         address payable to
     ) external {
@@ -586,7 +596,9 @@ contract NFTMarket is ERC721Holder, Context {
      * - The `msg.sender` must be the borrower to avoid griefing
      * - The loan must not have started
      */
-    function withdrawNFT(IERC721 collection, uint256 tokenId) external {
+    function withdrawNFT(IERC721Upgradeable collection, uint256 tokenId)
+        external
+    {
         // Save gas
         Loan memory _loan = loans[address(collection)][tokenId];
 
@@ -616,7 +628,9 @@ contract NFTMarket is ERC721Holder, Context {
      *
      * - The loan must have not been repaid past its maturity
      */
-    function liquidate(IERC721 collection, uint256 tokenId) external {
+    function liquidate(IERC721Upgradeable collection, uint256 tokenId)
+        external
+    {
         // Save gas
         Loan memory _loan = loans[address(collection)][tokenId];
         // Loan must have started and be past the maturity date
@@ -647,7 +661,7 @@ contract NFTMarket is ERC721Holder, Context {
      *
      * @param token The address of a specific ERC20.
      */
-    function getEarnings(IERC20 token) external {
+    function getEarnings(IERC20Upgradeable token) external {
         // Save gas
         address feeTo = FEE_TO;
 
@@ -671,7 +685,10 @@ contract NFTMarket is ERC721Holder, Context {
      * @param collection The address of the contract of the NFT
      * @param tokenId The id of the NFT
      */
-    function repay(IERC721 collection, uint256 tokenId) external payable {
+    function repay(IERC721Upgradeable collection, uint256 tokenId)
+        external
+        payable
+    {
         // Save gas
         Loan memory _loan = loans[address(collection)][tokenId];
 
@@ -732,8 +749,8 @@ contract NFTMarket is ERC721Holder, Context {
      * @param token The address to check if it is BNB agaisnt address(0)
      * @return bool
      */
-    function _isBNB(IERC20 token) private pure returns (bool) {
-        return token == IERC20(address(0));
+    function _isBNB(IERC20Upgradeable token) private pure returns (bool) {
+        return token == IERC20Upgradeable(address(0));
     }
 
     /**
@@ -747,5 +764,21 @@ contract NFTMarket is ERC721Holder, Context {
         //solhint-disable-next-line avoid-low-level-calls
         (bool success, ) = to.call{value: amount}("");
         require(success, "NFTM: failed to send BNB");
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                            ONLY OWNER
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must be the owner.
+     */
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyOwner
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 }
