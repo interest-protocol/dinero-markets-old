@@ -3,7 +3,11 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { InterestToken, TestInterestTokenV2 } from '../typechain';
-import { DEVELOPER_ROLE, MINTER_ROLE } from './lib/constants';
+import {
+  DEFAULT_ADMIN_ROLE,
+  DEVELOPER_ROLE,
+  MINTER_ROLE,
+} from './lib/constants';
 import { deployUUPS, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
@@ -22,16 +26,21 @@ describe('Interest Token', () => {
     ]);
   });
 
-  it('reverts if you try to initialize', async () => {
-    await expect(interestToken.initialize()).to.revertedWith(
-      'Initializable: contract is already initialized'
-    );
-  });
+  describe('function: initialize', () => {
+    it('reverts if you try to initialize', async () => {
+      await expect(interestToken.initialize()).to.revertedWith(
+        'Initializable: contract is already initialized'
+      );
+    });
 
-  it('grants developer role to the deployer', async () => {
-    expect(
-      await interestToken.hasRole(DEVELOPER_ROLE, owner.address)
-    ).to.be.equal(true);
+    it('grants developer role to the deployer', async () => {
+      expect(
+        await interestToken.hasRole(DEVELOPER_ROLE, owner.address)
+      ).to.be.equal(true);
+      expect(
+        await interestToken.hasRole(DEFAULT_ADMIN_ROLE, owner.address)
+      ).to.be.equal(true);
+    });
   });
 
   describe('function: mint', () => {

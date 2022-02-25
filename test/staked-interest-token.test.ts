@@ -3,7 +3,12 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { StakedInterestToken, TestStakedInterestTokenV2 } from '../typechain';
-import { BURNER_ROLE, DEVELOPER_ROLE, MINTER_ROLE } from './lib/constants';
+import {
+  BURNER_ROLE,
+  DEFAULT_ADMIN_ROLE,
+  DEVELOPER_ROLE,
+  MINTER_ROLE,
+} from './lib/constants';
 import { deployUUPS, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
@@ -21,10 +26,21 @@ describe('Staked Interest Token', () => {
     ]);
   });
 
-  it('grants developer role to the deployer', async () => {
-    expect(
-      await stakedInterestToken.hasRole(DEVELOPER_ROLE, owner.address)
-    ).to.be.equal(true);
+  describe('function: initialize', () => {
+    it('reverts if you try to initialize', async () => {
+      await expect(stakedInterestToken.initialize()).to.revertedWith(
+        'Initializable: contract is already initialized'
+      );
+    });
+
+    it('grants the deployer the right roles', async () => {
+      expect(
+        await stakedInterestToken.hasRole(DEVELOPER_ROLE, owner.address)
+      ).to.be.equal(true);
+      expect(
+        await stakedInterestToken.hasRole(DEFAULT_ADMIN_ROLE, owner.address)
+      ).to.be.equal(true);
+    });
   });
 
   describe('function: mint', () => {

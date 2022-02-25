@@ -13,26 +13,6 @@ import "../SafeVenus.sol";
 //solhint-disable
 
 contract TestDineroVenusVault is DineroVenusVault {
-    constructor(
-        address xvs,
-        address wbnb,
-        IPancakeRouter02 router,
-        IVenusController venusController,
-        Dinero dinero,
-        SafeVenus safeVenus,
-        address feeTo
-    )
-        DineroVenusVault(
-            xvs,
-            wbnb,
-            router,
-            venusController,
-            dinero,
-            safeVenus,
-            feeTo
-        )
-    {}
-
     // Testing
     function borrow(IVToken vToken, uint256 amount) external {
         vToken.borrow(amount);

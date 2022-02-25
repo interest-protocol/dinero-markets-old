@@ -100,6 +100,29 @@ describe('PancakeOracle', () => {
     await libraryWrapper.setPair(btcUSDCPair);
   });
 
+  describe('function: initialize', () => {
+    it('reverts if you call after deployment', async () => {
+      expect(
+        oracle.initialize(
+          factory.address,
+          WINDOW,
+          GRANULARITY,
+          libraryWrapper.address
+        )
+      ).to.revertedWith('Initializable: contract is already initialized');
+    });
+    it('reverts if you granularity or period size is incorrect', async () => {
+      await expect(
+        deployUUPS('PancakeOracle', [
+          factory.address,
+          WINDOW,
+          0,
+          libraryWrapper.address,
+        ])
+      ).to.revertedWith('PO: granularity > 1');
+    });
+  });
+
   it('calculates an index between 0 to 3 for any timestamp', async () => {
     // Feb 1st 2022 - 07:49 GMT unix timestamp seconds
     const timestamp = 1_643_701_705;

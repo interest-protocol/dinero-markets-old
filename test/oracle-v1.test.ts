@@ -125,6 +125,17 @@ describe('OracleV1', () => {
     ]);
   });
 
+  it('reverts if you call initialize after deployment', async () => {
+    await expect(
+      oracleV1.initialize(
+        mockTWAP.address,
+        mockBnbUsdDFeed.address,
+        mockWbnb.address,
+        mockBUSD.address
+      )
+    ).to.revertedWith('Initializable: contract is already initialized');
+  });
+
   describe('function: getUSDPrice', () => {
     it('returns the value of pair in USD', async () => {
       expect(

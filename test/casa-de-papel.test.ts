@@ -111,6 +111,37 @@ describe('Case de Papel', () => {
     expect(await casaDePapel.getPoolsLength()).to.be.equal(3);
   });
 
+  describe('function: initialize', () => {
+    it('reverts if you call after deployment', async () => {
+      await expect(
+        casaDePapel.initialize(
+          interestToken.address,
+          sInterestToken.address,
+          developer.address,
+          INTEREST_TOKEN_PER_BLOCK,
+          START_BLOCK
+        )
+      ).to.revertedWith('Initializable: contract is already initialized');
+    });
+
+    it('properly updates the state', async () => {
+      const [totalAllocationPoints, interesTokenPool, hasPool] =
+        await Promise.all([
+          casaDePapel.totalAllocationPoints(),
+          casaDePapel.pools(0),
+          casaDePapel.hasPool(interestToken.address),
+        ]);
+
+      expect(totalAllocationPoints).to.be.equal(1000);
+      expect(interesTokenPool.stakingToken).to.be.equal(interestToken.address);
+      expect(interesTokenPool.allocationPoints).to.be.equal(1000);
+      expect(interesTokenPool.lastRewardBlock).to.be.equal(START_BLOCK);
+      expect(interesTokenPool.accruedIntPerShare).to.be.equal(0);
+      expect(interesTokenPool.totalSupply).to.be.equal(0);
+      expect(hasPool).to.be.equal(true);
+    });
+  });
+
   describe('function: setDevAccount', () => {
     it('reverts if it not called by the developer account', async () => {
       await expect(

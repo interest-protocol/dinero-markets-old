@@ -66,6 +66,20 @@ describe('Master Chef CakeVault', () => {
     ]);
   });
 
+  describe('function: initialize', () => {
+    it('reverts if you initialize after deployment', async () => {
+      await expect(
+        cakeVault.initialize(masterChef.address, cake.address)
+      ).to.revertedWith('Initializable: contract is already initialized');
+    });
+
+    it('gives maximum approval to the master chef', async () => {
+      expect(
+        await cake.allowance(cakeVault.address, masterChef.address)
+      ).to.be.equal(ethers.constants.MaxUint256);
+    });
+  });
+
   describe('function: setMarket', () => {
     it('reverts if it is not called byt he owner', async () => {
       await expect(

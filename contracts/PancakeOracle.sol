@@ -97,10 +97,8 @@ contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // `_granularity` lower than makes no sense in the context of moxing average: [windowSize - (windowSize / granularity) * 2, windowSize]
         require(granularity > 1, "PO: granularity > 1");
         // Make sure to use numbers that do not require rounding.
-        require(
-            (PERIOD_SIZE = windowSize / granularity) * granularity ==
-                windowSize,
-            "PO: uneven number"
+        assert(
+            (PERIOD_SIZE = windowSize / granularity) * granularity == windowSize
         );
 
         __UUPSUpgradeable_init();

@@ -92,6 +92,23 @@ describe('Master Chef LPVault', () => {
     ]);
   });
 
+  describe('function: initialize', () => {
+    it('reverts if you initialize after deployment', async () => {
+      await expect(
+        lpVault.initialize(masterChef.address, cake.address, lpToken.address, 1)
+      ).to.revertedWith('Initializable: contract is already initialized');
+    });
+
+    it('gives maximum approval to the master chef', async () => {
+      expect(
+        await cake.allowance(lpVault.address, masterChef.address)
+      ).to.be.equal(ethers.constants.MaxUint256);
+      expect(
+        await lpToken.allowance(lpVault.address, masterChef.address)
+      ).to.be.equal(ethers.constants.MaxUint256);
+    });
+  });
+
   describe('function: setMarket', () => {
     it('reverts if it is not called by the owner', async () => {
       await expect(

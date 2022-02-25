@@ -19,3 +19,5 @@ export const BURNER_ROLE = ethers.utils.solidityKeccak256(
   ['string'],
   ['BURNER_ROLE']
 );
+
+export const DEFAULT_ADMIN_ROLE = ethers.constants.HashZero;

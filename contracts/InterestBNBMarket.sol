@@ -11,9 +11,11 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 //SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/utils/Context.sol";
-import "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 
 import "./interfaces/IPancakeRouter02.sol";
 
@@ -23,7 +25,6 @@ import "./lib/IntMath.sol";
 import "./tokens/Dinero.sol";
 
 import "./OracleV1.sol";
-import "./InterestGovernorV1.sol";
 
 /**
  * @dev It is an overcollaterized isolated lending market that accepts BNB as coollateral to back a loan in a synthetic stable coin called Dinero.
@@ -45,13 +46,18 @@ import "./InterestGovernorV1.sol";
  * If Dinero falls below, borrowers that have open  loans and swapped to a different crypto, can buy dinero cheaper and close their loans running a profit. Liquidators can accumulate Dinero to close underwater positions with an arbitrate. As liquidation will always assume 1 Dinero is worth 1 USD. If Dinero goes above a dollar, people are encouraged to borrow more Dinero for arbitrage. We believe this will keep the price pegged at 1 USD.
  *
  */
-contract InterestBNBMarketV1 is ReentrancyGuard, Context {
+contract InterestBNBMarketV1 is
+    Initializable,
+    ReentrancyGuardUpgradeable,
+    OwnableUpgradeable,
+    UUPSUpgradeable
+{
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
 
     using RebaseLibrary for Rebase;
-    using SafeCast for uint256;
+    using SafeCastUpgradeable for uint256;
     using IntMath for uint256;
 
     /*///////////////////////////////////////////////////////////////
@@ -116,20 +122,20 @@ contract InterestBNBMarketV1 is ReentrancyGuard, Context {
     }
 
     /*///////////////////////////////////////////////////////////////
-                        MASTER CONTRACT VARIABLES
+                                STATE
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line var-name-mixedcase
-    IPancakeRouter02 public immutable ROUTER; // PCS router
+    IPancakeRouter02 public ROUTER; // PCS router
 
     // solhint-disable-next-line var-name-mixedcase
-    Dinero public immutable DINERO; // Dinero stable coin
+    Dinero public DINERO; // Dinero stable coin
 
     // solhint-disable-next-line var-name-mixedcase
-    InterestGovernorV1 public immutable GOVERNOR; // Governor contract
+    address public FEE_TO; // treasury address
 
     // solhint-disable-next-line var-name-mixedcase
-    OracleV1 public immutable ORACLE; // Oracle contract
+    OracleV1 public ORACLE; // Oracle contract
 
     // Total amount of princicpal borrowed in Dinero.
     Rebase public totalLoan;
@@ -153,7 +159,7 @@ contract InterestBNBMarketV1 is ReentrancyGuard, Context {
     uint256 public liquidationFee;
 
     /*///////////////////////////////////////////////////////////////
-                            CONSTRUCTOR
+                            INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
     /**
@@ -161,24 +167,32 @@ contract InterestBNBMarketV1 is ReentrancyGuard, Context {
      *
      * @param router The address of the PCS router.
      * @param dinero The address of Dinero.
-     * @param governor The address of the governor.
+     * @param feeTo Treasury address.
      * @param oracle The address of the oracle.
      * @param interestRate How much to charge borrowers every second in Dinero
      * @param _maxLTVRatio Maximum loan to value ratio on loans. Positions above this value can be liquidated.
      * @param _liquidationFee A fee charged on positions underwater and rewarded to the liquidator and protocol.
+     *
+     * Requirements:
+     *
+     * - Can only be called at once and should be called during creation to prevent front running.
      */
-    constructor(
+    function initialize(
         IPancakeRouter02 router,
         Dinero dinero,
-        InterestGovernorV1 governor,
+        address feeTo,
         OracleV1 oracle,
         uint64 interestRate,
         uint256 _maxLTVRatio,
         uint256 _liquidationFee
-    ) {
+    ) external initializer {
+        __UUPSUpgradeable_init();
+        __Ownable_init();
+        __ReentrancyGuard_init();
+
         ROUTER = router;
         DINERO = dinero;
-        GOVERNOR = governor;
+        FEE_TO = feeTo;
         ORACLE = oracle;
         loan.INTEREST_RATE = interestRate;
         maxLTVRatio = _maxLTVRatio;
@@ -204,30 +218,6 @@ contract InterestBNBMarketV1 is ReentrancyGuard, Context {
         );
     }
 
-    /**
-     * @dev Throws if called by any account other than the governor owner.
-     */
-    modifier onlyGovernorOwner() {
-        require(
-            GOVERNOR.owner() == _msgSender(),
-            "MKT: caller is not the owner"
-        );
-        _;
-    }
-
-    /*///////////////////////////////////////////////////////////////
-                            VIEW FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @dev View function to easily find who the governor owner is. Since it is the address that can call the governor owner functions.
-     *
-     * @return address the governor owner address.
-     */
-    function governorOwner() external view returns (address) {
-        return GOVERNOR.owner();
-    }
-
     /*///////////////////////////////////////////////////////////////
                         MUTATIVE PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -244,7 +234,7 @@ contract InterestBNBMarketV1 is ReentrancyGuard, Context {
         // Reset to 0
         loan.feesEarned = 0;
 
-        address feeTo = GOVERNOR.feeTo();
+        address feeTo = FEE_TO;
 
         // This can be minted. Because once users get liquidated or repay the loans. This amount will be burned (fees).
         // So it will keep the peg to USD. There must be always at bare minimum 1 USD in collateral to 1 Dinero in existence.
@@ -469,7 +459,7 @@ contract InterestBNBMarketV1 is ReentrancyGuard, Context {
         uint256[] calldata principals,
         address payable recipient,
         address[] calldata path
-    ) external {
+    ) external nonReentrant {
         // Make sure token is always exchanged to Dinero as we need to burn at the end.
         // path can be empty if the liquidator has enough dinero in his accounts to close the positions.
         require(
@@ -659,10 +649,10 @@ contract InterestBNBMarketV1 is ReentrancyGuard, Context {
      * Requirements:
      *
      * - {maxLTVRatio} cannot be higher than 90% due to the high volatility of crypto assets and we are using the overcollaterization ratio.
-     * - It can only be called by the governor owner to avoid griefing
+     * - It can only be called by the owner to avoid griefing
      *
      */
-    function setMaxLTVRatio(uint256 amount) external onlyGovernorOwner {
+    function setMaxLTVRatio(uint256 amount) external onlyOwner {
         require(0.9e18 >= amount, "MKT: too high");
         maxLTVRatio = amount;
     }
@@ -675,10 +665,10 @@ contract InterestBNBMarketV1 is ReentrancyGuard, Context {
      * Requirements:
      *
      * - It cannot be higher than 15%.
-     * - It can only be called by the governor owner to avoid griefing.
+     * - It can only be called by the owner to avoid griefing.
      *
      */
-    function setLiquidationFee(uint256 amount) external onlyGovernorOwner {
+    function setLiquidationFee(uint256 amount) external onlyOwner {
         require(0.15e18 >= amount, "MKT: too high");
         liquidationFee = amount;
     }
@@ -692,13 +682,25 @@ contract InterestBNBMarketV1 is ReentrancyGuard, Context {
      *
      * Requirements:
      *
-     * - This function is guarded by the {onlyGovernorOwner} modifier to disallow users from arbitrarly changing the interest rate of borrowing.
+     * - This function is guarded by the {onlyOwner} modifier to disallow users from arbitrarly changing the interest rate of borrowing.
      * - It also requires the new interest rate to be lower than 4% annually.
      *
      */
-    function setInterestRate(uint64 amount) external onlyGovernorOwner {
+    function setInterestRate(uint64 amount) external onlyOwner {
         // 13e8 * 60 * 60 * 24 * 365 / 1e18 = ~ 0.0409968
         require(13e8 >= amount, "MKT: too high");
         loan.INTEREST_RATE = amount;
+    }
+
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must be the owner.
+     */
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyOwner
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 }

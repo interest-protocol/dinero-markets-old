@@ -6,16 +6,22 @@ import {
   Dinero,
   ETHRouter,
   InterestBNBMarketV1,
-  InterestGovernorV1,
   LiquidityRouter,
   MockChainLinkFeed,
   MockERC20,
   MockTWAP,
   OracleV1,
   PancakeFactory,
+  TestInterestBNBMarketV2,
   WETH9,
 } from '../typechain';
-import { advanceTime, deploy, multiDeploy } from './lib/test-utils';
+import { BURNER_ROLE, MINTER_ROLE } from './lib/constants';
+import {
+  advanceTime,
+  deployUUPS,
+  multiDeploy,
+  upgrade,
+} from './lib/test-utils';
 
 const BNB_USD_PRICE = ethers.BigNumber.from('50000000000'); // 500 USD
 
@@ -24,7 +30,6 @@ const { parseEther } = ethers.utils;
 describe('InterestBNBMarketV1', () => {
   let interestBNBMarket: InterestBNBMarketV1;
   let dinero: Dinero;
-  let governor: InterestGovernorV1;
   let oracle: OracleV1;
   let mockBnbUsdDFeed: MockChainLinkFeed;
   let weth: WETH9;
@@ -46,56 +51,63 @@ describe('InterestBNBMarketV1', () => {
     [owner, alice, bob, treasury, developer, jose, recipient] =
       await ethers.getSigners();
 
-    [dinero, weth, mockBnbUsdDFeed, factory, mockTWAP, busd] =
-      await multiDeploy(
-        [
-          'Dinero',
-          'WETH9',
-          'MockChainLinkFeed',
-          'PancakeFactory',
-          'MockTWAP',
-          'MockERC20',
-        ],
-        [
-          [],
-          [],
-          [8, 'CAKE/USD', 1],
-          [developer.address],
-          [],
-          ['Binance USD', 'BUSD', parseEther('1000')],
-        ]
-      );
+    [dinero, [weth, mockBnbUsdDFeed, factory, mockTWAP, busd]] =
+      await Promise.all([
+        deployUUPS('Dinero', []),
+        multiDeploy(
+          [
+            'WETH9',
+            'MockChainLinkFeed',
+            'PancakeFactory',
+            'MockTWAP',
+            'MockERC20',
+          ],
+          [
+            [],
+            [8, 'CAKE/USD', 1],
+            [developer.address],
+            [],
+            ['Binance USD', 'BUSD', parseEther('1000')],
+          ]
+        ),
+      ]);
 
-    [governor, oracle, router, liquidityRouter] = await multiDeploy(
-      ['InterestGovernorV1', 'OracleV1', 'ETHRouter', 'LiquidityRouter'],
-      [
-        [dinero.address],
-        [mockTWAP.address, mockBnbUsdDFeed.address, weth.address, busd.address],
-        [factory.address, weth.address],
-        [factory.address, weth.address],
-      ]
-    );
+    [oracle, [router, liquidityRouter]] = await Promise.all([
+      deployUUPS('OracleV1', [
+        mockTWAP.address,
+        mockBnbUsdDFeed.address,
+        weth.address,
+        busd.address,
+      ]),
+      multiDeploy(
+        ['ETHRouter', 'LiquidityRouter'],
+        [
+          [factory.address, weth.address],
+          [factory.address, weth.address],
+        ]
+      ),
+    ]);
+
     [interestBNBMarket] = await Promise.all([
-      deploy('InterestBNBMarketV1', [
+      deployUUPS('InterestBNBMarketV1', [
         router.address,
         dinero.address,
-        governor.address,
+        treasury.address,
         oracle.address,
         ethers.BigNumber.from(12e8),
         ethers.BigNumber.from('500000000000000000'),
         ethers.BigNumber.from('100000000000000000'),
       ]),
-      dinero
-        .connect(owner)
-        .grantRole(await dinero.DEFAULT_ADMIN_ROLE(), governor.address),
-      dinero
-        .connect(owner)
-        .grantRole(await dinero.MINTER_ROLE(), owner.address),
-      governor.connect(owner).setFeeTo(treasury.address),
       mockBnbUsdDFeed.setAnswer(BNB_USD_PRICE),
       oracle.connect(owner).setFeed(weth.address, mockBnbUsdDFeed.address, 0),
       weth.approve(liquidityRouter.address, ethers.constants.MaxUint256),
       weth.connect(owner).mint(parseEther('1000')),
+    ]);
+
+    await Promise.all([
+      dinero.connect(owner).grantRole(MINTER_ROLE, owner.address),
+      dinero.connect(owner).grantRole(MINTER_ROLE, interestBNBMarket.address),
+      dinero.connect(owner).grantRole(BURNER_ROLE, interestBNBMarket.address),
     ]);
 
     await Promise.all([
@@ -115,16 +127,26 @@ describe('InterestBNBMarketV1', () => {
           owner.address,
           ethers.constants.MaxUint256
         ),
-      governor.connect(owner).addDineroMarket(interestBNBMarket.address),
       interestBNBMarket.updateExchangeRate(),
     ]);
   });
 
-  it('should return the governor owner', async () => {
-    expect(await interestBNBMarket.governorOwner()).to.be.equal(
-      await governor.owner()
-    );
+  it('reverts if you initialize after deployment', async () => {
+    await expect(
+      interestBNBMarket
+        .connect(alice)
+        .initialize(
+          router.address,
+          dinero.address,
+          treasury.address,
+          oracle.address,
+          ethers.BigNumber.from(12e8),
+          ethers.BigNumber.from('500000000000000000'),
+          ethers.BigNumber.from('100000000000000000')
+        )
+    ).to.revertedWith('Initializable: contract is already initialized');
   });
+
   it('sends the fees earned to the feeTo address', async () => {
     await alice.sendTransaction({
       to: interestBNBMarket.address,
@@ -493,7 +515,7 @@ describe('InterestBNBMarketV1', () => {
     it('reverts if it is not called by the owner', async () => {
       await expect(
         interestBNBMarket.connect(alice).setMaxLTVRatio(0)
-      ).to.revertedWith('MKT: caller is not the owner');
+      ).to.revertedWith('Ownable: caller is not the owner');
     });
     it('reverts if we set a collateral higher than 9e5', async () => {
       await expect(
@@ -520,7 +542,7 @@ describe('InterestBNBMarketV1', () => {
     it('reverts if it is not called by the owner', async () => {
       await expect(
         interestBNBMarket.connect(alice).setLiquidationFee(0)
-      ).to.revertedWith('MKT: caller is not the owner');
+      ).to.revertedWith('Ownable: caller is not the owner');
     });
     it('reverts if we set a liquidation fee higher than 15e4', async () => {
       await expect(
@@ -547,7 +569,7 @@ describe('InterestBNBMarketV1', () => {
     it('reverts if it is not called by the owner', async () => {
       await expect(
         interestBNBMarket.connect(alice).setInterestRate(0)
-      ).to.revertedWith('MKT: caller is not the owner');
+      ).to.revertedWith('Ownable: caller is not the owner');
     });
     it('reverts if we set a liquidation fee higher than 15e4', async () => {
       await expect(
@@ -935,5 +957,45 @@ describe('InterestBNBMarketV1', () => {
       // While it is hard to get the exact number we know it has to be smaller 1320 DNR after 2 years at interest rate of 4%
       expect(totalLoan.elastic.lt(parseEther('1320'))).to.be.equal(true);
     });
+  });
+  it('upgrades to version 2', async () => {
+    await interestBNBMarket
+      .connect(alice)
+      .addCollateral(alice.address, { value: parseEther('2') });
+
+    const [bobBalance, aliceCollateral] = await Promise.all([
+      bob.getBalance(),
+      interestBNBMarket.userCollateral(alice.address),
+      interestBNBMarket.connect(alice).borrow(alice.address, parseEther('100')),
+    ]);
+
+    await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('51000000000'));
+
+    const interestBNBMarketV2: TestInterestBNBMarketV2 = await upgrade(
+      interestBNBMarket,
+      'TestInterestBNBMarketV2'
+    );
+
+    await expect(
+      interestBNBMarketV2
+        .connect(alice)
+        .withdrawCollateral(bob.address, parseEther('1.5'))
+    )
+      .to.emit(interestBNBMarketV2, 'Accrue')
+      .to.emit(interestBNBMarketV2, 'ExchangeRate')
+      .to.emit(interestBNBMarketV2, 'WithdrawCollateral')
+      .withArgs(alice.address, bob.address, parseEther('1.5'));
+
+    const [version, bobBalance2] = await Promise.all([
+      interestBNBMarketV2.version(),
+      bob.getBalance(),
+    ]);
+
+    expect(version).to.be.equal('V2');
+
+    expect(bobBalance2).to.be.equal(bobBalance.add(parseEther('1.5')));
+    expect(aliceCollateral.sub(parseEther('1.5'))).to.be.equal(
+      await interestBNBMarketV2.userCollateral(alice.address)
+    );
   });
 });

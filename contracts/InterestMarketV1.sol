@@ -11,11 +11,12 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 //SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import "@openzeppelin/contracts/utils/Context.sol";
-import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 import "./interfaces/IPancakeRouter02.sol";
 import "./interfaces/IPancakePair.sol";
@@ -29,7 +30,6 @@ import "./lib/IntERC20.sol";
 import "./master-chef-vaults/MasterChefVault.sol";
 
 import "./OracleV1.sol";
-import "./InterestGovernorV1.sol";
 
 /**
  * @dev It is an overcollaterized isolated lending market between a collateral token and the synthetic stable coin Dinero.
@@ -60,14 +60,18 @@ import "./InterestGovernorV1.sol";
  * PCS Pairs of all this tokens with WBNB - 0xA527a61703D82139F8a06Bc30097cC9CAA2df5A6
  * ADA - 0x3ee2200efb3400fabb9aacf31297cbdd1d435d47
  */
-contract InterestMarketV1 is Context {
+contract InterestMarketV1 is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable
+{
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
 
     using RebaseLibrary for Rebase;
-    using SafeERC20 for IERC20;
-    using SafeCast for uint256;
+    using SafeERC20Upgradeable for IERC20Upgradeable;
+    using SafeCastUpgradeable for uint256;
     using IntMath for uint256;
     using IntERC20 for address;
 
@@ -133,31 +137,24 @@ contract InterestMarketV1 is Context {
     }
 
     /*///////////////////////////////////////////////////////////////
-                        MASTER CONTRACT VARIABLES
+                                STATE
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line var-name-mixedcase
-    InterestMarketV1 public immutable MASTER_CONTRACT; // The implementation contract
+    IPancakeRouter02 public ROUTER; // PCS router
 
     // solhint-disable-next-line var-name-mixedcase
-    IPancakeRouter02 public immutable ROUTER; // PCS router
+    Dinero public DINERO; // Dinero stable coin
 
     // solhint-disable-next-line var-name-mixedcase
-    Dinero public immutable DINERO; // Dinero stable coin
+    address public FEE_TO; // Treasury contract
 
     // solhint-disable-next-line var-name-mixedcase
-    InterestGovernorV1 public immutable GOVERNOR; // Governor contract
-
-    // solhint-disable-next-line var-name-mixedcase
-    OracleV1 public immutable ORACLE; // Oracle contract
-
-    /*///////////////////////////////////////////////////////////////
-                        CLONE CONTRACT VARIABLES
-    //////////////////////////////////////////////////////////////*/
+    OracleV1 public ORACLE; // Oracle contract
 
     // Clone only variable
     // solhint-disable-next-line var-name-mixedcase
-    IERC20 public COLLATERAL; // Token to be used to cover the loan.
+    IERC20Upgradeable public COLLATERAL; // Token to be used to cover the loan.
 
     // solhint-disable-next-line var-name-mixedcase
     MasterChefVault public VAULT; // A vault to interact with PCS master chef.
@@ -185,7 +182,7 @@ contract InterestMarketV1 is Context {
     uint256 public liquidationFee; // A fee that will be charged as a penalty of being liquidated.
 
     /*///////////////////////////////////////////////////////////////
-                            CONSTRUCTOR
+                                INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
     /**
@@ -195,55 +192,41 @@ contract InterestMarketV1 is Context {
      *
      * @param router The address of the PCS router.
      * @param dinero The address of Dinero.
-     * @param governor The address of the governor.
+     * @param feeTo Treasury address.
      * @param oracle The address of the oracle.
-     *
-     */
-    constructor(
-        IPancakeRouter02 router,
-        Dinero dinero,
-        InterestGovernorV1 governor,
-        OracleV1 oracle
-    ) {
-        MASTER_CONTRACT = this;
-        ROUTER = router;
-        DINERO = dinero;
-        GOVERNOR = governor;
-        ORACLE = oracle;
-    }
-
-    /*///////////////////////////////////////////////////////////////
-                            INITIALIZE
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @dev A function to set the initial parameters of the contract. To be called once per market.
-     *
-     * @notice the modifier {initializer}. This can only be called once.
-     * @notice Vault can be the 0 address. All other variables should be set. We assume the owner will set them up properly.
-     *
-     * @param data A collection of all the needed variables to operate this contract.
+     * @param collateral The address of the collateral of this market, an ERC20
+     * @param vault The address of a master chef vault. It can be address(0)
+     * @param interestRate the interest rate charged every second
+     * @param _maxLTVRatio The maximum ltv ratio before liquidation
+     * @param _liquidationFee The fee charged when positions under water are liquidated
      *
      * Requirements:
      *
-     * - The master contract should be initialized.
-     * - Collateral token cannot be the zero address.
-     * - {maxLTVRatio} needs to be checked because it can cause a total failure of the system if set up wrongly.
-     *
+     * - Can only be called at once and should be called during creation to prevent front running.
      */
-    function initialize(bytes calldata data) external {
-        require(address(MASTER_CONTRACT) != address(this), "MKT: not allowed");
+    function initialize(
+        IPancakeRouter02 router,
+        Dinero dinero,
+        address feeTo,
+        OracleV1 oracle,
+        IERC20Upgradeable collateral,
+        MasterChefVault vault,
+        uint64 interestRate,
+        uint256 _maxLTVRatio,
+        uint256 _liquidationFee
+    ) external initializer {
+        __UUPSUpgradeable_init();
+        __Ownable_init();
 
-        (
-            COLLATERAL,
-            VAULT, // Note the VAULT can be the address(0). As non  pair addresses will not have a vault in this version.
-            loan.INTEREST_RATE,
-            maxLTVRatio,
-            liquidationFee
-        ) = abi.decode(
-            data,
-            (IERC20, MasterChefVault, uint64, uint256, uint256)
-        );
+        ROUTER = router;
+        DINERO = dinero;
+        FEE_TO = feeTo;
+        ORACLE = oracle;
+        COLLATERAL = collateral;
+        VAULT = vault;
+        loan.INTEREST_RATE = interestRate;
+        maxLTVRatio = _maxLTVRatio;
+        liquidationFee = _liquidationFee;
 
         // Collateral must not be zero address.
         require(address(COLLATERAL) != address(0), "MKT: no zero address");
@@ -278,30 +261,6 @@ contract InterestMarketV1 is Context {
         );
     }
 
-    /**
-     * @dev Throws if called by any account other than the governor owner.
-     */
-    modifier onlyGovernorOwner() {
-        require(
-            GOVERNOR.owner() == _msgSender(),
-            "MKT: caller is not the owner"
-        );
-        _;
-    }
-
-    /*///////////////////////////////////////////////////////////////
-                            VIEW FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @dev View function to easily find who the governor owner is. Since it is the address that can call the governor owner functions.
-     *
-     * @return address the governor owner address.
-     */
-    function governorOwner() external view returns (address) {
-        return GOVERNOR.owner();
-    }
-
     /*///////////////////////////////////////////////////////////////
                         MUTATIVE PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -329,7 +288,7 @@ contract InterestMarketV1 is Context {
         // Reset to 0
         loan.feesEarned = 0;
 
-        address feeTo = GOVERNOR.feeTo();
+        address feeTo = FEE_TO;
 
         // This can be minted. Because once users get liquidated or repay the loans. This amount will be burned (fees).
         // So it will keep the peg to USD. There must be always at bare minimum 1 USD in collateral to 1 Dinero in existence.
@@ -737,8 +696,14 @@ contract InterestMarketV1 is Context {
             );
 
             // We need to approve the router to {transferFrom} token0 and token1 to sell them for {DINERO}.
-            IERC20(token0).safeIncreaseAllowance(address(router), amount0);
-            IERC20(token1).safeIncreaseAllowance(address(router), amount1);
+            IERC20Upgradeable(token0).safeIncreaseAllowance(
+                address(router),
+                amount0
+            );
+            IERC20Upgradeable(token1).safeIncreaseAllowance(
+                address(router),
+                amount1
+            );
 
             router.swapExactTokensForTokens(
                 // Sell all token0 removed from the liquidity.
@@ -875,10 +840,10 @@ contract InterestMarketV1 is Context {
      * Requirements:
      *
      * - {maxLTVRatio} cannot be higher than 90% due to the high volatility of crypto assets and we are using the overcollaterization ratio.
-     * - It can only be called by the governor owner to avoid griefing
+     * - It can only be called by owner to avoid griefing
      *
      */
-    function setMaxLTVRatio(uint256 amount) external onlyGovernorOwner {
+    function setMaxLTVRatio(uint256 amount) external onlyOwner {
         require(0.9e18 >= amount, "MKT: too high");
         maxLTVRatio = amount;
     }
@@ -891,10 +856,10 @@ contract InterestMarketV1 is Context {
      * Requirements:
      *
      * - It cannot be higher than 15%.
-     * - It can only be called by the governor owner to avoid griefing.
+     * - It can only be called by the owner to avoid griefing.
      *
      */
-    function setLiquidationFee(uint256 amount) external onlyGovernorOwner {
+    function setLiquidationFee(uint256 amount) external onlyOwner {
         require(0.15e18 >= amount, "MKT: too high");
         liquidationFee = amount;
     }
@@ -908,13 +873,25 @@ contract InterestMarketV1 is Context {
      *
      * Requirements:
      *
-     * - This function is guarded by the {onlyGovernorOwner} modifier to disallow users from arbitrarly changing the interest rate of borrowing.
+     * - This function is guarded by the {onlyOwner} modifier to disallow users from arbitrarly changing the interest rate of borrowing.
      * - It also requires the new interest rate to be lower than 4% annually.
      *
      */
-    function setInterestRate(uint64 amount) external onlyGovernorOwner {
+    function setInterestRate(uint64 amount) external onlyOwner {
         // 13e8 * 60 * 60 * 24 * 365 / 1e18 = ~ 0.0409968
         require(13e8 >= amount, "MKT: too high");
         loan.INTEREST_RATE = amount;
+    }
+
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must be the owner.
+     */
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyOwner
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 }

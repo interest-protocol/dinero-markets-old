@@ -10,6 +10,7 @@ import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 
 import "./lib/IntMath.sol";
 
@@ -28,6 +29,7 @@ import "./lib/IntMath.sol";
  */
 contract NFTMarket is
     Initializable,
+    ReentrancyGuardUpgradeable,
     ERC721HolderUpgradeable,
     OwnableUpgradeable,
     UUPSUpgradeable
@@ -190,6 +192,7 @@ contract NFTMarket is
         __UUPSUpgradeable_init();
         __Ownable_init();
         __ERC721Holder_init();
+        __ReentrancyGuard_init();
 
         FEE_TO = feeTo;
     }
@@ -425,6 +428,7 @@ contract NFTMarket is
     function lenderStartLoan(IERC721Upgradeable collection, uint256 tokenId)
         external
         payable
+        nonReentrant
     {
         // Save state to memory to save gas
         Loan memory _loan = loans[address(collection)][tokenId];
@@ -489,7 +493,7 @@ contract NFTMarket is
         IERC721Upgradeable collection,
         uint256 tokenId,
         address proposer
-    ) external {
+    ) external nonReentrant {
         Loan memory _loan = loans[address(collection)][tokenId];
 
         // Loan must not have started
@@ -568,7 +572,7 @@ contract NFTMarket is
         IERC721Upgradeable collection,
         uint256 tokenId,
         address payable to
-    ) external {
+    ) external nonReentrant {
         // Save state to memory to save gas
         Proposal memory _proposal = proposals[address(collection)][tokenId][
             _msgSender()
@@ -693,6 +697,7 @@ contract NFTMarket is
     function repay(IERC721Upgradeable collection, uint256 tokenId)
         external
         payable
+        nonReentrant
     {
         // Save gas
         Loan memory _loan = loans[address(collection)][tokenId];

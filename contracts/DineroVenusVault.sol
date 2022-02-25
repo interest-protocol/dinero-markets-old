@@ -1,12 +1,14 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
 import "./interfaces/IVenusController.sol";
 import "./interfaces/IVToken.sol";
@@ -32,15 +34,22 @@ import "./SafeVenus.sol";
  * Due to Venus being the leading lending platform in the ecosystem with 2bn in TVL. We feel confident to use it.
  * If Venus's markets get compromised the 1:1 Dinero peg will suffer. So we need to monitor Venus activity to use {emergencyRecovery} in case we feel a new feature is not properly audited. The contract then can be upgraded to properly give the underlying to depositors.
  */
-contract DineroVenusVault is Ownable, Pausable, IVenusVault {
+//solhint-disable-next-line max-states-count
+contract DineroVenusVault is
+    Initializable,
+    PausableUpgradeable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    IVenusVault
+{
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
 
-    using EnumerableSet for EnumerableSet.AddressSet;
-    using SafeERC20 for IERC20;
+    using EnumerableSetUpgradeable for EnumerableSetUpgradeable.AddressSet;
+    using SafeERC20Upgradeable for IERC20Upgradeable;
     using IntMath for uint256;
-    using SafeCast for uint256;
+    using SafeCastUpgradeable for uint256;
     using IntERC20 for address;
 
     /*///////////////////////////////////////////////////////////////
@@ -94,29 +103,29 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
                                 STATE
     //////////////////////////////////////////////////////////////*/
 
-    // solhint-disable-next-line var-name-mixedcase
-    address public immutable XVS; // 0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63 18 decimals
-
-    // solhint-disable-next-line var-name-mixedcase
-    address public immutable WBNB; // 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c 18 decimals
-
-    // solhint-disable-next-line var-name-mixedcase
-    IPancakeRouter02 public immutable ROUTER; // PCS router 0x10ED43C718714eb63d5aA57B78B54704E256024E
-
-    // solhint-disable-next-line var-name-mixedcase
-    IVenusController public immutable VENUS_CONTROLLER; // 0xfD36E2c2a6789Db23113685031d7F16329158384
-
-    //solhint-disable-next-line var-name-mixedcase
-    Dinero public immutable DINERO; // 18 decimals
-
-    //solhint-disable-next-line var-name-mixedcase
-    SafeVenus public immutable SAFE_VENUS;
-
-    //solhint-disable-next-line var-name-mixedcase
-    address public immutable FEE_TO;
-
     // Compound and by extension Venus return 0 on successful calls.
     uint256 private constant NO_ERROR = 0;
+
+    // solhint-disable-next-line var-name-mixedcase
+    address public XVS; // 0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63 18 decimals
+
+    // solhint-disable-next-line var-name-mixedcase
+    address public WBNB; // 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c 18 decimals
+
+    // solhint-disable-next-line var-name-mixedcase
+    IPancakeRouter02 public ROUTER; // PCS router 0x10ED43C718714eb63d5aA57B78B54704E256024E
+
+    // solhint-disable-next-line var-name-mixedcase
+    IVenusController public VENUS_CONTROLLER; // 0xfD36E2c2a6789Db23113685031d7F16329158384
+
+    //solhint-disable-next-line var-name-mixedcase
+    Dinero public DINERO; // 18 decimals
+
+    //solhint-disable-next-line var-name-mixedcase
+    SafeVenus public SAFE_VENUS;
+
+    //solhint-disable-next-line var-name-mixedcase
+    address public FEE_TO;
 
     // How many times the contract is allowed to open loans backed by previous loans.
     uint8 public compoundDepth; // No more than 5
@@ -125,7 +134,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
     // BUSD - 0xe9e7cea3dedca5984780bafc599bd69add087d56 18 decimals
     // USDC - 0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d 18 decimals
     // DAI - 0x1af3f329e8be154074d8769d1ffa4ee058b1dbc3  18 decimals
-    EnumerableSet.AddressSet private _underlyingWhitelist;
+    EnumerableSetUpgradeable.AddressSet private _underlyingWhitelist;
 
     // UNDERLYING -> USER -> UserAccount
     mapping(address => mapping(address => UserAccount)) public accountOf;
@@ -149,7 +158,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
     uint256 public collateralLimit;
 
     /*///////////////////////////////////////////////////////////////
-                            CONSTRUCTOR
+                            INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
     /**
@@ -160,8 +169,12 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
      * @param dinero The contract of the dinero stable coin
      * @param safeVenus The helper contract address to interact with Venus
      * @param feeTo The address that will collect the fee
+     *
+     * Requirements:
+     *
+     * - Can only be called at once and should be called during creation to prevent front running.
      */
-    constructor(
+    function initialize(
         address xvs,
         address wbnb,
         IPancakeRouter02 router,
@@ -169,7 +182,11 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         Dinero dinero,
         SafeVenus safeVenus,
         address feeTo
-    ) {
+    ) external initializer {
+        __UUPSUpgradeable_init();
+        __Ownable_init();
+        __Pausable_init();
+
         XVS = xvs;
         WBNB = wbnb;
         ROUTER = router;
@@ -179,7 +196,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         FEE_TO = feeTo;
 
         // We trust `router` so we can fully approve because we need to sell it.
-        IERC20(XVS).safeApprove(address(router), type(uint256).max);
+        IERC20Upgradeable(XVS).safeApprove(address(router), type(uint256).max);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -257,10 +274,10 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
      * @dev Increases the {ROUTER} allowance to the maximum uint256 value
      */
     function approveXVS() external {
-        IERC20(XVS).safeIncreaseAllowance(
+        IERC20Upgradeable(XVS).safeIncreaseAllowance(
             address(ROUTER),
             type(uint256).max -
-                IERC20(XVS).allowance(address(this), address(ROUTER))
+                IERC20Upgradeable(XVS).allowance(address(this), address(ROUTER))
         );
     }
 
@@ -349,7 +366,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
 
         // We need to get the underlying from the `msg.sender` before we mint V Tokens.
         // Get the underlying from the user.
-        IERC20(underlying).safeTransferFrom(
+        IERC20Upgradeable(underlying).safeTransferFrom(
             _msgSender(),
             address(this),
             amount
@@ -561,10 +578,13 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
             uint256 amountToSend = amountOfUnderlyingToRedeem - fee;
 
             // Send underlying to user.
-            IERC20(underlying).safeTransfer(_msgSender(), amountToSend);
+            IERC20Upgradeable(underlying).safeTransfer(
+                _msgSender(),
+                amountToSend
+            );
 
             // Send fee to the protocol treasury.
-            IERC20(underlying).safeTransfer(FEE_TO, fee);
+            IERC20Upgradeable(underlying).safeTransfer(FEE_TO, fee);
 
             emit Withdraw(_msgSender(), underlying, amountToSend, vTokenAmount);
         }
@@ -874,7 +894,7 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
      */
     function _contractBalanceOf(address token) private view returns (uint256) {
         // Find how many ERC20 tokens this contract has.
-        return IERC20(token).balanceOf(address(this));
+        return IERC20Upgradeable(token).balanceOf(address(this));
     }
 
     /**
@@ -925,7 +945,10 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         address underlying = vToken.underlying();
 
         // Give full approval to `vToken` so we can mint on deposits.
-        IERC20(underlying).safeApprove(address(vToken), type(uint256).max);
+        IERC20Upgradeable(underlying).safeApprove(
+            address(vToken),
+            type(uint256).max
+        );
 
         // Give permission to use the assets as collateral
         _enterMarket(vToken);
@@ -952,9 +975,12 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         address underlying = vToken.underlying();
 
         // Remove all current allowance, since we will not be using it anymore.
-        IERC20(underlying).safeDecreaseAllowance(
+        IERC20Upgradeable(underlying).safeDecreaseAllowance(
             address(vToken),
-            IERC20(underlying).allowance(address(this), address(vToken))
+            IERC20Upgradeable(underlying).allowance(
+                address(this),
+                address(vToken)
+            )
         );
 
         // Remove permission to use it as collateral
@@ -1097,5 +1123,17 @@ contract DineroVenusVault is Ownable, Pausable, IVenusVault {
         compoundDepth = _compoundDepth;
 
         emit CompoundDepth(previousValue, _compoundDepth);
+    }
+
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must be the owner.
+     */
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyOwner
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 }

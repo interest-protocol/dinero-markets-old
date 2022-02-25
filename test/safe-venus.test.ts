@@ -118,6 +118,17 @@ describe('SafeVenus', () => {
     testSafeVenus = await deploy('TestSafeVenus', [safeVenus.address]);
   });
 
+  it('reverts if you call after deployment', async () => {
+    expect(
+      oracle.initialize(
+        TWAP.address,
+        bnbUSDFeed.address,
+        WBNB.address,
+        BUSD.address
+      )
+    ).to.revertedWith('Initializable: contract is already initialized');
+  });
+
   it('calculates the lowest collateral ratio returning one based on supply and borrow rate', async () => {
     await Promise.all([
       vToken.__setSupplyRatePerBlock(parseEther('0.05')),

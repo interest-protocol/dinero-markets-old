@@ -3,7 +3,12 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import { Dinero, TestDineroV2 } from '../typechain';
-import { BURNER_ROLE, DEVELOPER_ROLE, MINTER_ROLE } from './lib/constants';
+import {
+  BURNER_ROLE,
+  DEFAULT_ADMIN_ROLE,
+  DEVELOPER_ROLE,
+  MINTER_ROLE,
+} from './lib/constants';
 import { deployUUPS, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
@@ -23,16 +28,21 @@ describe('Dinero', () => {
     ]);
   });
 
-  it('grants developer role to the deployer', async () => {
-    expect(await dinero.hasRole(DEVELOPER_ROLE, owner.address)).to.be.equal(
-      true
-    );
-  });
+  describe('function: initialize', () => {
+    it('reverts if you call after deployment', async () => {
+      await expect(dinero.initialize()).to.revertedWith(
+        'Initializable: contract is already initialized'
+      );
+    });
+    it('gives the right roles', async () => {
+      const [hasDeveloperRole, hasDefaultAdminRole] = await Promise.all([
+        dinero.hasRole(DEVELOPER_ROLE, owner.address),
+        dinero.hasRole(DEFAULT_ADMIN_ROLE, owner.address),
+      ]);
 
-  it('reverts if you try to initialize', async () => {
-    await expect(dinero.initialize()).to.revertedWith(
-      'Initializable: contract is already initialized'
-    );
+      expect(hasDeveloperRole).to.be.equal(true);
+      expect(hasDefaultAdminRole).to.be.equal(true);
+    });
   });
 
   describe('function: mint', () => {

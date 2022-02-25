@@ -62,6 +62,12 @@ describe('NFTMarket', () => {
     ]);
   });
 
+  it('reverts if you call initialize after deployment', async () => {
+    await expect(nftMarket.initialize(feeTo.address)).to.revertedWith(
+      'Initializable: contract is already initialized'
+    );
+  });
+
   describe('function: proposeLoan', () => {
     it('reverts if it is initiated with wrong parameters', async () => {
       await expect(
