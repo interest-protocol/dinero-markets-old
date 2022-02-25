@@ -21,6 +21,12 @@ describe('Staked Interest Token', () => {
     ]);
   });
 
+  it('grants developer role to the deployer', async () => {
+    expect(
+      await stakedInterestToken.hasRole(DEVELOPER_ROLE, owner.address)
+    ).to.be.equal(true);
+  });
+
   describe('function: mint', () => {
     it('reverts it is called by a caller without the MINTER_ROLE', async () => {
       await expect(

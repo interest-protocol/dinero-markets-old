@@ -12,9 +12,8 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -42,7 +41,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
 
-    using SafeERC20 for IERC20;
+    using SafeERC20Upgradeable for IERC20Upgradeable;
     using IntMath for uint256;
 
     /*///////////////////////////////////////////////////////////////
@@ -80,7 +79,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     struct Pool {
-        IERC20 stakingToken; // The underlying token that is "farming" {InterestToken} rewards.
+        IERC20Upgradeable stakingToken; // The underlying token that is "farming" {InterestToken} rewards.
         uint256 allocationPoints; // These points determine how many {InterestToken} tokens the pool will get per block.
         uint256 lastRewardBlock; // The last block the pool has distributed rewards to properly calculate new rewards.
         uint256 accruedIntPerShare; // Total of accrued {InterestToken} tokens per share.
@@ -151,7 +150,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // Setup the first pool. Stake {InterestToken} to get {InterestToken}.
         pools.push(
             Pool({
-                stakingToken: IERC20(address(interestToken)),
+                stakingToken: IERC20Upgradeable(address(interestToken)),
                 allocationPoints: 1000,
                 lastRewardBlock: _startBlock,
                 accruedIntPerShare: 0,
@@ -647,7 +646,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function addPool(
         uint256 allocationPoints,
-        IERC20 token,
+        IERC20Upgradeable token,
         bool update
     ) external onlyOwner updatePools(update) {
         // Prevent the owner from adding the same token twice, which will cause a rewards problems.

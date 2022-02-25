@@ -7,13 +7,17 @@ import {
   InterestToken,
   MockERC20,
   StakedInterestToken,
+  TestCasaDePapelV2,
 } from '../typechain';
+import { BURNER_ROLE, MINTER_ROLE } from './lib/constants';
 import {
   advanceBlock,
   calculateUserPendingRewards,
-  deploy,
+  deployUUPS,
   makeCalculateAccruedInt,
   multiDeploy,
+  multiDeployUUPS,
+  upgrade,
 } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
@@ -42,28 +46,37 @@ describe('Case de Papel', () => {
   beforeEach(async () => {
     [
       [owner, developer, alice, bob, jose],
-      [lpToken, sInterestToken, interestToken, lpToken2],
+      [lpToken, lpToken2],
+      [sInterestToken, interestToken],
     ] = await Promise.all([
       ethers.getSigners(),
       multiDeploy(
-        ['MockERC20', 'StakedInterestToken', 'InterestToken', 'MockERC20'],
+        ['MockERC20', 'MockERC20'],
         [
           ['CAKE-LP', 'LP', parseEther('1000')],
-          [],
-          [],
           ['CAKE-LP-2', 'LP-2', parseEther('1000')],
         ]
       ),
+      multiDeployUUPS(['StakedInterestToken', 'InterestToken'], [[], []]),
     ]);
 
+    await interestToken.grantRole(MINTER_ROLE, owner.address);
+
     [casaDePapel] = await Promise.all([
-      deploy('CasaDePapel', [
+      deployUUPS('CasaDePapel', [
         interestToken.address,
         sInterestToken.address,
         developer.address,
         INTEREST_TOKEN_PER_BLOCK,
         START_BLOCK,
       ]),
+      interestToken.connect(owner).grantRole(MINTER_ROLE, owner.address),
+    ]);
+
+    await Promise.all([
+      interestToken.connect(owner).grantRole(MINTER_ROLE, casaDePapel.address),
+      sInterestToken.connect(owner).grantRole(MINTER_ROLE, casaDePapel.address),
+      sInterestToken.connect(owner).grantRole(BURNER_ROLE, casaDePapel.address),
       // Give enough tokens to deposit
       lpToken.mint(alice.address, parseEther('500')),
       lpToken.mint(bob.address, parseEther('500')),
@@ -71,9 +84,6 @@ describe('Case de Papel', () => {
       lpToken2.mint(bob.address, parseEther('500')),
       interestToken.connect(owner).mint(alice.address, parseEther('500')),
       interestToken.connect(owner).mint(bob.address, parseEther('500')),
-    ]);
-
-    await Promise.all([
       // Approve to work with casa de papel
       interestToken
         .connect(alice)
@@ -253,7 +263,7 @@ describe('Case de Papel', () => {
     });
     it('sets the start block as the last reward block if the pool is added before the start block', async () => {
       // Need to redeploy casa de papel with longer start_block
-      const contract: CasaDePapel = await deploy('CasaDePapel', [
+      const contract: CasaDePapel = await deployUUPS('CasaDePapel', [
         interestToken.address,
         sInterestToken.address,
         developer.address,
@@ -637,10 +647,10 @@ describe('Case de Papel', () => {
   });
   describe('function: stake', () => {
     it('allows the user to only get the rewards by staking 0', async () => {
-      await [
+      await Promise.all([
         casaDePapel.connect(bob).stake(parseEther('20')),
         casaDePapel.connect(alice).stake(parseEther('5')),
-      ];
+      ]);
 
       const [pool, user, balance] = await Promise.all([
         casaDePapel.pools(0),
@@ -1028,5 +1038,25 @@ describe('Case de Papel', () => {
         pool2.totalSupply
       )
     );
+  });
+
+  it('upgrades to version 2', async () => {
+    await casaDePapel.connect(alice).stake(parseEther('5'));
+
+    const casaDePapelV2: TestCasaDePapelV2 = await upgrade(
+      casaDePapel,
+      'TestCasaDePapelV2'
+    );
+
+    const [pool, user, version] = await Promise.all([
+      casaDePapelV2.pools(0),
+      casaDePapelV2.userInfo(0, alice.address),
+      casaDePapelV2.version(),
+    ]);
+
+    expect(pool.totalSupply).to.be.equal(parseEther('5'));
+    expect(user.amount).to.be.equal(parseEther('5'));
+    expect(user.rewardsPaid).to.be.equal(0);
+    expect(version).to.be.equal('V2');
   });
 });

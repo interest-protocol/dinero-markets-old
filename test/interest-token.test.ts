@@ -28,6 +28,12 @@ describe('Interest Token', () => {
     );
   });
 
+  it('grants developer role to the deployer', async () => {
+    expect(
+      await interestToken.hasRole(DEVELOPER_ROLE, owner.address)
+    ).to.be.equal(true);
+  });
+
   describe('function: mint', () => {
     it('reverts if the caller does not have the MINTER ROLE', async () => {
       await expect(

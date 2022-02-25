@@ -23,6 +23,12 @@ describe('Dinero', () => {
     ]);
   });
 
+  it('grants developer role to the deployer', async () => {
+    expect(await dinero.hasRole(DEVELOPER_ROLE, owner.address)).to.be.equal(
+      true
+    );
+  });
+
   it('reverts if you try to initialize', async () => {
     await expect(dinero.initialize()).to.revertedWith(
       'Initializable: contract is already initialized'
