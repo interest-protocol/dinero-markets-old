@@ -297,17 +297,28 @@ describe('OracleV1', () => {
       );
     });
   });
-  it('upgrades to version 2', async () => {
-    const oracleV2: TestOracleV2 = await upgrade(oracleV1, 'TestOracleV2');
 
-    const [version, price] = await Promise.all([
-      oracleV2.version(),
-      oracleV2.getBNBUSDPrice(parseEther('2')),
-    ]);
+  describe('Upgrade functionality', () => {
+    it('reverts if it is called by a non-owner account', async () => {
+      await oracleV1.connect(owner).transferOwnership(alice.address);
 
-    expect(version).to.be.equal('V2');
-    // 18 decimals
-    expect(price).to.be.equal(BNB_USD_PRICE.mul(2).mul(1e10));
+      await expect(upgrade(oracleV1, 'TestOracleV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
+
+    it('upgrades to version 2', async () => {
+      const oracleV2: TestOracleV2 = await upgrade(oracleV1, 'TestOracleV2');
+
+      const [version, price] = await Promise.all([
+        oracleV2.version(),
+        oracleV2.getBNBUSDPrice(parseEther('2')),
+      ]);
+
+      expect(version).to.be.equal('V2');
+      // 18 decimals
+      expect(price).to.be.equal(BNB_USD_PRICE.mul(2).mul(1e10));
+    });
   });
 })
   // Increase the time out for the entire tests

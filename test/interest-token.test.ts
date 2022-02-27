@@ -64,24 +64,36 @@ describe('Interest Token', () => {
     });
   });
 
-  it('updates to version 2', async () => {
-    await interestToken.connect(owner).grantRole(MINTER_ROLE, alice.address);
+  describe('Upgrade functionality', () => {
+    it('reverts if the a caller without the developer role tries to upgrade', async () => {
+      await interestToken
+        .connect(owner)
+        .renounceRole(DEVELOPER_ROLE, owner.address);
 
-    await interestToken.connect(alice).mint(alice.address, parseEther('100'));
+      expect(upgrade(interestToken, 'TestInterestTokenV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
 
-    const interestTokenV2: TestInterestTokenV2 = await upgrade(
-      interestToken,
-      'TestInterestTokenV2'
-    );
+    it('updates to version 2', async () => {
+      await interestToken.connect(owner).grantRole(MINTER_ROLE, alice.address);
 
-    const [version, balance, developerRole] = await Promise.all([
-      interestTokenV2.version(),
-      interestTokenV2.balanceOf(alice.address),
-      interestTokenV2.DEVELOPER_ROLE(),
-    ]);
+      await interestToken.connect(alice).mint(alice.address, parseEther('100'));
 
-    expect(version).to.be.equal('V2');
-    expect(balance).to.be.equal(parseEther('100'));
-    expect(developerRole).to.be.equal(DEVELOPER_ROLE);
+      const interestTokenV2: TestInterestTokenV2 = await upgrade(
+        interestToken,
+        'TestInterestTokenV2'
+      );
+
+      const [version, balance, developerRole] = await Promise.all([
+        interestTokenV2.version(),
+        interestTokenV2.balanceOf(alice.address),
+        interestTokenV2.DEVELOPER_ROLE(),
+      ]);
+
+      expect(version).to.be.equal('V2');
+      expect(balance).to.be.equal(parseEther('100'));
+      expect(developerRole).to.be.equal(DEVELOPER_ROLE);
+    });
   });
 });

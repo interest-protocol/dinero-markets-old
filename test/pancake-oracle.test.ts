@@ -403,39 +403,50 @@ describe('PancakeOracle', () => {
       );
     });
   });
-  it('upgrades to version 2', async () => {
-    await oracle.update(btc.address, usdc.address);
 
-    await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
+  describe('Upgrade functionality', () => {
+    it('reverts if a non-owner account calls it', async () => {
+      await oracle.connect(owner).renounceOwnership();
 
-    await oracle.update(btc.address, usdc.address);
+      await expect(upgrade(oracle, 'TestPancakeOracleV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
 
-    await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
+    it('upgrades to version 2', async () => {
+      await oracle.update(btc.address, usdc.address);
 
-    await oracle.update(btc.address, usdc.address);
+      await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
 
-    await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
+      await oracle.update(btc.address, usdc.address);
 
-    await oracle.update(btc.address, usdc.address);
+      await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
 
-    await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
+      await oracle.update(btc.address, usdc.address);
 
-    const oracleV2: TestPancakeOracleV2 = await upgrade(
-      oracle,
-      'TestPancakeOracleV2'
-    );
+      await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
 
-    const [btcUSDCPrice, usdcBTCPrice, version] = await Promise.all([
-      oracleV2.consult(btc.address, parseEther('1'), usdc.address),
-      oracleV2.consult(usdc.address, parseEther('50000'), btc.address),
-      oracleV2.version(),
-    ]);
+      await oracle.update(btc.address, usdc.address);
 
-    expect(btcUSDCPrice).to.be.equal(parseEther('50000'));
-    // Taken after the fact
-    expect(usdcBTCPrice).to.be.equal(
-      ethers.BigNumber.from('999999999999999999')
-    );
-    expect(version).to.be.equal('V2');
+      await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
+
+      const oracleV2: TestPancakeOracleV2 = await upgrade(
+        oracle,
+        'TestPancakeOracleV2'
+      );
+
+      const [btcUSDCPrice, usdcBTCPrice, version] = await Promise.all([
+        oracleV2.consult(btc.address, parseEther('1'), usdc.address),
+        oracleV2.consult(usdc.address, parseEther('50000'), btc.address),
+        oracleV2.version(),
+      ]);
+
+      expect(btcUSDCPrice).to.be.equal(parseEther('50000'));
+      // Taken after the fact
+      expect(usdcBTCPrice).to.be.equal(
+        ethers.BigNumber.from('999999999999999999')
+      );
+      expect(version).to.be.equal('V2');
+    });
   });
 });

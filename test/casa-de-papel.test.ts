@@ -1092,23 +1092,33 @@ describe('Case de Papel', () => {
     );
   });
 
-  it('upgrades to version 2', async () => {
-    await casaDePapel.connect(alice).stake(parseEther('5'));
+  describe('Upgrade functionality', () => {
+    it('reverts if a non owner tries to upgrade', async () => {
+      await casaDePapel.connect(owner).transferOwnership(alice.address);
 
-    const casaDePapelV2: TestCasaDePapelV2 = await upgrade(
-      casaDePapel,
-      'TestCasaDePapelV2'
-    );
+      await expect(upgrade(casaDePapel, 'TestCasaDePapelV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
 
-    const [pool, user, version] = await Promise.all([
-      casaDePapelV2.pools(0),
-      casaDePapelV2.userInfo(0, alice.address),
-      casaDePapelV2.version(),
-    ]);
+    it('upgrades to version 2', async () => {
+      await casaDePapel.connect(alice).stake(parseEther('5'));
 
-    expect(pool.totalSupply).to.be.equal(parseEther('5'));
-    expect(user.amount).to.be.equal(parseEther('5'));
-    expect(user.rewardsPaid).to.be.equal(0);
-    expect(version).to.be.equal('V2');
+      const casaDePapelV2: TestCasaDePapelV2 = await upgrade(
+        casaDePapel,
+        'TestCasaDePapelV2'
+      );
+
+      const [pool, user, version] = await Promise.all([
+        casaDePapelV2.pools(0),
+        casaDePapelV2.userInfo(0, alice.address),
+        casaDePapelV2.version(),
+      ]);
+
+      expect(pool.totalSupply).to.be.equal(parseEther('5'));
+      expect(user.amount).to.be.equal(parseEther('5'));
+      expect(user.rewardsPaid).to.be.equal(0);
+      expect(version).to.be.equal('V2');
+    });
   });
 });

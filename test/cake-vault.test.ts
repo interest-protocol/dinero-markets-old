@@ -85,8 +85,8 @@ describe('Master Chef CakeVault', () => {
 
     it('sets the initial state correctly', async () => {
       const [_cake, _masterChef] = await Promise.all([
-        cakeVault.CAKE_MASTER_CHEF(),
         cakeVault.CAKE(),
+        cakeVault.CAKE_MASTER_CHEF(),
       ]);
 
       expect(_cake).to.be.equal(cake.address);
@@ -671,113 +671,125 @@ describe('Master Chef CakeVault', () => {
       expect(totalRewardsPerAmount3).to.be.equal(0);
     });
   });
-  it('upgrades to version 2', async () => {
-    expect(await cakeVault.getUserPendingRewards(alice.address)).to.be.equal(0);
+  describe('Upgrade functionality', () => {
+    it('reverts if the non-owner tries to upgrade', async () => {
+      await cakeVault.connect(owner).transferOwnership(alice.address);
 
-    await cakeVault
-      .connect(market)
-      .deposit(alice.address, alice.address, parseEther('10'));
+      await expect(upgrade(cakeVault, 'TestCakeVaultV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
 
-    // accrue some cake
-    await advanceBlock(ethers);
-    await advanceBlock(ethers);
+    it('upgrades to version 2', async () => {
+      expect(await cakeVault.getUserPendingRewards(alice.address)).to.be.equal(
+        0
+      );
 
-    // to get Cake rewards
-    await cakeVault.compound();
+      await cakeVault
+        .connect(market)
+        .deposit(alice.address, alice.address, parseEther('10'));
 
-    cakeVault
-      .connect(market)
-      .deposit(bob.address, bob.address, parseEther('20'));
+      // accrue some cake
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
 
-    // accrue some cake
-    await advanceBlock(ethers);
-    await advanceBlock(ethers);
+      // to get Cake rewards
+      await cakeVault.compound();
 
-    await Promise.all([
       cakeVault
         .connect(market)
-        .deposit(alice.address, alice.address, parseEther('20')),
-      cakeVault
-        .connect(market)
-        .deposit(bob.address, bob.address, parseEther('15')),
-    ]);
+        .deposit(bob.address, bob.address, parseEther('20'));
 
-    // to get Cake rewards
-    await cakeVault.compound();
+      // accrue some cake
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
 
-    // accrue some cake
-    await advanceBlock(ethers);
-    await advanceBlock(ethers);
-    await advanceBlock(ethers);
+      await Promise.all([
+        cakeVault
+          .connect(market)
+          .deposit(alice.address, alice.address, parseEther('20')),
+        cakeVault
+          .connect(market)
+          .deposit(bob.address, bob.address, parseEther('15')),
+      ]);
 
-    // Upgrade function takes time to process
-    const cakeVaultV2: TestCakeVaultV2 = await upgrade(
-      cakeVault,
-      'TestCakeVaultV2'
-    );
+      // to get Cake rewards
+      await cakeVault.compound();
 
-    const [
-      totalAmount,
-      totalRewardsPerAmount,
-      pendingRewards,
-      aliceInfo,
-      bobInfo,
-    ] = await Promise.all([
-      cakeVaultV2.totalAmount(),
-      cakeVaultV2.totalRewardsPerAmount(),
-      cakeVaultV2.getPendingRewards(),
-      cakeVaultV2.userInfo(alice.address),
-      cakeVaultV2.userInfo(bob.address),
-    ]);
+      // accrue some cake
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
 
-    const rewardsPerAmount = totalRewardsPerAmount.add(
-      pendingRewards.mul(parseEther('1')).div(totalAmount)
-    );
+      // Upgrade function takes time to process
+      const cakeVaultV2: TestCakeVaultV2 = await upgrade(
+        cakeVault,
+        'TestCakeVaultV2'
+      );
 
-    const aliceRewards = aliceInfo.rewards.add(
-      rewardsPerAmount
-        .mul(parseEther('30'))
-        .div(parseEther('1'))
-        .sub(aliceInfo.rewardDebt)
-    );
+      const [
+        totalAmount,
+        totalRewardsPerAmount,
+        pendingRewards,
+        aliceInfo,
+        bobInfo,
+      ] = await Promise.all([
+        cakeVaultV2.totalAmount(),
+        cakeVaultV2.totalRewardsPerAmount(),
+        cakeVaultV2.getPendingRewards(),
+        cakeVaultV2.userInfo(alice.address),
+        cakeVaultV2.userInfo(bob.address),
+      ]);
 
-    const bobRewards = bobInfo.rewards.add(
-      rewardsPerAmount
-        .mul(parseEther('35'))
-        .div(parseEther('1'))
-        .sub(bobInfo.rewardDebt)
-    );
+      const rewardsPerAmount = totalRewardsPerAmount.add(
+        pendingRewards.mul(parseEther('1')).div(totalAmount)
+      );
 
-    const [
-      alicePendingRewards,
-      bobPendingRewards,
-      ownerPendingRewards,
-      version,
-    ] = await Promise.all([
-      cakeVaultV2.getUserPendingRewards(alice.address),
-      cakeVaultV2.getUserPendingRewards(bob.address),
-      cakeVaultV2.getUserPendingRewards(owner.address),
-      cakeVaultV2.version(),
-    ]);
+      const aliceRewards = aliceInfo.rewards.add(
+        rewardsPerAmount
+          .mul(parseEther('30'))
+          .div(parseEther('1'))
+          .sub(aliceInfo.rewardDebt)
+      );
 
-    expect(alicePendingRewards).to.be.equal(aliceRewards);
+      const bobRewards = bobInfo.rewards.add(
+        rewardsPerAmount
+          .mul(parseEther('35'))
+          .div(parseEther('1'))
+          .sub(bobInfo.rewardDebt)
+      );
 
-    expect(bobPendingRewards).to.be.equal(bobRewards);
+      const [
+        alicePendingRewards,
+        bobPendingRewards,
+        ownerPendingRewards,
+        version,
+      ] = await Promise.all([
+        cakeVaultV2.getUserPendingRewards(alice.address),
+        cakeVaultV2.getUserPendingRewards(bob.address),
+        cakeVaultV2.getUserPendingRewards(owner.address),
+        cakeVaultV2.version(),
+      ]);
 
-    expect(ownerPendingRewards).to.be.equal(0);
+      expect(alicePendingRewards).to.be.equal(aliceRewards);
 
-    expect(version).to.be.equal('V2');
+      expect(bobPendingRewards).to.be.equal(bobRewards);
 
-    // @notice pending rewards need to account for current pending cake in the pool + the auto compounded cake
-    expect(aliceRewards.add(bobRewards)).to.be.equal(
-      totalRewardsPerAmount
-        .add(pendingRewards.mul(parseEther('1')).div(totalAmount))
-        .mul(parseEther('65'))
-        .div(parseEther('1'))
-        .sub(aliceInfo.rewardDebt)
-        .sub(bobInfo.rewardDebt)
-        .add(aliceInfo.rewards)
-        .add(bobInfo.rewards)
-    );
+      expect(ownerPendingRewards).to.be.equal(0);
+
+      expect(version).to.be.equal('V2');
+
+      // @notice pending rewards need to account for current pending cake in the pool + the auto compounded cake
+      expect(aliceRewards.add(bobRewards)).to.be.equal(
+        totalRewardsPerAmount
+          .add(pendingRewards.mul(parseEther('1')).div(totalAmount))
+          .mul(parseEther('65'))
+          .div(parseEther('1'))
+          .sub(aliceInfo.rewardDebt)
+          .sub(bobInfo.rewardDebt)
+          .add(aliceInfo.rewards)
+          .add(bobInfo.rewards)
+      );
+    });
   });
 });

@@ -995,44 +995,57 @@ describe('InterestBNBMarketV1', () => {
       expect(totalLoan.elastic.lt(parseEther('1320'))).to.be.equal(true);
     });
   });
-  it('upgrades to version 2', async () => {
-    await interestBNBMarket
-      .connect(alice)
-      .addCollateral(alice.address, { value: parseEther('2') });
 
-    const [bobBalance, aliceCollateral] = await Promise.all([
-      bob.getBalance(),
-      interestBNBMarket.userCollateral(alice.address),
-      interestBNBMarket.connect(alice).borrow(alice.address, parseEther('100')),
-    ]);
+  describe('Upgrade functionality', () => {
+    it('reverts if a non owner calls it', async () => {
+      await interestBNBMarket.connect(owner).transferOwnership(alice.address);
 
-    await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('51000000000'));
+      await expect(
+        upgrade(interestBNBMarket, 'TestInterestBNBMarketV2')
+      ).to.revertedWith('Ownable: caller is not the owner');
+    });
 
-    const interestBNBMarketV2: TestInterestBNBMarketV2 = await upgrade(
-      interestBNBMarket,
-      'TestInterestBNBMarketV2'
-    );
-
-    await expect(
-      interestBNBMarketV2
+    it('upgrades to version 2', async () => {
+      await interestBNBMarket
         .connect(alice)
-        .withdrawCollateral(bob.address, parseEther('1.5'))
-    )
-      .to.emit(interestBNBMarketV2, 'Accrue')
-      .to.emit(interestBNBMarketV2, 'ExchangeRate')
-      .to.emit(interestBNBMarketV2, 'WithdrawCollateral')
-      .withArgs(alice.address, bob.address, parseEther('1.5'));
+        .addCollateral(alice.address, { value: parseEther('2') });
 
-    const [version, bobBalance2] = await Promise.all([
-      interestBNBMarketV2.version(),
-      bob.getBalance(),
-    ]);
+      const [bobBalance, aliceCollateral] = await Promise.all([
+        bob.getBalance(),
+        interestBNBMarket.userCollateral(alice.address),
+        interestBNBMarket
+          .connect(alice)
+          .borrow(alice.address, parseEther('100')),
+      ]);
 
-    expect(version).to.be.equal('V2');
+      await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('51000000000'));
 
-    expect(bobBalance2).to.be.equal(bobBalance.add(parseEther('1.5')));
-    expect(aliceCollateral.sub(parseEther('1.5'))).to.be.equal(
-      await interestBNBMarketV2.userCollateral(alice.address)
-    );
+      const interestBNBMarketV2: TestInterestBNBMarketV2 = await upgrade(
+        interestBNBMarket,
+        'TestInterestBNBMarketV2'
+      );
+
+      await expect(
+        interestBNBMarketV2
+          .connect(alice)
+          .withdrawCollateral(bob.address, parseEther('1.5'))
+      )
+        .to.emit(interestBNBMarketV2, 'Accrue')
+        .to.emit(interestBNBMarketV2, 'ExchangeRate')
+        .to.emit(interestBNBMarketV2, 'WithdrawCollateral')
+        .withArgs(alice.address, bob.address, parseEther('1.5'));
+
+      const [version, bobBalance2] = await Promise.all([
+        interestBNBMarketV2.version(),
+        bob.getBalance(),
+      ]);
+
+      expect(version).to.be.equal('V2');
+
+      expect(bobBalance2).to.be.equal(bobBalance.add(parseEther('1.5')));
+      expect(aliceCollateral.sub(parseEther('1.5'))).to.be.equal(
+        await interestBNBMarketV2.userCollateral(alice.address)
+      );
+    });
   });
 });

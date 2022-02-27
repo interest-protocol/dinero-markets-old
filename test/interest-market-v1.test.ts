@@ -1595,57 +1595,74 @@ describe('InterestMarketV1', () => {
       expect(dineroRecipientBalance2.gt(0)).to.be.equal(true);
     });
   });
-  it('updates to version 2', async () => {
-    expect(await cakeMarket.totalCollateral()).to.be.equal(0);
 
-    expect(await cakeMarket.userCollateral(alice.address)).to.be.equal(0);
+  describe('Upgrade functionality', () => {
+    it('reverts if it not called by the owner', async () => {
+      await cakeMarket.connect(owner).transferOwnership(alice.address);
 
-    const amount = parseEther('10');
+      await expect(upgrade(cakeMarket, 'TestInterestMarketV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
 
-    await expect(cakeMarket.connect(alice).addCollateral(alice.address, amount))
-      .to.emit(cakeMarket, 'AddCollateral')
-      .withArgs(alice.address, alice.address, amount)
-      .to.emit(cakeVault, 'Deposit')
-      .withArgs(alice.address, alice.address, amount)
-      .to.emit(cake, 'Transfer')
-      .withArgs(alice.address, cakeVault.address, amount);
+    it('updates to version 2', async () => {
+      expect(await cakeMarket.totalCollateral()).to.be.equal(0);
 
-    expect(await cakeMarket.totalCollateral()).to.be.equal(amount);
+      expect(await cakeMarket.userCollateral(alice.address)).to.be.equal(0);
 
-    expect(await cakeMarket.userCollateral(alice.address)).to.be.equal(amount);
+      const amount = parseEther('10');
 
-    const cakeMarketV2: TestInterestMarketV2 = await upgrade(
-      cakeMarket,
-      'TestInterestMarketV2'
-    );
+      await expect(
+        cakeMarket.connect(alice).addCollateral(alice.address, amount)
+      )
+        .to.emit(cakeMarket, 'AddCollateral')
+        .withArgs(alice.address, alice.address, amount)
+        .to.emit(cakeVault, 'Deposit')
+        .withArgs(alice.address, alice.address, amount)
+        .to.emit(cake, 'Transfer')
+        .withArgs(alice.address, cakeVault.address, amount);
 
-    await expect(cakeMarketV2.connect(bob).addCollateral(alice.address, amount))
-      .to.emit(cakeMarketV2, 'AddCollateral')
-      .withArgs(bob.address, alice.address, amount)
-      .to.emit(cakeVault, 'Deposit')
-      .withArgs(bob.address, alice.address, amount)
-      .to.emit(cake, 'Transfer')
-      .withArgs(bob.address, cakeVault.address, amount);
+      expect(await cakeMarket.totalCollateral()).to.be.equal(amount);
 
-    const [
-      totalCollateral,
-      aliceCollateral,
-      bobCollateral,
-      version,
-      marketCakeBalance,
-    ] = await Promise.all([
-      cakeMarketV2.totalCollateral(),
-      cakeMarketV2.userCollateral(alice.address),
-      cakeMarketV2.userCollateral(bob.address),
-      cakeMarketV2.version(),
-      cake.balanceOf(cakeMarket.address),
-    ]);
+      expect(await cakeMarket.userCollateral(alice.address)).to.be.equal(
+        amount
+      );
 
-    expect(totalCollateral).to.be.equal(amount.add(amount));
+      const cakeMarketV2: TestInterestMarketV2 = await upgrade(
+        cakeMarket,
+        'TestInterestMarketV2'
+      );
 
-    expect(aliceCollateral).to.be.equal(amount.add(amount));
-    expect(bobCollateral).to.be.equal(0);
-    expect(version).to.be.equal('V2');
-    expect(marketCakeBalance).to.be.equal(0); // Cake is in the masterChef
+      await expect(
+        cakeMarketV2.connect(bob).addCollateral(alice.address, amount)
+      )
+        .to.emit(cakeMarketV2, 'AddCollateral')
+        .withArgs(bob.address, alice.address, amount)
+        .to.emit(cakeVault, 'Deposit')
+        .withArgs(bob.address, alice.address, amount)
+        .to.emit(cake, 'Transfer')
+        .withArgs(bob.address, cakeVault.address, amount);
+
+      const [
+        totalCollateral,
+        aliceCollateral,
+        bobCollateral,
+        version,
+        marketCakeBalance,
+      ] = await Promise.all([
+        cakeMarketV2.totalCollateral(),
+        cakeMarketV2.userCollateral(alice.address),
+        cakeMarketV2.userCollateral(bob.address),
+        cakeMarketV2.version(),
+        cake.balanceOf(cakeMarket.address),
+      ]);
+
+      expect(totalCollateral).to.be.equal(amount.add(amount));
+
+      expect(aliceCollateral).to.be.equal(amount.add(amount));
+      expect(bobCollateral).to.be.equal(0);
+      expect(version).to.be.equal('V2');
+      expect(marketCakeBalance).to.be.equal(0); // Cake is in the masterChef
+    });
   });
 });

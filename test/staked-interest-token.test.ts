@@ -120,28 +120,40 @@ describe('Staked Interest Token', () => {
       );
     });
   });
-  it('upgrades to version 2', async () => {
-    await stakedInterestToken
-      .connect(owner)
-      .grantRole(MINTER_ROLE, alice.address);
 
-    await stakedInterestToken
-      .connect(alice)
-      .mint(alice.address, parseEther('100'));
+  describe('Upgrade functionality', () => {
+    it('reverts if a caller without the developer role tries to upgrade', async () => {
+      await stakedInterestToken
+        .connect(owner)
+        .renounceRole(DEVELOPER_ROLE, owner.address);
 
-    const stakedInterestTokenV2: TestStakedInterestTokenV2 = await upgrade(
-      stakedInterestToken,
-      'TestStakedInterestTokenV2'
-    );
+      expect(
+        upgrade(stakedInterestToken, 'TestStakedInterestTokenV2')
+      ).to.revertedWith('Ownable: caller is not the owner');
+    });
+    it('upgrades to version 2', async () => {
+      await stakedInterestToken
+        .connect(owner)
+        .grantRole(MINTER_ROLE, alice.address);
 
-    const [developerRole, version, aliceBalance] = await Promise.all([
-      stakedInterestTokenV2.DEVELOPER_ROLE(),
-      stakedInterestTokenV2.version(),
-      stakedInterestTokenV2.balanceOf(alice.address),
-    ]);
+      await stakedInterestToken
+        .connect(alice)
+        .mint(alice.address, parseEther('100'));
 
-    expect(developerRole).to.be.equal(DEVELOPER_ROLE);
-    expect(version).to.be.equal('V2');
-    expect(aliceBalance).to.be.equal(parseEther('100'));
+      const stakedInterestTokenV2: TestStakedInterestTokenV2 = await upgrade(
+        stakedInterestToken,
+        'TestStakedInterestTokenV2'
+      );
+
+      const [developerRole, version, aliceBalance] = await Promise.all([
+        stakedInterestTokenV2.DEVELOPER_ROLE(),
+        stakedInterestTokenV2.version(),
+        stakedInterestTokenV2.balanceOf(alice.address),
+      ]);
+
+      expect(developerRole).to.be.equal(DEVELOPER_ROLE);
+      expect(version).to.be.equal('V2');
+      expect(aliceBalance).to.be.equal(parseEther('100'));
+    });
   });
 });

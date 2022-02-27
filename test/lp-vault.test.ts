@@ -741,107 +741,120 @@ describe('Master Chef LPVault', () => {
       expect(totalRewardsPerAmount3).to.be.equal(0);
     });
   });
-  it('upgrades to version 2', async () => {
-    expect(await lpVault.getUserPendingRewards(alice.address)).to.be.equal(0);
 
-    await lpVault
-      .connect(market)
-      .deposit(alice.address, alice.address, parseEther('10'));
+  describe('Upgrade functionality', () => {
+    it('reverts if a non-owner tries to update', async () => {
+      await lpVault.connect(owner).transferOwnership(alice.address);
 
-    // accrue some cake
-    await advanceBlock(ethers);
-    await advanceBlock(ethers);
+      await expect(upgrade(lpVault, 'TestLPVaultV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
 
-    // to get Cake rewards
-    await lpVault.compound();
+    it('upgrades to version 2', async () => {
+      expect(await lpVault.getUserPendingRewards(alice.address)).to.be.equal(0);
 
-    lpVault.connect(market).deposit(bob.address, bob.address, parseEther('20'));
+      await lpVault
+        .connect(market)
+        .deposit(alice.address, alice.address, parseEther('10'));
 
-    // accrue some cake
-    await advanceBlock(ethers);
-    await advanceBlock(ethers);
+      // accrue some cake
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
 
-    await Promise.all([
+      // to get Cake rewards
+      await lpVault.compound();
+
       lpVault
         .connect(market)
-        .deposit(alice.address, alice.address, parseEther('20')),
-      lpVault
-        .connect(market)
-        .deposit(bob.address, bob.address, parseEther('15')),
-    ]);
+        .deposit(bob.address, bob.address, parseEther('20'));
 
-    // to get Cake rewards
-    await lpVault.compound();
+      // accrue some cake
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
 
-    // accrue some cake
-    await advanceBlock(ethers);
-    await advanceBlock(ethers);
-    await advanceBlock(ethers);
+      await Promise.all([
+        lpVault
+          .connect(market)
+          .deposit(alice.address, alice.address, parseEther('20')),
+        lpVault
+          .connect(market)
+          .deposit(bob.address, bob.address, parseEther('15')),
+      ]);
 
-    const lpVaultV2: TestLPVaultV2 = await upgrade(lpVault, 'TestLPVaultV2');
+      // to get Cake rewards
+      await lpVault.compound();
 
-    const [
-      totalAmount,
-      totalRewardsPerAmount,
-      pendingRewards,
-      aliceInfo,
-      bobInfo,
-    ] = await Promise.all([
-      lpVaultV2.totalAmount(),
-      lpVaultV2.totalRewardsPerAmount(),
-      lpVaultV2.getPendingRewards(),
-      lpVaultV2.userInfo(alice.address),
-      lpVaultV2.userInfo(bob.address),
-    ]);
+      // accrue some cake
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
 
-    const rewardsPerAmount = totalRewardsPerAmount.add(
-      pendingRewards.mul(parseEther('1')).div(totalAmount)
-    );
+      const lpVaultV2: TestLPVaultV2 = await upgrade(lpVault, 'TestLPVaultV2');
 
-    const aliceRewards = aliceInfo.rewards.add(
-      rewardsPerAmount
-        .mul(parseEther('30'))
-        .div(parseEther('1'))
-        .sub(aliceInfo.rewardDebt)
-    );
+      const [
+        totalAmount,
+        totalRewardsPerAmount,
+        pendingRewards,
+        aliceInfo,
+        bobInfo,
+      ] = await Promise.all([
+        lpVaultV2.totalAmount(),
+        lpVaultV2.totalRewardsPerAmount(),
+        lpVaultV2.getPendingRewards(),
+        lpVaultV2.userInfo(alice.address),
+        lpVaultV2.userInfo(bob.address),
+      ]);
 
-    const bobRewards = bobInfo.rewards.add(
-      rewardsPerAmount
-        .mul(parseEther('35'))
-        .div(parseEther('1'))
-        .sub(bobInfo.rewardDebt)
-    );
+      const rewardsPerAmount = totalRewardsPerAmount.add(
+        pendingRewards.mul(parseEther('1')).div(totalAmount)
+      );
 
-    const [
-      alicePendingRewards,
-      bobPendingRewards,
-      ownerPendingRewards,
-      version,
-    ] = await Promise.all([
-      lpVaultV2.getUserPendingRewards(alice.address),
-      lpVaultV2.getUserPendingRewards(bob.address),
-      lpVaultV2.getUserPendingRewards(owner.address),
-      lpVaultV2.version(),
-    ]);
+      const aliceRewards = aliceInfo.rewards.add(
+        rewardsPerAmount
+          .mul(parseEther('30'))
+          .div(parseEther('1'))
+          .sub(aliceInfo.rewardDebt)
+      );
 
-    expect(alicePendingRewards).to.be.equal(aliceRewards);
+      const bobRewards = bobInfo.rewards.add(
+        rewardsPerAmount
+          .mul(parseEther('35'))
+          .div(parseEther('1'))
+          .sub(bobInfo.rewardDebt)
+      );
 
-    expect(bobPendingRewards).to.be.equal(bobRewards);
+      const [
+        alicePendingRewards,
+        bobPendingRewards,
+        ownerPendingRewards,
+        version,
+      ] = await Promise.all([
+        lpVaultV2.getUserPendingRewards(alice.address),
+        lpVaultV2.getUserPendingRewards(bob.address),
+        lpVaultV2.getUserPendingRewards(owner.address),
+        lpVaultV2.version(),
+      ]);
 
-    expect(ownerPendingRewards).to.be.equal(0);
+      expect(alicePendingRewards).to.be.equal(aliceRewards);
 
-    // @notice pending rewards need to account for current pending cake in the pool + the auto compounded cake
-    expect(aliceRewards.add(bobRewards)).to.be.equal(
-      totalRewardsPerAmount
-        .add(pendingRewards.mul(parseEther('1')).div(totalAmount))
-        .mul(parseEther('65'))
-        .div(parseEther('1'))
-        .sub(aliceInfo.rewardDebt)
-        .sub(bobInfo.rewardDebt)
-        .add(aliceInfo.rewards)
-        .add(bobInfo.rewards)
-    );
+      expect(bobPendingRewards).to.be.equal(bobRewards);
 
-    expect(version).to.be.equal('V2');
+      expect(ownerPendingRewards).to.be.equal(0);
+
+      // @notice pending rewards need to account for current pending cake in the pool + the auto compounded cake
+      expect(aliceRewards.add(bobRewards)).to.be.equal(
+        totalRewardsPerAmount
+          .add(pendingRewards.mul(parseEther('1')).div(totalAmount))
+          .mul(parseEther('65'))
+          .div(parseEther('1'))
+          .sub(aliceInfo.rewardDebt)
+          .sub(bobInfo.rewardDebt)
+          .add(aliceInfo.rewards)
+          .add(bobInfo.rewards)
+      );
+
+      expect(version).to.be.equal('V2');
+    });
   });
 });

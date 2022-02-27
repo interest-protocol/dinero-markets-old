@@ -1639,36 +1639,47 @@ describe('NFTMarket', () => {
       });
     });
   });
-  it('upgrades to version 2', async () => {
-    await nftMarket
-      .connect(alice)
-      .proposeLoan(
-        nft.address,
-        ethers.constants.AddressZero,
-        1,
-        TEN_BTC,
-        INTEREST_RATE,
-        ONE_DAY.mul(15)
+
+  describe('Upgrade functionality', () => {
+    it('reverts if it is called by a non-owner account', async () => {
+      await nftMarket.connect(owner).transferOwnership(alice.address);
+
+      await expect(upgrade(nftMarket, 'TestNFTMarketV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
+
+    it('upgrades to version 2', async () => {
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          ethers.constants.AddressZero,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      const nftMarketV2: TestNFTMarketV2 = await upgrade(
+        nftMarket,
+        'TestNFTMarketV2'
       );
 
-    const nftMarketV2: TestNFTMarketV2 = await upgrade(
-      nftMarket,
-      'TestNFTMarketV2'
-    );
+      const [loan, version] = await Promise.all([
+        nftMarketV2.loans(nft.address, 1),
+        nftMarketV2.version(),
+      ]);
 
-    const [loan, version] = await Promise.all([
-      nftMarketV2.loans(nft.address, 1),
-      nftMarketV2.version(),
-    ]);
-
-    expect(version).to.be.equal('V2');
-    expect(loan.lender).to.be.equal(ethers.constants.AddressZero);
-    expect(loan.borrower).to.be.equal(alice.address);
-    expect(loan.loanToken).to.be.equal(ethers.constants.AddressZero);
-    expect(loan.interestRate).to.be.equal(INTEREST_RATE);
-    expect(loan.tokenId).to.be.equal(1);
-    expect(loan.maturity).to.be.equal(ONE_DAY.mul(15));
-    expect(loan.startDate).to.be.equal(0);
-    expect(loan.principal).to.be.equal(TEN_BTC);
+      expect(version).to.be.equal('V2');
+      expect(loan.lender).to.be.equal(ethers.constants.AddressZero);
+      expect(loan.borrower).to.be.equal(alice.address);
+      expect(loan.loanToken).to.be.equal(ethers.constants.AddressZero);
+      expect(loan.interestRate).to.be.equal(INTEREST_RATE);
+      expect(loan.tokenId).to.be.equal(1);
+      expect(loan.maturity).to.be.equal(ONE_DAY.mul(15));
+      expect(loan.startDate).to.be.equal(0);
+      expect(loan.principal).to.be.equal(TEN_BTC);
+    });
   });
 });

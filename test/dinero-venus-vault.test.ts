@@ -1969,123 +1969,137 @@ describe('DineroVenusVault', () => {
         );
     });
   });
-  it('upgrades to version 2', async () => {
-    const [
-      aliceUSDCBalance,
-      vUSDCUSDBalance,
-      vaultVUSDCBalance,
-      exchangeRate,
-      totalFreeVTokens,
-      aliceAccount,
-      rewards,
-      totalFreeUnderlying,
-      aliceDineroBalance,
-    ] = await Promise.all([
-      USDC.balanceOf(alice.address),
-      USDC.balanceOf(vUSDC.address),
-      vUSDC.balanceOf(dineroVenusVault.address),
-      vUSDC.exchangeRateCurrent(),
-      dineroVenusVault.totalFreeVTokenOf(vUSDC.address),
-      dineroVenusVault.accountOf(USDC.address, alice.address),
-      dineroVenusVault.rewardsOf(vUSDC.address),
-      dineroVenusVault.totalFreeUnderlying(USDC.address),
-      dinero.balanceOf(alice.address),
-    ]);
 
-    expect(vaultVUSDCBalance).to.be.equal(0);
-    expect(vUSDCUSDBalance).to.be.equal(0);
-    expect(totalFreeVTokens).to.be.equal(0);
-    expect(aliceAccount.vTokens).to.be.equal(0);
-    expect(aliceAccount.principal).to.be.equal(0);
-    expect(aliceAccount.rewardsPaid).to.be.equal(0);
-    expect(aliceAccount.lossVTokensAccrued).to.be.equal(0);
-    expect(rewards).to.be.equal(0);
-    expect(totalFreeUnderlying).to.be.equal(0);
-    expect(aliceDineroBalance).to.be.equal(0);
+  describe('Upgrade functionality', () => {
+    it('reverts if a caller that is the owner calls it', async () => {
+      await dineroVenusVault.connect(owner).transferOwnership(alice.address);
 
-    const vTokensMinted = parseEther('100000')
-      .mul(parseEther('1'))
-      .div(exchangeRate);
+      await expect(
+        upgrade(dineroVenusVault, 'TestDineroVenusVaultV2')
+      ).to.revertedWith('Ownable: caller is not the owner');
+    });
 
-    await expect(
-      dineroVenusVault
-        .connect(alice)
-        .deposit(USDC.address, parseEther('100000'))
-    )
-      .to.emit(dineroVenusVault, 'Deposit')
-      .withArgs(
-        alice.address,
-        USDC.address,
-        parseEther('100000'),
-        vTokensMinted
+    it('upgrades to version 2', async () => {
+      const [
+        aliceUSDCBalance,
+        vUSDCUSDBalance,
+        vaultVUSDCBalance,
+        exchangeRate,
+        totalFreeVTokens,
+        aliceAccount,
+        rewards,
+        totalFreeUnderlying,
+        aliceDineroBalance,
+      ] = await Promise.all([
+        USDC.balanceOf(alice.address),
+        USDC.balanceOf(vUSDC.address),
+        vUSDC.balanceOf(dineroVenusVault.address),
+        vUSDC.exchangeRateCurrent(),
+        dineroVenusVault.totalFreeVTokenOf(vUSDC.address),
+        dineroVenusVault.accountOf(USDC.address, alice.address),
+        dineroVenusVault.rewardsOf(vUSDC.address),
+        dineroVenusVault.totalFreeUnderlying(USDC.address),
+        dinero.balanceOf(alice.address),
+      ]);
+
+      expect(vaultVUSDCBalance).to.be.equal(0);
+      expect(vUSDCUSDBalance).to.be.equal(0);
+      expect(totalFreeVTokens).to.be.equal(0);
+      expect(aliceAccount.vTokens).to.be.equal(0);
+      expect(aliceAccount.principal).to.be.equal(0);
+      expect(aliceAccount.rewardsPaid).to.be.equal(0);
+      expect(aliceAccount.lossVTokensAccrued).to.be.equal(0);
+      expect(rewards).to.be.equal(0);
+      expect(totalFreeUnderlying).to.be.equal(0);
+      expect(aliceDineroBalance).to.be.equal(0);
+
+      const vTokensMinted = parseEther('100000')
+        .mul(parseEther('1'))
+        .div(exchangeRate);
+
+      await expect(
+        dineroVenusVault
+          .connect(alice)
+          .deposit(USDC.address, parseEther('100000'))
       )
-      .to.emit(USDC, 'Transfer')
-      .withArgs(alice.address, dineroVenusVault.address, parseEther('100000'))
-      .to.emit(USDC, 'Transfer')
-      .withArgs(dineroVenusVault.address, vUSDC.address, parseEther('100000'))
-      .to.emit(vUSDC, 'Transfer')
-      .withArgs(
-        ethers.constants.AddressZero,
-        dineroVenusVault.address,
-        vTokensMinted
+        .to.emit(dineroVenusVault, 'Deposit')
+        .withArgs(
+          alice.address,
+          USDC.address,
+          parseEther('100000'),
+          vTokensMinted
+        )
+        .to.emit(USDC, 'Transfer')
+        .withArgs(alice.address, dineroVenusVault.address, parseEther('100000'))
+        .to.emit(USDC, 'Transfer')
+        .withArgs(dineroVenusVault.address, vUSDC.address, parseEther('100000'))
+        .to.emit(vUSDC, 'Transfer')
+        .withArgs(
+          ethers.constants.AddressZero,
+          dineroVenusVault.address,
+          vTokensMinted
+        )
+        .to.not.emit(venusController, 'Claim')
+        .to.not.emit(dineroVenusVault, 'Loss');
+
+      const dineroVenusVaultV2: TestDineroVenusVaultV2 = await upgrade(
+        dineroVenusVault,
+        'TestDineroVenusVaultV2'
+      );
+
+      const [
+        aliceUSDCBalance2,
+        vUSDCUSDBalance2,
+        vaultVUSDCBalance2,
+        totalFreeVTokens2,
+        aliceAccount2,
+        rewards2,
+        totalFreeUnderlying2,
+        version,
+        aliceDineroBalance2,
+      ] = await Promise.all([
+        USDC.balanceOf(alice.address),
+        USDC.balanceOf(vUSDC.address),
+        vUSDC.balanceOf(dineroVenusVaultV2.address),
+        dineroVenusVaultV2.totalFreeVTokenOf(vUSDC.address),
+        dineroVenusVaultV2.accountOf(USDC.address, alice.address),
+        dineroVenusVaultV2.rewardsOf(vUSDC.address),
+        dineroVenusVaultV2.totalFreeUnderlying(USDC.address),
+        dineroVenusVaultV2.version(),
+        dinero.balanceOf(alice.address),
+      ]);
+
+      expect(
+        aliceUSDCBalance2.eq(aliceUSDCBalance.sub(parseEther('100000')))
+      ).equal(true);
+      expect(version).to.be.equal('V2');
+      expect(vUSDCUSDBalance2).to.be.equal(parseEther('100000'));
+      expect(vaultVUSDCBalance2).to.be.equal(vTokensMinted);
+      expect(totalFreeVTokens2).to.be.equal(vTokensMinted);
+      expect(rewards2).to.be.equal(0);
+      expect(totalFreeUnderlying2).to.be.equal(parseEther('100000'));
+      expect(aliceDineroBalance2).to.be.equal(parseEther('100000'));
+      expect(aliceAccount2.vTokens).to.be.equal(vTokensMinted);
+      expect(aliceAccount2.principal).to.be.equal(parseEther('100000'));
+      expect(aliceAccount2.rewardsPaid).to.be.equal(0);
+      expect(aliceAccount2.lossVTokensAccrued).to.be.equal(0);
+
+      const wBNBXvsPairAddress = await factory.getPair(
+        WBNB.address,
+        XVS.address
+      );
+
+      const wBNBXvsPair = (
+        await ethers.getContractFactory('PancakePair')
+      ).attach(wBNBXvsPairAddress);
+
+      await expect(
+        dineroVenusVaultV2.connect(bob).deposit(USDC.address, parseEther('100'))
       )
-      .to.not.emit(venusController, 'Claim')
-      .to.not.emit(dineroVenusVault, 'Loss');
-
-    const dineroVenusVaultV2: TestDineroVenusVaultV2 = await upgrade(
-      dineroVenusVault,
-      'TestDineroVenusVaultV2'
-    );
-
-    const [
-      aliceUSDCBalance2,
-      vUSDCUSDBalance2,
-      vaultVUSDCBalance2,
-      totalFreeVTokens2,
-      aliceAccount2,
-      rewards2,
-      totalFreeUnderlying2,
-      version,
-      aliceDineroBalance2,
-    ] = await Promise.all([
-      USDC.balanceOf(alice.address),
-      USDC.balanceOf(vUSDC.address),
-      vUSDC.balanceOf(dineroVenusVaultV2.address),
-      dineroVenusVaultV2.totalFreeVTokenOf(vUSDC.address),
-      dineroVenusVaultV2.accountOf(USDC.address, alice.address),
-      dineroVenusVaultV2.rewardsOf(vUSDC.address),
-      dineroVenusVaultV2.totalFreeUnderlying(USDC.address),
-      dineroVenusVaultV2.version(),
-      dinero.balanceOf(alice.address),
-    ]);
-
-    expect(
-      aliceUSDCBalance2.eq(aliceUSDCBalance.sub(parseEther('100000')))
-    ).equal(true);
-    expect(version).to.be.equal('V2');
-    expect(vUSDCUSDBalance2).to.be.equal(parseEther('100000'));
-    expect(vaultVUSDCBalance2).to.be.equal(vTokensMinted);
-    expect(totalFreeVTokens2).to.be.equal(vTokensMinted);
-    expect(rewards2).to.be.equal(0);
-    expect(totalFreeUnderlying2).to.be.equal(parseEther('100000'));
-    expect(aliceDineroBalance2).to.be.equal(parseEther('100000'));
-    expect(aliceAccount2.vTokens).to.be.equal(vTokensMinted);
-    expect(aliceAccount2.principal).to.be.equal(parseEther('100000'));
-    expect(aliceAccount2.rewardsPaid).to.be.equal(0);
-    expect(aliceAccount2.lossVTokensAccrued).to.be.equal(0);
-
-    const wBNBXvsPairAddress = await factory.getPair(WBNB.address, XVS.address);
-
-    const wBNBXvsPair = (await ethers.getContractFactory('PancakePair')).attach(
-      wBNBXvsPairAddress
-    );
-
-    await expect(
-      dineroVenusVaultV2.connect(bob).deposit(USDC.address, parseEther('100'))
-    )
-      .to.emit(venusController, 'Claim')
-      .withArgs(dineroVenusVault.address, 0)
-      // It does not swap if there are no XVS rewards
-      .to.not.emit(wBNBXvsPair, 'Swap');
+        .to.emit(venusController, 'Claim')
+        .withArgs(dineroVenusVault.address, 0)
+        // It does not swap if there are no XVS rewards
+        .to.not.emit(wBNBXvsPair, 'Swap');
+    });
   });
 });

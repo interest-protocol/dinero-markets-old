@@ -663,34 +663,45 @@ describe('SafeVenus', () => {
         .withArgs(parseEther('1.5')); // It will return cash if cash value is lower than the redeem amount.
     });
   });
-  it('upgrades to version 2', async () => {
-    const safeVenusV2: TestSafeVenusV2 = await upgrade(
-      safeVenus,
-      'TestSafeVenusV2'
-    );
 
-    const testSafeVenusV2: TestSafeVenusV2 = await deploy('TestSafeVenus', [
-      safeVenusV2.address,
-    ]);
+  describe('Upgrade functionality', () => {
+    it('reverts if it is called by a non-owner account', async () => {
+      await safeVenus.connect(owner).renounceOwnership();
 
-    await Promise.all([
-      venusController.__setMarkets(
-        vToken.address,
-        true,
-        parseEther('0.9'),
-        true,
-        true
-      ),
-      vToken.__setCash(parseEther('100')),
-      vToken.__setBorrowBalanceCurrent(vault.address, parseEther('90')),
-      vToken.__setBalanceOfUnderlying(vault.address, parseEther('100')),
-    ]);
+      await expect(upgrade(safeVenus, 'TestSafeVenus')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
 
-    // Current safe collateral is 81% but we are at 90%
-    await expect(testSafeVenusV2.safeRedeem(vault.address, vToken.address))
-      .to.emit(testSafeVenusV2, 'SafeRedeem')
-      .withArgs(0);
+    it('upgrades to version 2', async () => {
+      const safeVenusV2: TestSafeVenusV2 = await upgrade(
+        safeVenus,
+        'TestSafeVenusV2'
+      );
 
-    expect(await safeVenusV2.version()).to.be.equal('V2');
+      const testSafeVenusV2: TestSafeVenusV2 = await deploy('TestSafeVenus', [
+        safeVenusV2.address,
+      ]);
+
+      await Promise.all([
+        venusController.__setMarkets(
+          vToken.address,
+          true,
+          parseEther('0.9'),
+          true,
+          true
+        ),
+        vToken.__setCash(parseEther('100')),
+        vToken.__setBorrowBalanceCurrent(vault.address, parseEther('90')),
+        vToken.__setBalanceOfUnderlying(vault.address, parseEther('100')),
+      ]);
+
+      // Current safe collateral is 81% but we are at 90%
+      await expect(testSafeVenusV2.safeRedeem(vault.address, vToken.address))
+        .to.emit(testSafeVenusV2, 'SafeRedeem')
+        .withArgs(0);
+
+      expect(await safeVenusV2.version()).to.be.equal('V2');
+    });
   });
 });
