@@ -24,12 +24,13 @@ describe('NFTMarket', () => {
   let nft: MockNFT;
   let nftMarket: NFTMarket;
 
+  let owner: SignerWithAddress;
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
   let feeTo: SignerWithAddress;
 
   beforeEach(async () => {
-    [[btc, usdc, nft], [alice, bob, feeTo]] = await Promise.all([
+    [[btc, usdc, nft], [owner, alice, bob, feeTo]] = await Promise.all([
       multiDeploy(
         ['MockERC20', 'MockERC20', 'MockNFT'],
         [
@@ -62,10 +63,21 @@ describe('NFTMarket', () => {
     ]);
   });
 
-  it('reverts if you call initialize after deployment', async () => {
-    await expect(nftMarket.initialize(feeTo.address)).to.revertedWith(
-      'Initializable: contract is already initialized'
-    );
+  describe('function: initialize', () => {
+    it('reverts if you call initialize after deployment', async () => {
+      await expect(nftMarket.initialize(feeTo.address)).to.revertedWith(
+        'Initializable: contract is already initialized'
+      );
+    });
+    it('sets the new state correctly', async () => {
+      const [_owner, _feeTo] = await Promise.all([
+        nftMarket.owner(),
+        nftMarket.FEE_TO(),
+      ]);
+
+      expect(_owner).to.be.equal(owner.address);
+      expect(_feeTo).to.be.equal(feeTo.address);
+    });
   });
 
   describe('function: proposeLoan', () => {

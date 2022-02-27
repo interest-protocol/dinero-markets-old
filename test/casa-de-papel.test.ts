@@ -125,12 +125,27 @@ describe('Case de Papel', () => {
     });
 
     it('properly updates the state', async () => {
-      const [totalAllocationPoints, interesTokenPool, hasPool] =
-        await Promise.all([
-          casaDePapel.totalAllocationPoints(),
-          casaDePapel.pools(0),
-          casaDePapel.hasPool(interestToken.address),
-        ]);
+      const [
+        totalAllocationPoints,
+        interesTokenPool,
+        hasPool,
+        _owner,
+        _interestToken,
+        _sInterestToken,
+        _developmentAccount,
+        _interestPerBlock,
+        _startBlock,
+      ] = await Promise.all([
+        casaDePapel.totalAllocationPoints(),
+        casaDePapel.pools(0),
+        casaDePapel.hasPool(interestToken.address),
+        casaDePapel.owner(),
+        casaDePapel.INTEREST_TOKEN(),
+        casaDePapel.STAKED_INTEREST_TOKEN(),
+        casaDePapel.devAccount(),
+        casaDePapel.interestTokenPerBlock(),
+        casaDePapel.startBlock(),
+      ]);
 
       expect(totalAllocationPoints).to.be.equal(1000);
       expect(interesTokenPool.stakingToken).to.be.equal(interestToken.address);
@@ -139,6 +154,12 @@ describe('Case de Papel', () => {
       expect(interesTokenPool.accruedIntPerShare).to.be.equal(0);
       expect(interesTokenPool.totalSupply).to.be.equal(0);
       expect(hasPool).to.be.equal(true);
+      expect(_owner).to.be.equal(owner.address);
+      expect(_interestPerBlock).to.be.equal(INTEREST_TOKEN_PER_BLOCK);
+      expect(_interestToken).to.be.equal(interestToken.address);
+      expect(_sInterestToken).to.be.equal(sInterestToken.address);
+      expect(_developmentAccount).to.be.equal(developer.address);
+      expect(_startBlock).to.be.equal(START_BLOCK);
     });
   });
 

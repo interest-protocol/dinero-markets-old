@@ -298,6 +298,43 @@ describe('InterestMarketV1', () => {
         ])
       ).to.revertedWith('MKT: ltc ratio out of bounds');
     });
+    it('sets initial state correctly', async () => {
+      const [
+        _owner,
+        _router,
+        _feeTo,
+        _oracle,
+        _collateral,
+        _vault,
+        _loan,
+        _maxLTVRatio,
+        _liquidationFee,
+      ] = await Promise.all([
+        cakeMarket.owner(),
+        cakeMarket.ROUTER(),
+        cakeMarket.FEE_TO(),
+        cakeMarket.ORACLE(),
+        cakeMarket.COLLATERAL(),
+        cakeMarket.VAULT(),
+        cakeMarket.loan(),
+        cakeMarket.maxLTVRatio(),
+        cakeMarket.liquidationFee(),
+      ]);
+
+      expect(_owner).to.be.equal(owner.address);
+      expect(_router).to.be.equal(router.address);
+      expect(_feeTo).to.be.equal(treasury.address);
+      expect(_oracle).to.be.equal(oracle.address);
+      expect(_collateral).to.be.equal(cake.address);
+      expect(_vault).to.be.equal(cakeVault.address);
+      expect(_loan.INTEREST_RATE).to.be.equal(ethers.BigNumber.from(12e8));
+      expect(_maxLTVRatio).to.be.equal(
+        ethers.BigNumber.from('500000000000000000')
+      );
+      expect(_liquidationFee).to.be.equal(
+        ethers.BigNumber.from('100000000000000000')
+      );
+    });
   });
   it('allows the router allowance to be maxed out', async () => {
     await cakeMarket

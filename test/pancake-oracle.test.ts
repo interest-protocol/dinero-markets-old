@@ -121,6 +121,30 @@ describe('PancakeOracle', () => {
         ])
       ).to.revertedWith('PO: granularity > 1');
     });
+    it('sets the initial state correctly', async () => {
+      const [
+        _owner,
+        _factory,
+        _windowSize,
+        _granularity,
+        _libraryWrapper,
+        _periodSize,
+      ] = await Promise.all([
+        oracle.owner(),
+        oracle.FACTORY(),
+        oracle.WINDOW_SIZE(),
+        oracle.GRANULARITY(),
+        oracle.LIBRARY_WRAPPER(),
+        oracle.PERIOD_SIZE(),
+      ]);
+
+      expect(_owner).to.be.equal(owner.address);
+      expect(_factory).to.be.equal(factory.address);
+      expect(_windowSize).to.be.equal(WINDOW);
+      expect(_granularity).to.be.equal(GRANULARITY);
+      expect(_libraryWrapper).to.be.equal(libraryWrapper.address);
+      expect(_periodSize).to.be.equal(PERIOD_SIZE);
+    });
   });
 
   it('calculates an index between 0 to 3 for any timestamp', async () => {

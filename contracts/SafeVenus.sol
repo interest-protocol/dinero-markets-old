@@ -72,7 +72,6 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         address xvs,
         OracleV1 oracle
     ) external initializer {
-        __UUPSUpgradeable_init();
         __Ownable_init();
 
         VENUS_CONTROLLER = venusController;

@@ -139,7 +139,6 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 _interestTokenPerBlock,
         uint256 _startBlock
     ) external initializer {
-        __UUPSUpgradeable_init();
         __Ownable_init();
 
         // Setup initial state

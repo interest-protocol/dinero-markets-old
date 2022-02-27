@@ -183,7 +183,6 @@ contract DineroVenusVault is
         SafeVenus safeVenus,
         address feeTo
     ) external initializer {
-        __UUPSUpgradeable_init();
         __Ownable_init();
         __Pausable_init();
 

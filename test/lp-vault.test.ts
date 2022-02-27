@@ -107,6 +107,31 @@ describe('Master Chef LPVault', () => {
         await lpToken.allowance(lpVault.address, masterChef.address)
       ).to.be.equal(ethers.constants.MaxUint256);
     });
+
+    it('reverts if the pool id is 0', async () => {
+      expect(
+        deployUUPS('LPVault', [
+          masterChef.address,
+          cake.address,
+          lpToken.address,
+          0,
+        ])
+      ).to.revertedWith('LPVault: this is a LP vault');
+    });
+
+    it('sets the initial state correctly', async () => {
+      const [_masterChef, _cake, _stakingToken, _poolId] = await Promise.all([
+        lpVault.CAKE_MASTER_CHEF(),
+        lpVault.CAKE(),
+        lpVault.STAKING_TOKEN(),
+        lpVault.POOL_ID(),
+      ]);
+
+      expect(_masterChef).to.be.equal(masterChef.address);
+      expect(_cake).to.be.equal(cake.address);
+      expect(_stakingToken).to.be.equal(lpToken.address);
+      expect(_poolId).to.be.equal(1);
+    });
   });
 
   describe('function: setMarket', () => {

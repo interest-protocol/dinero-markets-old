@@ -101,7 +101,6 @@ contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             (PERIOD_SIZE = windowSize / granularity) * granularity == windowSize
         );
 
-        __UUPSUpgradeable_init();
         __Ownable_init();
 
         FACTORY = factory;

@@ -186,7 +186,6 @@ contract InterestBNBMarketV1 is
         uint256 _maxLTVRatio,
         uint256 _liquidationFee
     ) external initializer {
-        __UUPSUpgradeable_init();
         __Ownable_init();
         __ReentrancyGuard_init();
 

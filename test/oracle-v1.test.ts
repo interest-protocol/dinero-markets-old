@@ -125,15 +125,32 @@ describe('OracleV1', () => {
     ]);
   });
 
-  it('reverts if you call initialize after deployment', async () => {
-    await expect(
-      oracleV1.initialize(
-        mockTWAP.address,
-        mockBnbUsdDFeed.address,
-        mockWbnb.address,
-        mockBUSD.address
-      )
-    ).to.revertedWith('Initializable: contract is already initialized');
+  describe('function: initialize', () => {
+    it('reverts if you call initialize after deployment', async () => {
+      await expect(
+        oracleV1.initialize(
+          mockTWAP.address,
+          mockBnbUsdDFeed.address,
+          mockWbnb.address,
+          mockBUSD.address
+        )
+      ).to.revertedWith('Initializable: contract is already initialized');
+    });
+    it('sets the initial state correctly', async () => {
+      const [_owner, _twap, _bnbUSD, _wbnb, _busd] = await Promise.all([
+        oracleV1.owner(),
+        oracleV1.TWAP(),
+        oracleV1.BNB_USD(),
+        oracleV1.WBNB(),
+        oracleV1.BUSD(),
+      ]);
+
+      expect(_owner).to.be.equal(owner.address);
+      expect(_twap).to.be.equal(mockTWAP.address);
+      expect(_bnbUSD).to.be.equal(mockBnbUsdDFeed.address);
+      expect(_wbnb).to.be.equal(mockWbnb.address);
+      expect(_busd).to.be.equal(mockBUSD.address);
+    });
   });
 
   describe('function: getUSDPrice', () => {

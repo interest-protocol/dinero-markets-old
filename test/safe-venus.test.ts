@@ -118,15 +118,30 @@ describe('SafeVenus', () => {
     testSafeVenus = await deploy('TestSafeVenus', [safeVenus.address]);
   });
 
-  it('reverts if you call after deployment', async () => {
-    expect(
-      oracle.initialize(
-        TWAP.address,
-        bnbUSDFeed.address,
-        WBNB.address,
-        BUSD.address
-      )
-    ).to.revertedWith('Initializable: contract is already initialized');
+  describe('function: initialize', () => {
+    it('reverts if you call after deployment', async () => {
+      expect(
+        oracle.initialize(
+          TWAP.address,
+          bnbUSDFeed.address,
+          WBNB.address,
+          BUSD.address
+        )
+      ).to.revertedWith('Initializable: contract is already initialized');
+    });
+    it('sets the initial state properly', async () => {
+      const [_owner, _venusController, _xvs, _oracle] = await Promise.all([
+        safeVenus.owner(),
+        safeVenus.VENUS_CONTROLLER(),
+        safeVenus.XVS(),
+        safeVenus.ORACLE(),
+      ]);
+
+      expect(_owner).to.be.equal(owner.address);
+      expect(_venusController).to.be.equal(venusController.address);
+      expect(_xvs).to.be.equal(XVS.address);
+      expect(_oracle).to.be.equal(oracle.address);
+    });
   });
 
   it('calculates the lowest collateral ratio returning one based on supply and borrow rate', async () => {

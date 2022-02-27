@@ -100,7 +100,6 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         address wbnb,
         address busd
     ) external initializer {
-        __UUPSUpgradeable_init();
         __Ownable_init();
 
         TWAP = twap;

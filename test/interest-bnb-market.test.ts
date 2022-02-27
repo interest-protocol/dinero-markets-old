@@ -131,20 +131,57 @@ describe('InterestBNBMarketV1', () => {
     ]);
   });
 
-  it('reverts if you initialize after deployment', async () => {
-    await expect(
-      interestBNBMarket
-        .connect(alice)
-        .initialize(
-          router.address,
-          dinero.address,
-          treasury.address,
-          oracle.address,
-          ethers.BigNumber.from(12e8),
-          ethers.BigNumber.from('500000000000000000'),
-          ethers.BigNumber.from('100000000000000000')
-        )
-    ).to.revertedWith('Initializable: contract is already initialized');
+  describe('function: initialize', () => {
+    it('reverts if you initialize after deployment', async () => {
+      await expect(
+        interestBNBMarket
+          .connect(alice)
+          .initialize(
+            router.address,
+            dinero.address,
+            treasury.address,
+            oracle.address,
+            ethers.BigNumber.from(12e8),
+            ethers.BigNumber.from('500000000000000000'),
+            ethers.BigNumber.from('100000000000000000')
+          )
+      ).to.revertedWith('Initializable: contract is already initialized');
+    });
+
+    it('sets the initial state correctly', async () => {
+      const [
+        _owner,
+        _router,
+        _dinero,
+        _feeTo,
+        _oracle,
+        _loan,
+        _maxLTVRatio,
+        _liquidationFee,
+      ] = await Promise.all([
+        interestBNBMarket.owner(),
+        interestBNBMarket.ROUTER(),
+        interestBNBMarket.DINERO(),
+        interestBNBMarket.FEE_TO(),
+        interestBNBMarket.ORACLE(),
+        interestBNBMarket.loan(),
+        interestBNBMarket.maxLTVRatio(),
+        interestBNBMarket.liquidationFee(),
+      ]);
+
+      expect(_owner).to.be.equal(owner.address);
+      expect(_router).to.be.equal(router.address);
+      expect(_dinero).to.be.equal(dinero.address);
+      expect(_feeTo).to.be.equal(treasury.address);
+      expect(_oracle).to.be.equal(oracle.address);
+      expect(_loan.INTEREST_RATE).to.be.equal(ethers.BigNumber.from(12e8));
+      expect(_maxLTVRatio).to.be.equal(
+        ethers.BigNumber.from('500000000000000000')
+      );
+      expect(_liquidationFee).to.be.equal(
+        ethers.BigNumber.from('100000000000000000')
+      );
+    });
   });
 
   it('sends the fees earned to the feeTo address', async () => {

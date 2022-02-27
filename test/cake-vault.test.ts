@@ -78,6 +78,20 @@ describe('Master Chef CakeVault', () => {
         await cake.allowance(cakeVault.address, masterChef.address)
       ).to.be.equal(ethers.constants.MaxUint256);
     });
+
+    it('sets an owner', async () => {
+      expect(await cakeVault.owner()).to.be.equal(owner.address);
+    });
+
+    it('sets the initial state correctly', async () => {
+      const [_cake, _masterChef] = await Promise.all([
+        cakeVault.CAKE_MASTER_CHEF(),
+        cakeVault.CAKE(),
+      ]);
+
+      expect(_cake).to.be.equal(cake.address);
+      expect(_masterChef).to.be.equal(masterChef.address);
+    });
   });
 
   describe('function: setMarket', () => {

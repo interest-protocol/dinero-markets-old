@@ -77,7 +77,6 @@ contract LPVault is
         IERC20Upgradeable stakingToken,
         uint256 poolId
     ) external initializer {
-        __UUPSUpgradeable_init();
         __Ownable_init();
 
         require(poolId != 0, "LPVault: this is a LP vault");

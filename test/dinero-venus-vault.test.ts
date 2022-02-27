@@ -219,6 +219,36 @@ describe('DineroVenusVault', () => {
         await XVS.allowance(dineroVenusVault.address, router.address)
       ).to.be.equal(ethers.constants.MaxUint256);
     });
+    it('sets the initial state correctly', async () => {
+      const [
+        _owner,
+        _paused,
+        _xvs,
+        _wbnb,
+        _router,
+        _venusController,
+        _safeVenus,
+        _feeTo,
+      ] = await Promise.all([
+        dineroVenusVault.owner(),
+        dineroVenusVault.paused(),
+        dineroVenusVault.XVS(),
+        dineroVenusVault.WBNB(),
+        dineroVenusVault.ROUTER(),
+        dineroVenusVault.VENUS_CONTROLLER(),
+        dineroVenusVault.SAFE_VENUS(),
+        dineroVenusVault.FEE_TO(),
+      ]);
+
+      expect(_owner).to.be.equal(owner.address);
+      expect(_paused).to.be.equal(false);
+      expect(_xvs).to.be.equal(XVS.address);
+      expect(_wbnb).to.be.equal(WBNB.address);
+      expect(_router).to.be.equal(router.address);
+      expect(_venusController).to.be.equal(venusController.address);
+      expect(_safeVenus).to.be.equal(safeVenus.address);
+      expect(_feeTo).to.be.equal(feeTo.address);
+    });
   });
 
   describe('Simple Owner functions', () => {

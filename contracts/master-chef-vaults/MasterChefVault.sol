@@ -190,7 +190,7 @@ abstract contract MasterChefVault {
     function _deposit(
         address,
         address,
-        uint256 //solhint-disable-next-line no-empty-blocks
+        uint256
     ) internal virtual;
 
     /**
@@ -201,7 +201,7 @@ abstract contract MasterChefVault {
     function _withdraw(
         address,
         address,
-        uint256 //solhint-disable-next-line no-empty-blocks
+        uint256
     ) internal virtual;
 
     /**

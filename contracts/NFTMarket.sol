@@ -189,9 +189,7 @@ contract NFTMarket is
      * - Can only be called at once and should be called during creation to prevent front running.
      */
     function initialize(address feeTo) external initializer {
-        __UUPSUpgradeable_init();
         __Ownable_init();
-        __ERC721Holder_init();
         __ReentrancyGuard_init();
 
         FEE_TO = feeTo;
