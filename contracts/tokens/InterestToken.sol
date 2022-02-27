@@ -51,12 +51,8 @@ contract InterestToken is
      * - Can only be called at once and should be called during creation to prevent front running.
      */
     function initialize() external initializer {
-        __Context_init();
-        __UUPSUpgradeable_init();
-        __ERC20Votes_init();
         __ERC20_init("Interest Token", "Int");
         __ERC20Permit_init("Interest Token");
-        __AccessControl_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());
         _grantRole(DEVELOPER_ROLE, _msgSender());

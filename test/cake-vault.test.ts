@@ -27,7 +27,7 @@ describe('Master Chef CakeVault', () => {
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
   let developer: SignerWithAddress;
-  // @notice Market does not need to be an address for testing purposes
+  // @notice Market does not need to be a contract for testing purposes
   let market: SignerWithAddress;
   let recipient: SignerWithAddress;
 

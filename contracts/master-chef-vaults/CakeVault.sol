@@ -60,7 +60,6 @@ contract CakeVault is
         external
         initializer
     {
-        __UUPSUpgradeable_init();
         __Ownable_init();
 
         CAKE_MASTER_CHEF = cakeMasterChef;

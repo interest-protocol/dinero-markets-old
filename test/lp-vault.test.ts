@@ -857,4 +857,4 @@ describe('Master Chef LPVault', () => {
       expect(version).to.be.equal('V2');
     });
   });
-});
+}).timeout(5000);

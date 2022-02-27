@@ -668,7 +668,7 @@ describe('SafeVenus', () => {
     it('reverts if it is called by a non-owner account', async () => {
       await safeVenus.connect(owner).renounceOwnership();
 
-      await expect(upgrade(safeVenus, 'TestSafeVenus')).to.revertedWith(
+      await expect(upgrade(safeVenus, 'TestSafeVenusV2')).to.revertedWith(
         'Ownable: caller is not the owner'
       );
     });

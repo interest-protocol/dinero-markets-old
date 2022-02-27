@@ -105,7 +105,7 @@ describe('Dinero', () => {
       await dinero.connect(owner).renounceRole(DEVELOPER_ROLE, owner.address);
 
       expect(upgrade(dinero, 'TestDineroV2')).to.revertedWith(
-        'Ownable: caller is not the owner'
+        'AccessControl: account 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 is missing role 0x4504b9dfd7400a1522f49a8b4a100552da9236849581fd59b7363eb48c6a474c'
       );
     });
     it('updates to version 2', async () => {
