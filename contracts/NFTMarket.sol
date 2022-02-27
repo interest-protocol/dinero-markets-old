@@ -770,8 +770,13 @@ contract NFTMarket is
     function _sendBNB(address payable to, uint256 amount) private {
         require(address(this).balance >= amount, "NFTM: not enough BNB");
         //solhint-disable-next-line avoid-low-level-calls
-        (bool success, ) = to.call{value: amount}("");
-        require(success, "NFTM: failed to send BNB");
+        (bool success, bytes memory returnData) = to.call{value: amount}("");
+        require(
+            success,
+            returnData.length == 0
+                ? "NFTM: failed to send BNB"
+                : string(returnData)
+        );
     }
 
     /*///////////////////////////////////////////////////////////////
