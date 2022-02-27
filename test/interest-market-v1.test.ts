@@ -6,7 +6,6 @@ import {
   CakeToken,
   CakeVault,
   Dinero,
-  InterestGovernorV1,
   InterestMarketV1,
   LiquidityRouter,
   MasterChef,
@@ -17,11 +16,19 @@ import {
   PancakeFactory,
   PancakeRouter,
   SyrupBar,
+  TestInterestMarketV2,
   WETH9,
 } from '../typechain';
-import { advanceTime, deploy, multiDeploy } from './lib/test-utils';
+import { BURNER_ROLE, MINTER_ROLE } from './lib/constants';
+import {
+  advanceTime,
+  deploy,
+  deployUUPS,
+  multiDeploy,
+  upgrade,
+} from './lib/test-utils';
 
-const { parseEther, defaultAbiCoder, keccak256 } = ethers.utils;
+const { parseEther } = ethers.utils;
 
 const CAKE_PER_BLOCK = parseEther('40');
 
@@ -41,12 +48,10 @@ describe('InterestMarketV1', () => {
   let bnb: MockERC20;
   let dinero: Dinero;
   let busd: MockERC20;
-  let governor: InterestGovernorV1;
   let factory: PancakeFactory;
   let router: PancakeRouter;
   let liquidityRouter: LiquidityRouter;
   let weth: WETH9;
-  let masterMarket: InterestMarketV1;
   let cakeMarket: InterestMarketV1;
   let mockCakeUsdFeed: MockChainLinkFeed;
   let mockBnbUsdDFeed: MockChainLinkFeed;
@@ -67,59 +72,63 @@ describe('InterestMarketV1', () => {
       await ethers.getSigners();
 
     [
-      cake,
       dinero,
-      factory,
-      weth,
-      bnb,
-      mockCakeUsdFeed,
-      mockBnbUsdDFeed,
-      mockCakeBNBFeed,
-      busd,
-      mockTwap,
-    ] = await multiDeploy(
       [
-        'CakeToken',
-        'Dinero',
-        'PancakeFactory',
-        'WETH9',
-        'MockERC20',
-        'MockChainLinkFeed',
-        'MockChainLinkFeed',
-        'MockChainLinkFeed',
-        'MockERC20',
-        'MockTWAP',
+        cake,
+        factory,
+        weth,
+        bnb,
+        mockCakeUsdFeed,
+        mockBnbUsdDFeed,
+        mockCakeBNBFeed,
+        busd,
+        mockTwap,
       ],
-      [
-        [],
-        [],
-        [developer.address],
-        [],
-        ['Wrapped BNB', 'WBNB', parseEther('10000000')],
-        [8, 'CAKE/USD', 1],
-        [8, 'BNB/USD', 1],
-        [8, 'CAKE/BNB', 1],
-        ['Binance USD', 'BUSD', parseEther('10000000')],
-        [],
-      ]
-    );
+    ] = await Promise.all([
+      deployUUPS('Dinero', []),
+      multiDeploy(
+        [
+          'CakeToken',
+          'PancakeFactory',
+          'WETH9',
+          'MockERC20',
+          'MockChainLinkFeed',
+          'MockChainLinkFeed',
+          'MockChainLinkFeed',
+          'MockERC20',
+          'MockTWAP',
+        ],
+        [
+          [],
+          [developer.address],
+          [],
+          ['Wrapped BNB', 'WBNB', parseEther('10000000')],
+          [8, 'CAKE/USD', 1],
+          [8, 'BNB/USD', 1],
+          [8, 'CAKE/BNB', 1],
+          ['Binance USD', 'BUSD', parseEther('10000000')],
+          [],
+        ]
+      ),
+    ]);
 
-    [syrup, governor, router, liquidityRouter, oracle] = await multiDeploy(
-      [
-        'SyrupBar',
-        'InterestGovernorV1',
-        'PancakeRouter',
-        'LiquidityRouter',
-        'OracleV1',
-      ],
-      [
-        [cake.address],
-        [dinero.address],
-        [factory.address, weth.address],
-        [factory.address, weth.address],
-        [mockTwap.address, mockBnbUsdDFeed.address, bnb.address, busd.address],
-      ]
-    );
+    [oracle, [syrup, router, liquidityRouter]] = await Promise.all([
+      deployUUPS('OracleV1', [
+        mockTwap.address,
+        mockBnbUsdDFeed.address,
+        bnb.address,
+        busd.address,
+      ]),
+      multiDeploy(
+        ['SyrupBar', 'PancakeRouter', 'LiquidityRouter'],
+        [
+          [cake.address],
+          [factory.address, weth.address],
+          [factory.address, weth.address],
+        ]
+      ),
+      dinero.connect(owner).grantRole(MINTER_ROLE, owner.address),
+    ]);
 
     [masterChef] = await Promise.all([
       deploy('MasterChef', [
@@ -129,11 +138,10 @@ describe('InterestMarketV1', () => {
         CAKE_PER_BLOCK,
         START_BLOCK,
       ]),
+      dinero.connect(owner).mint(owner.address, parseEther('20000000000')),
       dinero
         .connect(owner)
-        .grantRole(await dinero.MINTER_ROLE(), owner.address),
-      dinero.connect(owner).mint(owner.address, parseEther('20000000000')),
-      dinero.approve(liquidityRouter.address, ethers.constants.MaxUint256),
+        .approve(liquidityRouter.address, ethers.constants.MaxUint256),
       bnb.mint(owner.address, parseEther('30000000')),
       bnb
         .connect(owner)
@@ -153,17 +161,24 @@ describe('InterestMarketV1', () => {
       cake
         .connect(owner)
         .approve(liquidityRouter.address, ethers.constants.MaxUint256),
-      governor.connect(owner).setFeeTo(treasury.address),
     ]);
 
-    cakeVault = await deploy('CakeVault', [masterChef.address, cake.address]);
+    cakeVault = await deployUUPS('CakeVault', [
+      masterChef.address,
+      cake.address,
+    ]);
 
-    [masterMarket] = await Promise.all([
-      deploy('InterestMarketV1', [
+    [cakeMarket] = await Promise.all([
+      deployUUPS('InterestMarketV1', [
         router.address,
         dinero.address,
-        governor.address,
+        treasury.address,
         oracle.address,
+        cake.address,
+        cakeVault.address,
+        ethers.BigNumber.from(12e8),
+        ethers.BigNumber.from('500000000000000000'),
+        ethers.BigNumber.from('100000000000000000'),
       ]),
       cake
         .connect(alice)
@@ -174,9 +189,6 @@ describe('InterestMarketV1', () => {
         .approve(cakeVault.address, ethers.constants.MaxUint256),
       syrup.connect(owner).transferOwnership(masterChef.address),
       cake.connect(owner).transferOwnership(masterChef.address),
-      dinero
-        .connect(owner)
-        .grantRole(await dinero.DEFAULT_ADMIN_ROLE(), governor.address),
       mockCakeBNBFeed.setAnswer(CAKE_BNB_PRICE),
       // 1 CAKE == 0.04 BNB
       mockBnbUsdDFeed.setAnswer(BNB_USD_PRICE),
@@ -213,97 +225,115 @@ describe('InterestMarketV1', () => {
       oracle.connect(owner).setFeed(cake.address, mockCakeBNBFeed.address, 1),
     ]);
 
-    const data = defaultAbiCoder.encode(
-      ['address', 'address', 'uint64', 'uint256', 'uint256'],
-      [
-        cake.address,
-        cakeVault.address,
-        ethers.BigNumber.from(12e8),
-        ethers.BigNumber.from('500000000000000000'),
-        ethers.BigNumber.from('100000000000000000'),
-      ]
-    );
-
-    const [cakeMarketAddress] = await Promise.all([
-      governor.predictMarketAddress(masterMarket.address, keccak256(data)),
-      governor
-        .connect(owner)
-        .createDineroMarket(masterMarket.address, cake.address, data),
-    ]);
-
-    cakeMarket = (await ethers.getContractFactory('InterestMarketV1')).attach(
-      cakeMarketAddress
-    );
-
     await Promise.all([
+      dinero.connect(owner).grantRole(MINTER_ROLE, cakeMarket.address),
+      dinero.connect(owner).grantRole(BURNER_ROLE, cakeMarket.address),
       cakeMarket.updateExchangeRate(),
       cakeVault.connect(owner).setMarket(cakeMarket.address),
     ]);
   });
 
   describe('function: initialize', () => {
-    it('reverts if you initialize the master contract', async () => {
-      await expect(
-        masterMarket.initialize(defaultAbiCoder.encode(['string'], ['random']))
-      ).to.revertedWith('MKT: not allowed');
+    it('gives the router full allowance', async () => {
+      expect(
+        await cake.allowance(cakeMarket.address, router.address)
+      ).to.be.equal(ethers.constants.MaxUint256);
     });
-    it('reverts if you try to initialize more than once in the clone contract', async () => {
+    it('reverts if you initialize a deployed the market', async () => {
       await expect(
-        cakeMarket.initialize(defaultAbiCoder.encode(['string'], ['random']))
+        cakeMarket.initialize(
+          router.address,
+          dinero.address,
+          treasury.address,
+          oracle.address,
+          cake.address,
+          cakeVault.address,
+          ethers.BigNumber.from(12e8),
+          ethers.BigNumber.from('500000000000000000'),
+          ethers.BigNumber.from('100000000000000000')
+        )
       ).to.revertedWith('Initializable: contract is already initialized');
     });
     it('reverts if the collateral is the zero address', async () => {
-      const data = defaultAbiCoder.encode(
-        ['address', 'address', 'uint64', 'uint256', 'uint256'],
-        [
+      await expect(
+        deployUUPS('InterestMarketV1', [
+          router.address,
+          dinero.address,
+          treasury.address,
+          oracle.address,
           ethers.constants.AddressZero,
           ethers.constants.AddressZero,
           ethers.BigNumber.from(12e8),
-          ethers.BigNumber.from(5e5),
-          ethers.BigNumber.from(10e4),
-        ]
-      );
-
-      await expect(
-        governor
-          .connect(owner)
-          .createDineroMarket(masterMarket.address, cake.address, data)
+          ethers.BigNumber.from('500000000000000000'),
+          ethers.BigNumber.from('100000000000000000'),
+        ])
       ).to.revertedWith('MKT: no zero address');
     });
     it('reverts if the maxLTVRatio is out of bounds', async () => {
-      const data = defaultAbiCoder.encode(
-        ['address', 'address', 'uint64', 'uint256', 'uint256'],
-        [
+      await expect(
+        deployUUPS('InterestMarketV1', [
+          router.address,
+          dinero.address,
+          treasury.address,
+          oracle.address,
           cake.address,
           ethers.constants.AddressZero,
           ethers.BigNumber.from(12e8),
           ethers.BigNumber.from(4e5),
           ethers.BigNumber.from(10e4),
-        ]
-      );
+        ])
+      ).to.revertedWith('MKT: ltc ratio out of bounds');
 
-      const data2 = defaultAbiCoder.encode(
-        ['address', 'address', 'uint64', 'uint256', 'uint256'],
-        [
+      await expect(
+        deployUUPS('InterestMarketV1', [
+          router.address,
+          dinero.address,
+          treasury.address,
+          oracle.address,
           cake.address,
           ethers.constants.AddressZero,
           ethers.BigNumber.from(12e8),
           ethers.BigNumber.from(91e4),
           ethers.BigNumber.from(10e4),
-        ]
+        ])
+      ).to.revertedWith('MKT: ltc ratio out of bounds');
+    });
+    it('sets initial state correctly', async () => {
+      const [
+        _owner,
+        _router,
+        _feeTo,
+        _oracle,
+        _collateral,
+        _vault,
+        _loan,
+        _maxLTVRatio,
+        _liquidationFee,
+      ] = await Promise.all([
+        cakeMarket.owner(),
+        cakeMarket.ROUTER(),
+        cakeMarket.FEE_TO(),
+        cakeMarket.ORACLE(),
+        cakeMarket.COLLATERAL(),
+        cakeMarket.VAULT(),
+        cakeMarket.loan(),
+        cakeMarket.maxLTVRatio(),
+        cakeMarket.liquidationFee(),
+      ]);
+
+      expect(_owner).to.be.equal(owner.address);
+      expect(_router).to.be.equal(router.address);
+      expect(_feeTo).to.be.equal(treasury.address);
+      expect(_oracle).to.be.equal(oracle.address);
+      expect(_collateral).to.be.equal(cake.address);
+      expect(_vault).to.be.equal(cakeVault.address);
+      expect(_loan.INTEREST_RATE).to.be.equal(ethers.BigNumber.from(12e8));
+      expect(_maxLTVRatio).to.be.equal(
+        ethers.BigNumber.from('500000000000000000')
       );
-
-      await expect(
-        governor
-          .connect(owner)
-          .createDineroMarket(masterMarket.address, cake.address, data)
-      ).to.revertedWith('MKT: ltc ratio out of bounds');
-
-      await expect(
-        governor
-          .connect(owner)
-          .createDineroMarket(masterMarket.address, cake.address, data2)
-      ).to.revertedWith('MKT: ltc ratio out of bounds');
+      expect(_liquidationFee).to.be.equal(
+        ethers.BigNumber.from('100000000000000000')
+      );
     });
   });
   it('allows the router allowance to be maxed out', async () => {
@@ -505,9 +535,13 @@ describe('InterestMarketV1', () => {
       expect(await cake.balanceOf(cakeMarket.address)).to.be.equal(0); // Cake is in the masterChef
     });
     it('accepts collateral without a vault', async () => {
-      const data = defaultAbiCoder.encode(
-        ['address', 'address', 'uint64', 'uint256', 'uint256'],
+      const cakeMarket2: InterestMarketV1 = await deployUUPS(
+        'InterestMarketV1',
         [
+          router.address,
+          dinero.address,
+          treasury.address,
+          oracle.address,
           cake.address,
           ethers.constants.AddressZero,
           ethers.BigNumber.from(12e8),
@@ -515,17 +549,6 @@ describe('InterestMarketV1', () => {
           ethers.BigNumber.from('100000000000000000'),
         ]
       );
-
-      const [cakeMarketAddress] = await Promise.all([
-        governor.predictMarketAddress(masterMarket.address, keccak256(data)),
-        governor
-          .connect(owner)
-          .createDineroMarket(masterMarket.address, cake.address, data),
-      ]);
-
-      const cakeMarket2 = (
-        await ethers.getContractFactory('InterestMarketV1')
-      ).attach(cakeMarketAddress);
 
       await Promise.all([
         cake
@@ -653,9 +676,13 @@ describe('InterestMarketV1', () => {
       const aliceAmount = parseEther('12');
       const bobAmount = parseEther('14');
 
-      const data = defaultAbiCoder.encode(
-        ['address', 'address', 'uint64', 'uint256', 'uint256'],
+      const cakeMarket2: InterestMarketV1 = await deployUUPS(
+        'InterestMarketV1',
         [
+          router.address,
+          dinero.address,
+          treasury.address,
+          oracle.address,
           cake.address,
           ethers.constants.AddressZero,
           ethers.BigNumber.from(12e8),
@@ -663,17 +690,6 @@ describe('InterestMarketV1', () => {
           ethers.BigNumber.from('100000000000000000'),
         ]
       );
-
-      const [cakeMarketAddress] = await Promise.all([
-        governor.predictMarketAddress(masterMarket.address, keccak256(data)),
-        governor
-          .connect(owner)
-          .createDineroMarket(masterMarket.address, cake.address, data),
-      ]);
-
-      const cakeMarket2 = (
-        await ethers.getContractFactory('InterestMarketV1')
-      ).attach(cakeMarketAddress);
 
       await Promise.all([
         cake
@@ -683,6 +699,8 @@ describe('InterestMarketV1', () => {
           .connect(bob)
           .approve(cakeMarket2.address, ethers.constants.MaxUint256),
         cakeMarket2.updateExchangeRate(),
+        dinero.connect(owner).grantRole(MINTER_ROLE, cakeMarket2.address),
+        dinero.connect(owner).grantRole(BURNER_ROLE, cakeMarket2.address),
       ]);
 
       await Promise.all([
@@ -756,7 +774,7 @@ describe('InterestMarketV1', () => {
   describe('function: setMaxLTVRatio', () => {
     it('reverts if it is not called by the owner', async () => {
       await expect(cakeMarket.connect(alice).setMaxLTVRatio(0)).to.revertedWith(
-        'MKT: caller is not the owner'
+        'Ownable: caller is not the owner'
       );
     });
     it('reverts if we set a collateral higher than 9e5', async () => {
@@ -784,7 +802,7 @@ describe('InterestMarketV1', () => {
     it('reverts if it is not called by the owner', async () => {
       await expect(
         cakeMarket.connect(alice).setLiquidationFee(0)
-      ).to.revertedWith('MKT: caller is not the owner');
+      ).to.revertedWith('Ownable: caller is not the owner');
     });
     it('reverts if we set a liquidation fee higher than 15e4', async () => {
       await expect(
@@ -811,7 +829,7 @@ describe('InterestMarketV1', () => {
     it('reverts if it is not called by the owner', async () => {
       await expect(
         cakeMarket.connect(alice).setInterestRate(0)
-      ).to.revertedWith('MKT: caller is not the owner');
+      ).to.revertedWith('Ownable: caller is not the owner');
     });
     it('reverts if we set a liquidation fee higher than 15e4', async () => {
       await expect(
@@ -833,11 +851,6 @@ describe('InterestMarketV1', () => {
         ethers.BigNumber.from(13e8)
       );
     });
-  });
-  it('returns the governor owner', async () => {
-    expect(await cakeMarket.governorOwner()).to.be.equal(
-      await governor.owner()
-    );
   });
   describe('function: borrow', () => {
     it('reverts if the user is insolvent', async () => {
@@ -1038,9 +1051,14 @@ describe('InterestMarketV1', () => {
     });
     it('liquidates accounts on a market without a vault and using the router', async () => {
       // Deploy a market without a vault
-      const data = defaultAbiCoder.encode(
-        ['address', 'address', 'uint64', 'uint256', 'uint256'],
+
+      const cakeMarket2: InterestMarketV1 = await deployUUPS(
+        'InterestMarketV1',
         [
+          router.address,
+          dinero.address,
+          treasury.address,
+          oracle.address,
           cake.address,
           ethers.constants.AddressZero,
           ethers.BigNumber.from(12e8),
@@ -1048,17 +1066,6 @@ describe('InterestMarketV1', () => {
           ethers.BigNumber.from('100000000000000000'),
         ]
       );
-
-      const [cakeMarketAddress] = await Promise.all([
-        governor.predictMarketAddress(masterMarket.address, keccak256(data)),
-        governor
-          .connect(owner)
-          .createDineroMarket(masterMarket.address, cake.address, data),
-      ]);
-
-      const cakeMarket2 = (
-        await ethers.getContractFactory('InterestMarketV1')
-      ).attach(cakeMarketAddress);
 
       // Approve the market to spend the funds of the users
       await Promise.all([
@@ -1069,6 +1076,8 @@ describe('InterestMarketV1', () => {
           .connect(jose)
           .approve(cakeMarket2.address, ethers.constants.MaxUint256),
         cakeMarket2.updateExchangeRate(),
+        dinero.connect(owner).grantRole(MINTER_ROLE, cakeMarket2.address),
+        dinero.connect(owner).grantRole(BURNER_ROLE, cakeMarket2.address),
       ]);
 
       // Add Collateral
@@ -1396,9 +1405,13 @@ describe('InterestMarketV1', () => {
         cakeBnbLPAddress
       );
 
-      const data = defaultAbiCoder.encode(
-        ['address', 'address', 'uint64', 'uint256', 'uint256'],
+      const cakeBnbLPMarket: InterestMarketV1 = await deployUUPS(
+        'InterestMarketV1',
         [
+          router.address,
+          dinero.address,
+          treasury.address,
+          oracle.address,
           cakeBnbLPAddress,
           // Already tested the logic of the vault
           ethers.constants.AddressZero,
@@ -1408,22 +1421,13 @@ describe('InterestMarketV1', () => {
         ]
       );
 
-      const [cakeBnbMarketAddress] = await Promise.all([
-        governor.predictMarketAddress(masterMarket.address, keccak256(data)),
-        governor
-          .connect(owner)
-          .createDineroMarket(masterMarket.address, cakeBnbLPAddress, data),
-      ]);
-
-      const cakeBnbLPMarket = (
-        await ethers.getContractFactory('InterestMarketV1')
-      ).attach(cakeBnbMarketAddress);
-
       await Promise.all([
         cakeBnbLP
           .connect(owner)
           .approve(cakeBnbLPMarket.address, ethers.constants.MaxUint256),
         cakeBnbLPMarket.updateExchangeRate(),
+        dinero.connect(owner).grantRole(MINTER_ROLE, cakeBnbLPMarket.address),
+        dinero.connect(owner).grantRole(BURNER_ROLE, cakeBnbLPMarket.address),
       ]);
 
       await cakeBnbLPMarket
@@ -1471,34 +1475,26 @@ describe('InterestMarketV1', () => {
         cakeBnbLPAddress
       );
 
-      const data = defaultAbiCoder.encode(
-        ['address', 'address', 'uint64', 'uint256', 'uint256'],
-        [
-          cakeBnbLPAddress,
-          // Already tested the logic of the vault
-          ethers.constants.AddressZero,
-          ethers.BigNumber.from(12e8),
-          ethers.BigNumber.from('500000000000000000'),
-          ethers.BigNumber.from('100000000000000000'),
-        ]
-      );
-
-      const [cakeBnbMarketAddress] = await Promise.all([
-        governor.predictMarketAddress(masterMarket.address, keccak256(data)),
-        governor
-          .connect(owner)
-          .createDineroMarket(masterMarket.address, cakeBnbLPAddress, data),
+      const cakeBnbLPMarket = await deployUUPS('InterestMarketV1', [
+        router.address,
+        dinero.address,
+        treasury.address,
+        oracle.address,
+        cakeBnbLPAddress,
+        // Already tested the logic of the vault
+        ethers.constants.AddressZero,
+        ethers.BigNumber.from(12e8),
+        ethers.BigNumber.from('500000000000000000'),
+        ethers.BigNumber.from('100000000000000000'),
       ]);
-
-      const cakeBnbLPMarket = (
-        await ethers.getContractFactory('InterestMarketV1')
-      ).attach(cakeBnbMarketAddress);
 
       await Promise.all([
         cakeBnbLP
           .connect(owner)
           .approve(cakeBnbLPMarket.address, ethers.constants.MaxUint256),
         cakeBnbLPMarket.updateExchangeRate(),
+        dinero.connect(owner).grantRole(MINTER_ROLE, cakeBnbLPMarket.address),
+        dinero.connect(owner).grantRole(BURNER_ROLE, cakeBnbLPMarket.address),
       ]);
 
       await cakeBnbLPMarket
@@ -1597,6 +1593,76 @@ describe('InterestMarketV1', () => {
       // Recipient got paid in Dinero and not in collateral
       expect(cakeBnbLpRecipientBalance2).to.be.equal(0);
       expect(dineroRecipientBalance2.gt(0)).to.be.equal(true);
+    });
+  });
+
+  describe('Upgrade functionality', () => {
+    it('reverts if it not called by the owner', async () => {
+      await cakeMarket.connect(owner).transferOwnership(alice.address);
+
+      await expect(upgrade(cakeMarket, 'TestInterestMarketV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
+
+    it('updates to version 2', async () => {
+      expect(await cakeMarket.totalCollateral()).to.be.equal(0);
+
+      expect(await cakeMarket.userCollateral(alice.address)).to.be.equal(0);
+
+      const amount = parseEther('10');
+
+      await expect(
+        cakeMarket.connect(alice).addCollateral(alice.address, amount)
+      )
+        .to.emit(cakeMarket, 'AddCollateral')
+        .withArgs(alice.address, alice.address, amount)
+        .to.emit(cakeVault, 'Deposit')
+        .withArgs(alice.address, alice.address, amount)
+        .to.emit(cake, 'Transfer')
+        .withArgs(alice.address, cakeVault.address, amount);
+
+      expect(await cakeMarket.totalCollateral()).to.be.equal(amount);
+
+      expect(await cakeMarket.userCollateral(alice.address)).to.be.equal(
+        amount
+      );
+
+      const cakeMarketV2: TestInterestMarketV2 = await upgrade(
+        cakeMarket,
+        'TestInterestMarketV2'
+      );
+
+      await expect(
+        cakeMarketV2.connect(bob).addCollateral(alice.address, amount)
+      )
+        .to.emit(cakeMarketV2, 'AddCollateral')
+        .withArgs(bob.address, alice.address, amount)
+        .to.emit(cakeVault, 'Deposit')
+        .withArgs(bob.address, alice.address, amount)
+        .to.emit(cake, 'Transfer')
+        .withArgs(bob.address, cakeVault.address, amount);
+
+      const [
+        totalCollateral,
+        aliceCollateral,
+        bobCollateral,
+        version,
+        marketCakeBalance,
+      ] = await Promise.all([
+        cakeMarketV2.totalCollateral(),
+        cakeMarketV2.userCollateral(alice.address),
+        cakeMarketV2.userCollateral(bob.address),
+        cakeMarketV2.version(),
+        cake.balanceOf(cakeMarket.address),
+      ]);
+
+      expect(totalCollateral).to.be.equal(amount.add(amount));
+
+      expect(aliceCollateral).to.be.equal(amount.add(amount));
+      expect(bobCollateral).to.be.equal(0);
+      expect(version).to.be.equal('V2');
+      expect(marketCakeBalance).to.be.equal(0); // Cake is in the masterChef
     });
   });
 });

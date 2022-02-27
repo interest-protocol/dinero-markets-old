@@ -2,8 +2,14 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { Dinero } from '../typechain';
-import { deploy } from './lib/test-utils';
+import { Dinero, TestDineroV2 } from '../typechain';
+import {
+  BURNER_ROLE,
+  DEFAULT_ADMIN_ROLE,
+  DEVELOPER_ROLE,
+  MINTER_ROLE,
+} from './lib/constants';
+import { deployUUPS, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
@@ -18,8 +24,25 @@ describe('Dinero', () => {
   beforeEach(async () => {
     [[owner, alice], dinero] = await Promise.all([
       ethers.getSigners(),
-      deploy('Dinero'),
+      deployUUPS('Dinero'),
     ]);
+  });
+
+  describe('function: initialize', () => {
+    it('reverts if you call after deployment', async () => {
+      await expect(dinero.initialize()).to.revertedWith(
+        'Initializable: contract is already initialized'
+      );
+    });
+    it('gives the right roles', async () => {
+      const [hasDeveloperRole, hasDefaultAdminRole] = await Promise.all([
+        dinero.hasRole(DEVELOPER_ROLE, owner.address),
+        dinero.hasRole(DEFAULT_ADMIN_ROLE, owner.address),
+      ]);
+
+      expect(hasDeveloperRole).to.be.equal(true);
+      expect(hasDefaultAdminRole).to.be.equal(true);
+    });
   });
 
   describe('function: mint', () => {
@@ -38,9 +61,7 @@ describe('Dinero', () => {
       expect(await dinero.balanceOf(alice.address)).to.be.equal(0);
 
       // Admin needs to grant the `MINTER_ROLE`
-      await dinero
-        .connect(owner)
-        .grantRole(await dinero.MINTER_ROLE(), owner.address);
+      await dinero.connect(owner).grantRole(MINTER_ROLE, owner.address);
 
       await dinero.connect(owner).mint(alice.address, amount);
 
@@ -60,12 +81,8 @@ describe('Dinero', () => {
     it('creates new tokens', async () => {
       const amount = parseEther('10');
       await Promise.all([
-        dinero
-          .connect(owner)
-          .grantRole(await dinero.BURNER_ROLE(), owner.address),
-        dinero
-          .connect(owner)
-          .grantRole(await dinero.MINTER_ROLE(), owner.address),
+        dinero.connect(owner).grantRole(BURNER_ROLE, owner.address),
+        dinero.connect(owner).grantRole(MINTER_ROLE, owner.address),
       ]);
 
       await dinero.connect(owner).mint(alice.address, amount);
@@ -81,6 +98,49 @@ describe('Dinero', () => {
       expect(await dinero.balanceOf(alice.address)).to.be.equal(
         parseEther('2')
       );
+    });
+  });
+  describe('Upgrade functionality', async () => {
+    it('reverts if a non-developer role tries to upgrade', async () => {
+      await dinero.connect(owner).renounceRole(DEVELOPER_ROLE, owner.address);
+
+      expect(upgrade(dinero, 'TestDineroV2')).to.revertedWith(
+        'AccessControl: account 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 is missing role 0x4504b9dfd7400a1522f49a8b4a100552da9236849581fd59b7363eb48c6a474c'
+      );
+    });
+    it('updates to version 2', async () => {
+      await dinero.connect(owner).grantRole(MINTER_ROLE, owner.address);
+
+      await dinero.connect(owner).mint(alice.address, parseEther('1000'));
+
+      expect(await dinero.balanceOf(alice.address)).to.be.equal(
+        parseEther('1000')
+      );
+
+      const dineroV2: TestDineroV2 = await upgrade(dinero, 'TestDineroV2');
+
+      await dineroV2.connect(owner).initializeV2(1);
+
+      await dineroV2.connect(owner).mint(alice.address, parseEther('250'));
+
+      await expect(
+        dineroV2.connect(alice).mint(alice.address, parseEther('111'))
+      ).to.revertedWith(
+        'AccessControl: account 0x70997970c51812dc3a010c7d01b50e0d17dc79c8 is missing role 0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6'
+      );
+
+      const [aliceBalance, state, version, developerRole] = await Promise.all([
+        dineroV2.balanceOf(alice.address),
+        dineroV2.state(),
+        dineroV2.version(),
+        dineroV2.DEVELOPER_ROLE(),
+      ]);
+
+      // Maintains the same state
+      expect(aliceBalance).to.be.equal(parseEther('1250'));
+      expect(state).to.be.equal(1);
+      expect(version).to.be.equal('V2');
+      expect(developerRole).to.be.equal(DEVELOPER_ROLE);
     });
   });
 });

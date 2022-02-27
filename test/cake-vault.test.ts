@@ -2,8 +2,14 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { CakeToken, CakeVault, MasterChef, SyrupBar } from '../typechain';
-import { advanceBlock, deploy } from './lib/test-utils';
+import {
+  CakeToken,
+  CakeVault,
+  MasterChef,
+  SyrupBar,
+  TestCakeVaultV2,
+} from '../typechain';
+import { advanceBlock, deploy, deployUUPS, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
@@ -11,7 +17,7 @@ const CAKE_PER_BLOCK = parseEther('40');
 
 const START_BLOCK = 1;
 
-describe('CakeVault', () => {
+describe('Master Chef CakeVault', () => {
   let cake: CakeToken;
   let syrup: SyrupBar;
   let masterChef: MasterChef;
@@ -21,7 +27,7 @@ describe('CakeVault', () => {
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
   let developer: SignerWithAddress;
-  // @notice Market does not need to be an address for testing purposes
+  // @notice Market does not need to be a contract for testing purposes
   let market: SignerWithAddress;
   let recipient: SignerWithAddress;
 
@@ -37,7 +43,10 @@ describe('CakeVault', () => {
       START_BLOCK,
     ]);
 
-    cakeVault = await deploy('CakeVault', [masterChef.address, cake.address]);
+    cakeVault = await deployUUPS('CakeVault', [
+      masterChef.address,
+      cake.address,
+    ]);
 
     await Promise.all([
       cake
@@ -55,6 +64,34 @@ describe('CakeVault', () => {
       cake.connect(owner).transferOwnership(masterChef.address),
       cakeVault.connect(owner).setMarket(market.address),
     ]);
+  });
+
+  describe('function: initialize', () => {
+    it('reverts if you initialize after deployment', async () => {
+      await expect(
+        cakeVault.initialize(masterChef.address, cake.address)
+      ).to.revertedWith('Initializable: contract is already initialized');
+    });
+
+    it('gives maximum approval to the master chef', async () => {
+      expect(
+        await cake.allowance(cakeVault.address, masterChef.address)
+      ).to.be.equal(ethers.constants.MaxUint256);
+    });
+
+    it('sets an owner', async () => {
+      expect(await cakeVault.owner()).to.be.equal(owner.address);
+    });
+
+    it('sets the initial state correctly', async () => {
+      const [_cake, _masterChef] = await Promise.all([
+        cakeVault.CAKE(),
+        cakeVault.CAKE_MASTER_CHEF(),
+      ]);
+
+      expect(_cake).to.be.equal(cake.address);
+      expect(_masterChef).to.be.equal(masterChef.address);
+    });
   });
 
   describe('function: setMarket', () => {
@@ -632,6 +669,127 @@ describe('CakeVault', () => {
       expect(bobInfo.amount).to.be.equal(0);
       expect(totalAmount3).to.be.equal(0);
       expect(totalRewardsPerAmount3).to.be.equal(0);
+    });
+  });
+  describe('Upgrade functionality', () => {
+    it('reverts if the non-owner tries to upgrade', async () => {
+      await cakeVault.connect(owner).transferOwnership(alice.address);
+
+      await expect(upgrade(cakeVault, 'TestCakeVaultV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
+
+    it('upgrades to version 2', async () => {
+      expect(await cakeVault.getUserPendingRewards(alice.address)).to.be.equal(
+        0
+      );
+
+      await cakeVault
+        .connect(market)
+        .deposit(alice.address, alice.address, parseEther('10'));
+
+      // accrue some cake
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      // to get Cake rewards
+      await cakeVault.compound();
+
+      cakeVault
+        .connect(market)
+        .deposit(bob.address, bob.address, parseEther('20'));
+
+      // accrue some cake
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      await Promise.all([
+        cakeVault
+          .connect(market)
+          .deposit(alice.address, alice.address, parseEther('20')),
+        cakeVault
+          .connect(market)
+          .deposit(bob.address, bob.address, parseEther('15')),
+      ]);
+
+      // to get Cake rewards
+      await cakeVault.compound();
+
+      // accrue some cake
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      // Upgrade function takes time to process
+      const cakeVaultV2: TestCakeVaultV2 = await upgrade(
+        cakeVault,
+        'TestCakeVaultV2'
+      );
+
+      const [
+        totalAmount,
+        totalRewardsPerAmount,
+        pendingRewards,
+        aliceInfo,
+        bobInfo,
+      ] = await Promise.all([
+        cakeVaultV2.totalAmount(),
+        cakeVaultV2.totalRewardsPerAmount(),
+        cakeVaultV2.getPendingRewards(),
+        cakeVaultV2.userInfo(alice.address),
+        cakeVaultV2.userInfo(bob.address),
+      ]);
+
+      const rewardsPerAmount = totalRewardsPerAmount.add(
+        pendingRewards.mul(parseEther('1')).div(totalAmount)
+      );
+
+      const aliceRewards = aliceInfo.rewards.add(
+        rewardsPerAmount
+          .mul(parseEther('30'))
+          .div(parseEther('1'))
+          .sub(aliceInfo.rewardDebt)
+      );
+
+      const bobRewards = bobInfo.rewards.add(
+        rewardsPerAmount
+          .mul(parseEther('35'))
+          .div(parseEther('1'))
+          .sub(bobInfo.rewardDebt)
+      );
+
+      const [
+        alicePendingRewards,
+        bobPendingRewards,
+        ownerPendingRewards,
+        version,
+      ] = await Promise.all([
+        cakeVaultV2.getUserPendingRewards(alice.address),
+        cakeVaultV2.getUserPendingRewards(bob.address),
+        cakeVaultV2.getUserPendingRewards(owner.address),
+        cakeVaultV2.version(),
+      ]);
+
+      expect(alicePendingRewards).to.be.equal(aliceRewards);
+
+      expect(bobPendingRewards).to.be.equal(bobRewards);
+
+      expect(ownerPendingRewards).to.be.equal(0);
+
+      expect(version).to.be.equal('V2');
+
+      // @notice pending rewards need to account for current pending cake in the pool + the auto compounded cake
+      expect(aliceRewards.add(bobRewards)).to.be.equal(
+        totalRewardsPerAmount
+          .add(pendingRewards.mul(parseEther('1')).div(totalAmount))
+          .mul(parseEther('65'))
+          .div(parseEther('1'))
+          .sub(aliceInfo.rewardDebt)
+          .sub(bobInfo.rewardDebt)
+          .add(aliceInfo.rewards)
+          .add(bobInfo.rewards)
+      );
     });
   });
 });

@@ -12,8 +12,10 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20VotesUpgradeable.sol";
 
 /**
  * @dev This is the governance token of the Interest Protocol. It will be given by the Casa de Papel to attract liquidity to desired pairs.
@@ -26,13 +28,34 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @notice We use the contract version 4.5.0-rc.0, which the allowance does not go down on {transferFrom} if the allowance is the max uint256.
  * This is critical for composability with the {StakedInterestToken}.
  */
-contract InterestToken is Ownable, ERC20Votes {
-    constructor()
-        ERC20("Interest Token", "Int")
-        ERC20Permit("Interest Token")
-    // solhint-disable-next-line no-empty-blocks
-    {
+contract InterestToken is
+    Initializable,
+    AccessControlUpgradeable,
+    ERC20VotesUpgradeable,
+    UUPSUpgradeable
+{
+    /*///////////////////////////////////////////////////////////////
+                                ROLES
+    //////////////////////////////////////////////////////////////*/
 
+    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant DEVELOPER_ROLE = keccak256("DEVELOPER_ROLE");
+
+    /*///////////////////////////////////////////////////////////////
+                            INITIALIZER
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * Requirements:
+     *
+     * - Can only be called at once and should be called during creation to prevent front running.
+     */
+    function initialize() external initializer {
+        __ERC20_init("Interest Token", "Int");
+        __ERC20Permit_init("Interest Token");
+
+        _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());
+        _grantRole(DEVELOPER_ROLE, _msgSender());
     }
 
     /**
@@ -45,7 +68,10 @@ contract InterestToken is Ownable, ERC20Votes {
      *
      * - We cannot allow an arbitrary address to mint tokens.
      */
-    function mint(address account, uint256 amount) external onlyOwner {
+    function mint(address account, uint256 amount)
+        external
+        onlyRole(MINTER_ROLE)
+    {
         _mint(account, amount);
     }
 
@@ -80,5 +106,17 @@ contract InterestToken is Ownable, ERC20Votes {
             _approve(account, _msgSender(), currentAllowance - amount);
         }
         _burn(account, amount);
+    }
+
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must have the {DEVELOPER_ROLE}.
+     */
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyRole(DEVELOPER_ROLE)
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 }

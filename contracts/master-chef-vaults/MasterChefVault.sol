@@ -12,8 +12,7 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 
 import "../interfaces/IMasterChef.sol";
 import "../interfaces/IMasterChefVault.sol";
@@ -30,7 +29,7 @@ import "../lib/IntMath.sol";
  * @notice It is meant to work with the {CAKE_MASTER_CHEF} deployed at 0x73feaa1eE314F8c655E354234017bE2193C9E24E.
  * @notice It is meant to be used only with tokens supported by tge {CAKE_MASTER_CHEF}.
  */
-abstract contract MasterChefVault is IMasterChefVault, Ownable {
+abstract contract MasterChefVault {
     /*///////////////////////////////////////////////////////////////
                                 LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -62,10 +61,10 @@ abstract contract MasterChefVault is IMasterChefVault, Ownable {
     //////////////////////////////////////////////////////////////*/
 
     //solhint-disable-next-line var-name-mixedcase
-    IMasterChef public immutable CAKE_MASTER_CHEF; // The cake masterchef. He is an honest Cooker!
+    IMasterChef public CAKE_MASTER_CHEF; // The cake masterchef. He is an honest Cooker!
 
     // solhint-disable-next-line var-name-mixedcase
-    IERC20 public immutable CAKE; // The famous Cake token!!
+    IERC20Upgradeable public CAKE; // The famous Cake token!!
 
     // solhint-disable-next-line var-name-mixedcase
     address public MARKET; // The market contract that deposits/withdraws from this contract.
@@ -80,18 +79,11 @@ abstract contract MasterChefVault is IMasterChefVault, Ownable {
 
     uint256 public totalRewardsPerAmount;
 
-    /*///////////////////////////////////////////////////////////////
-                                CONSTRUCTOR
-    //////////////////////////////////////////////////////////////*/
-
     /**
-     * @param cakeMasterChef The address of the Pancake Swap master chef.
-     * @param cake The address of the Pancake Swap cake token.
+     * @dev This empty reserved space is put in place to allow future versions to add new
+     * variables without shifting down storage in the inheritance chain.
      */
-    constructor(IMasterChef cakeMasterChef, IERC20 cake) {
-        CAKE_MASTER_CHEF = cakeMasterChef;
-        CAKE = cake;
-    }
+    uint256[50] private __gap;
 
     /*///////////////////////////////////////////////////////////////
                                 MODIFIER
@@ -101,7 +93,7 @@ abstract contract MasterChefVault is IMasterChefVault, Ownable {
      * @notice Only the {MARKET} should be able to deposit and withdraw from this contract.
      */
     modifier onlyMarket() {
-        require(_msgSender() == MARKET, "Vault: only market");
+        require(msg.sender == MARKET, "Vault: only market");
         _;
     }
 
@@ -114,9 +106,7 @@ abstract contract MasterChefVault is IMasterChefVault, Ownable {
      *
      * @notice The implementation of this function is supposed to be implemented by the child contract.
      */
-    function getPendingRewards() public view virtual returns (uint256) {
-        return 0;
-    }
+    function getPendingRewards() public view virtual returns (uint256);
 
     /**
      * @dev It checks how many pending {CAKE] an `account` is entitled to by calculating
@@ -200,8 +190,8 @@ abstract contract MasterChefVault is IMasterChefVault, Ownable {
     function _deposit(
         address,
         address,
-        uint256 //solhint-disable-next-line no-empty-blocks
-    ) internal virtual {}
+        uint256
+    ) internal virtual;
 
     /**
      * @dev The logic for this function is to be implemented by the child contract.
@@ -211,8 +201,13 @@ abstract contract MasterChefVault is IMasterChefVault, Ownable {
     function _withdraw(
         address,
         address,
-        uint256 //solhint-disable-next-line no-empty-blocks
-    ) internal virtual {}
+        uint256
+    ) internal virtual;
+
+    /**
+     * @dev We need to protect {setMarket} by calling this function first. This should be overriden with the onlyOwner modifier.
+     */
+    function _authorizeSetMarket() internal virtual;
 
     /*///////////////////////////////////////////////////////////////
                             ONLY MARKET FUNCTIONS
@@ -294,7 +289,8 @@ abstract contract MasterChefVault is IMasterChefVault, Ownable {
      * - ` market` cannot be the zero address. This combined with the previous requirement makes sure that it is only callable once.
      *
      */
-    function setMarket(address market) external onlyOwner {
+    function setMarket(address market) external {
+        _authorizeSetMarket();
         require(market != address(0), "Vault: no zero address");
         require(address(0) == MARKET, "Vault: already set");
         MARKET = market;

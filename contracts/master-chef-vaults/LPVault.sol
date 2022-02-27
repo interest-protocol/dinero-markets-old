@@ -12,8 +12,11 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 import "../lib/IntMath.sol";
 
@@ -29,12 +32,17 @@ import "./MasterChefVault.sol";
  * @notice This contract inherits the {Vault} contract and overrides the {_withdraw} and {_deposit} functions.
  * @notice We use the Open Zeppelin {SafeERC20} to interact with the {CAKE} token and the {PancakePair} tokens, which follow the {IERC20} interface.
  */
-contract LPVault is MasterChefVault {
+contract LPVault is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    MasterChefVault
+{
     /*///////////////////////////////////////////////////////////////
                                  LIBRARIES
     //////////////////////////////////////////////////////////////*/
 
-    using SafeERC20 for IERC20;
+    using SafeERC20Upgradeable for IERC20Upgradeable;
     using IntMath for uint256;
 
     /*///////////////////////////////////////////////////////////////
@@ -42,13 +50,13 @@ contract LPVault is MasterChefVault {
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line
-    IERC20 public immutable STAKING_TOKEN; // The current {PancakePair} token being farmed.
+    IERC20Upgradeable public STAKING_TOKEN; // The current {PancakePair} token being farmed.
 
     // solhint-disable-next-line var-name-mixedcase
-    uint256 public immutable POOL_ID; // The current master chef farm being used.
+    uint256 public POOL_ID; // The current master chef farm being used.
 
     /*///////////////////////////////////////////////////////////////
-                                CONSTRUCTOR
+                                INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
     /**
@@ -58,14 +66,22 @@ contract LPVault is MasterChefVault {
      * @param cake The address of the {CAKE} token.
      * @param stakingToken The address of the {PancakePair} token.
      * @param poolId The id of the {PancakePair} token in the {CAKE_MASTER_CHEF}.
+     *
+     * Requirements:
+     *
+     * - Can only be called at once and should be called during creation to prevent front running.
      */
-    constructor(
+    function initialize(
         IMasterChef cakeMasterChef,
-        IERC20 cake,
-        IERC20 stakingToken,
+        IERC20Upgradeable cake,
+        IERC20Upgradeable stakingToken,
         uint256 poolId
-    ) MasterChefVault(cakeMasterChef, cake) {
+    ) external initializer {
+        __Ownable_init();
+
         require(poolId != 0, "LPVault: this is a LP vault");
+        CAKE_MASTER_CHEF = cakeMasterChef;
+        CAKE = cake;
         STAKING_TOKEN = stakingToken;
         POOL_ID = poolId;
         stakingToken.safeApprove(address(cakeMasterChef), type(uint256).max);
@@ -353,5 +369,33 @@ contract LPVault is MasterChefVault {
         STAKING_TOKEN.safeTransfer(to, amount);
 
         emit Withdraw(from, to, amount);
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                          OWNER ONLY FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev A hook to guard the setter function for the market.
+     */
+    function _authorizeSetMarket()
+        internal
+        override
+        onlyOwner
+    //solhint-disable-next-line no-empty-blocks
+    {
+
+    }
+
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must be the owner.
+     */
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyOwner
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 }

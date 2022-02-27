@@ -9,9 +9,16 @@ import {
   PancakeFactory,
   PancakeOracle,
   PancakeRouter,
+  TestPancakeOracleV2,
   WETH9,
 } from '../typechain';
-import { advanceBlockAndTime, deploy, multiDeploy } from './lib/test-utils';
+import {
+  advanceBlockAndTime,
+  deploy,
+  deployUUPS,
+  multiDeploy,
+  upgrade,
+} from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
@@ -49,14 +56,21 @@ describe('PancakeOracle', () => {
     ]);
 
     factory = await deploy('PancakeFactory', [feeTo.address]);
-    [oracle, liquidityRouter, router] = await multiDeploy(
-      ['PancakeOracle', 'LiquidityRouter', 'PancakeRouter'],
-      [
-        [factory.address, WINDOW, GRANULARITY, libraryWrapper.address],
-        [factory.address, weth.address],
-        [factory.address, weth.address],
-      ]
-    );
+    [oracle, [liquidityRouter, router]] = await Promise.all([
+      deployUUPS('PancakeOracle', [
+        factory.address,
+        WINDOW,
+        GRANULARITY,
+        libraryWrapper.address,
+      ]),
+      multiDeploy(
+        ['LiquidityRouter', 'PancakeRouter'],
+        [
+          [factory.address, weth.address],
+          [factory.address, weth.address],
+        ]
+      ),
+    ]);
 
     await Promise.all([
       btc.connect(owner).approve(router.address, ethers.constants.MaxUint256),
@@ -84,6 +98,53 @@ describe('PancakeOracle', () => {
     btcUSDCPair = await factory.allPairs(0);
 
     await libraryWrapper.setPair(btcUSDCPair);
+  });
+
+  describe('function: initialize', () => {
+    it('reverts if you call after deployment', async () => {
+      expect(
+        oracle.initialize(
+          factory.address,
+          WINDOW,
+          GRANULARITY,
+          libraryWrapper.address
+        )
+      ).to.revertedWith('Initializable: contract is already initialized');
+    });
+    it('reverts if you granularity or period size is incorrect', async () => {
+      await expect(
+        deployUUPS('PancakeOracle', [
+          factory.address,
+          WINDOW,
+          0,
+          libraryWrapper.address,
+        ])
+      ).to.revertedWith('PO: granularity > 1');
+    });
+    it('sets the initial state correctly', async () => {
+      const [
+        _owner,
+        _factory,
+        _windowSize,
+        _granularity,
+        _libraryWrapper,
+        _periodSize,
+      ] = await Promise.all([
+        oracle.owner(),
+        oracle.FACTORY(),
+        oracle.WINDOW_SIZE(),
+        oracle.GRANULARITY(),
+        oracle.LIBRARY_WRAPPER(),
+        oracle.PERIOD_SIZE(),
+      ]);
+
+      expect(_owner).to.be.equal(owner.address);
+      expect(_factory).to.be.equal(factory.address);
+      expect(_windowSize).to.be.equal(WINDOW);
+      expect(_granularity).to.be.equal(GRANULARITY);
+      expect(_libraryWrapper).to.be.equal(libraryWrapper.address);
+      expect(_periodSize).to.be.equal(PERIOD_SIZE);
+    });
   });
 
   it('calculates an index between 0 to 3 for any timestamp', async () => {
@@ -340,6 +401,52 @@ describe('PancakeOracle', () => {
           .mul(parseEther(isBTC ? '1000' : '1'))
           .shr(112)
       );
+    });
+  });
+
+  describe('Upgrade functionality', () => {
+    it('reverts if a non-owner account calls it', async () => {
+      await oracle.connect(owner).renounceOwnership();
+
+      await expect(upgrade(oracle, 'TestPancakeOracleV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
+
+    it('upgrades to version 2', async () => {
+      await oracle.update(btc.address, usdc.address);
+
+      await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
+
+      await oracle.update(btc.address, usdc.address);
+
+      await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
+
+      await oracle.update(btc.address, usdc.address);
+
+      await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
+
+      await oracle.update(btc.address, usdc.address);
+
+      await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
+
+      const oracleV2: TestPancakeOracleV2 = await upgrade(
+        oracle,
+        'TestPancakeOracleV2'
+      );
+
+      const [btcUSDCPrice, usdcBTCPrice, version] = await Promise.all([
+        oracleV2.consult(btc.address, parseEther('1'), usdc.address),
+        oracleV2.consult(usdc.address, parseEther('50000'), btc.address),
+        oracleV2.version(),
+      ]);
+
+      expect(btcUSDCPrice).to.be.equal(parseEther('50000'));
+      // Taken after the fact
+      expect(usdcBTCPrice).to.be.equal(
+        ethers.BigNumber.from('999999999999999999')
+      );
+      expect(version).to.be.equal('V2');
     });
   });
 });

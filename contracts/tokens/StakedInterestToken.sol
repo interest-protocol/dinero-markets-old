@@ -20,8 +20,10 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.10;
 
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20VotesUpgradeable.sol";
 
 /**
  * @dev This is ta receipt token that represents Interest Token farming in the Casa de Papel. Since, Casa de Papel allows for another contract to withdraw tokens in behalf of another user. This token price will essentially be pegged to the Interest Token price.
@@ -32,13 +34,35 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @notice The supply is always equal to the amount of {StakedInterestToken}.
  * @notice The ownership will be given to the Casa de Papel without any pre-minting.
  */
-contract StakedInterestToken is Ownable, ERC20Votes {
-    constructor()
-        ERC20("Staked Interest Token", "sInt")
-        ERC20Permit("Staked Interest Token")
-    // solhint-disable-next-line no-empty-blocks
-    {
+contract StakedInterestToken is
+    Initializable,
+    AccessControlUpgradeable,
+    ERC20VotesUpgradeable,
+    UUPSUpgradeable
+{
+    /*///////////////////////////////////////////////////////////////
+                                ROLES
+    //////////////////////////////////////////////////////////////*/
 
+    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
+    bytes32 public constant DEVELOPER_ROLE = keccak256("DEVELOPER_ROLE");
+
+    /*///////////////////////////////////////////////////////////////
+                            INITIALIZER
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * Requirements:
+     *
+     * - Can only be called at once and should be called during creation to prevent front running.
+     */
+    function initialize() external initializer {
+        __ERC20_init("Staked Interest Token", "sInt");
+        __ERC20Permit_init("Staked Interest Token");
+
+        _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());
+        _grantRole(DEVELOPER_ROLE, _msgSender());
     }
 
     /**
@@ -51,7 +75,10 @@ contract StakedInterestToken is Ownable, ERC20Votes {
      *
      * - We cannot allow an arbitrary address to mint tokens.
      */
-    function mint(address account, uint256 amount) external onlyOwner {
+    function mint(address account, uint256 amount)
+        external
+        onlyRole(MINTER_ROLE)
+    {
         _mint(account, amount);
     }
 
@@ -67,7 +94,22 @@ contract StakedInterestToken is Ownable, ERC20Votes {
      *
      * - The caller must be the {owner}.
      */
-    function burn(address account, uint256 amount) external onlyOwner {
+    function burn(address account, uint256 amount)
+        external
+        onlyRole(BURNER_ROLE)
+    {
         _burn(account, amount);
+    }
+
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must have the {DEVELOPER_ROLE}.
+     */
+    function _authorizeUpgrade(address)
+        internal
+        override
+        onlyRole(DEVELOPER_ROLE)
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 }

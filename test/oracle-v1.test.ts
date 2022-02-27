@@ -9,8 +9,9 @@ import {
   MockSimplePair,
   MockTWAP,
   OracleV1,
+  TestOracleV2,
 } from '../typechain';
-import { deploy, multiDeploy } from './lib/test-utils';
+import { deploy, deployUUPS, multiDeploy, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
@@ -85,19 +86,14 @@ describe('OracleV1', () => {
       ethers.getSigners(),
     ]);
 
-    [[mockCakeBnbPair, oracleV1]] = await Promise.all([
-      multiDeploy(
-        ['MockSimplePair', 'OracleV1'],
-        [
-          [mockCake.address, mockWbnb.address, 'Cake-LP'],
-          [
-            mockTWAP.address,
-            mockBnbUsdDFeed.address,
-            mockWbnb.address,
-            mockBUSD.address,
-          ],
-        ]
-      ),
+    [mockCakeBnbPair, oracleV1] = await Promise.all([
+      deploy('MockSimplePair', [mockCake.address, mockWbnb.address, 'Cake-LP']),
+      deployUUPS('OracleV1', [
+        mockTWAP.address,
+        mockBnbUsdDFeed.address,
+        mockWbnb.address,
+        mockBUSD.address,
+      ]),
       // 1 BNB === ~528.18 USD
       mockBnbUsdDFeed.setAnswer(BNB_USD_PRICE),
       // 1 CAKE === ~12.67 USD
@@ -127,6 +123,34 @@ describe('OracleV1', () => {
         ethers.BigNumber.from('11954349886632348017853972')
       ),
     ]);
+  });
+
+  describe('function: initialize', () => {
+    it('reverts if you call initialize after deployment', async () => {
+      await expect(
+        oracleV1.initialize(
+          mockTWAP.address,
+          mockBnbUsdDFeed.address,
+          mockWbnb.address,
+          mockBUSD.address
+        )
+      ).to.revertedWith('Initializable: contract is already initialized');
+    });
+    it('sets the initial state correctly', async () => {
+      const [_owner, _twap, _bnbUSD, _wbnb, _busd] = await Promise.all([
+        oracleV1.owner(),
+        oracleV1.TWAP(),
+        oracleV1.BNB_USD(),
+        oracleV1.WBNB(),
+        oracleV1.BUSD(),
+      ]);
+
+      expect(_owner).to.be.equal(owner.address);
+      expect(_twap).to.be.equal(mockTWAP.address);
+      expect(_bnbUSD).to.be.equal(mockBnbUsdDFeed.address);
+      expect(_wbnb).to.be.equal(mockWbnb.address);
+      expect(_busd).to.be.equal(mockBUSD.address);
+    });
   });
 
   describe('function: getUSDPrice', () => {
@@ -219,7 +243,7 @@ describe('OracleV1', () => {
     });
 
     it('calls the TWAP as a back up and properly returns the price of BNB in USD', async () => {
-      const oracle: OracleV1 = await deploy('OracleV1', [
+      const oracle: OracleV1 = await deployUUPS('OracleV1', [
         mockTWAP.address,
         mockErrorFeed.address,
         mockWbnb.address,
@@ -273,4 +297,29 @@ describe('OracleV1', () => {
       );
     });
   });
-});
+
+  describe('Upgrade functionality', () => {
+    it('reverts if it is called by a non-owner account', async () => {
+      await oracleV1.connect(owner).transferOwnership(alice.address);
+
+      await expect(upgrade(oracleV1, 'TestOracleV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
+
+    it('upgrades to version 2', async () => {
+      const oracleV2: TestOracleV2 = await upgrade(oracleV1, 'TestOracleV2');
+
+      const [version, price] = await Promise.all([
+        oracleV2.version(),
+        oracleV2.getBNBUSDPrice(parseEther('2')),
+      ]);
+
+      expect(version).to.be.equal('V2');
+      // 18 decimals
+      expect(price).to.be.equal(BNB_USD_PRICE.mul(2).mul(1e10));
+    });
+  });
+})
+  // Increase the time out for the entire tests
+  .timeout(5000);

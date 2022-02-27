@@ -7,13 +7,17 @@ import {
   InterestToken,
   MockERC20,
   StakedInterestToken,
+  TestCasaDePapelV2,
 } from '../typechain';
+import { BURNER_ROLE, MINTER_ROLE } from './lib/constants';
 import {
   advanceBlock,
   calculateUserPendingRewards,
-  deploy,
+  deployUUPS,
   makeCalculateAccruedInt,
   multiDeploy,
+  multiDeployUUPS,
+  upgrade,
 } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
@@ -42,28 +46,37 @@ describe('Case de Papel', () => {
   beforeEach(async () => {
     [
       [owner, developer, alice, bob, jose],
-      [lpToken, sInterestToken, interestToken, lpToken2],
+      [lpToken, lpToken2],
+      [sInterestToken, interestToken],
     ] = await Promise.all([
       ethers.getSigners(),
       multiDeploy(
-        ['MockERC20', 'StakedInterestToken', 'InterestToken', 'MockERC20'],
+        ['MockERC20', 'MockERC20'],
         [
           ['CAKE-LP', 'LP', parseEther('1000')],
-          [],
-          [],
           ['CAKE-LP-2', 'LP-2', parseEther('1000')],
         ]
       ),
+      multiDeployUUPS(['StakedInterestToken', 'InterestToken'], [[], []]),
     ]);
 
+    await interestToken.grantRole(MINTER_ROLE, owner.address);
+
     [casaDePapel] = await Promise.all([
-      deploy('CasaDePapel', [
+      deployUUPS('CasaDePapel', [
         interestToken.address,
         sInterestToken.address,
         developer.address,
         INTEREST_TOKEN_PER_BLOCK,
         START_BLOCK,
       ]),
+      interestToken.connect(owner).grantRole(MINTER_ROLE, owner.address),
+    ]);
+
+    await Promise.all([
+      interestToken.connect(owner).grantRole(MINTER_ROLE, casaDePapel.address),
+      sInterestToken.connect(owner).grantRole(MINTER_ROLE, casaDePapel.address),
+      sInterestToken.connect(owner).grantRole(BURNER_ROLE, casaDePapel.address),
       // Give enough tokens to deposit
       lpToken.mint(alice.address, parseEther('500')),
       lpToken.mint(bob.address, parseEther('500')),
@@ -71,9 +84,6 @@ describe('Case de Papel', () => {
       lpToken2.mint(bob.address, parseEther('500')),
       interestToken.connect(owner).mint(alice.address, parseEther('500')),
       interestToken.connect(owner).mint(bob.address, parseEther('500')),
-    ]);
-
-    await Promise.all([
       // Approve to work with casa de papel
       interestToken
         .connect(alice)
@@ -88,8 +98,6 @@ describe('Case de Papel', () => {
         .approve(casaDePapel.address, constants.MaxUint256),
       lpToken2.connect(bob).approve(casaDePapel.address, constants.MaxUint256),
       // Casa de papel can mint/burn
-      interestToken.connect(owner).transferOwnership(casaDePapel.address),
-      sInterestToken.connect(owner).transferOwnership(casaDePapel.address),
     ]);
   });
 
@@ -101,6 +109,58 @@ describe('Case de Papel', () => {
 
     await casaDePapel.connect(owner).addPool(1500, lpToken2.address, false);
     expect(await casaDePapel.getPoolsLength()).to.be.equal(3);
+  });
+
+  describe('function: initialize', () => {
+    it('reverts if you call after deployment', async () => {
+      await expect(
+        casaDePapel.initialize(
+          interestToken.address,
+          sInterestToken.address,
+          developer.address,
+          INTEREST_TOKEN_PER_BLOCK,
+          START_BLOCK
+        )
+      ).to.revertedWith('Initializable: contract is already initialized');
+    });
+
+    it('properly updates the state', async () => {
+      const [
+        totalAllocationPoints,
+        interesTokenPool,
+        hasPool,
+        _owner,
+        _interestToken,
+        _sInterestToken,
+        _developmentAccount,
+        _interestPerBlock,
+        _startBlock,
+      ] = await Promise.all([
+        casaDePapel.totalAllocationPoints(),
+        casaDePapel.pools(0),
+        casaDePapel.hasPool(interestToken.address),
+        casaDePapel.owner(),
+        casaDePapel.INTEREST_TOKEN(),
+        casaDePapel.STAKED_INTEREST_TOKEN(),
+        casaDePapel.devAccount(),
+        casaDePapel.interestTokenPerBlock(),
+        casaDePapel.startBlock(),
+      ]);
+
+      expect(totalAllocationPoints).to.be.equal(1000);
+      expect(interesTokenPool.stakingToken).to.be.equal(interestToken.address);
+      expect(interesTokenPool.allocationPoints).to.be.equal(1000);
+      expect(interesTokenPool.lastRewardBlock).to.be.equal(START_BLOCK);
+      expect(interesTokenPool.accruedIntPerShare).to.be.equal(0);
+      expect(interesTokenPool.totalSupply).to.be.equal(0);
+      expect(hasPool).to.be.equal(true);
+      expect(_owner).to.be.equal(owner.address);
+      expect(_interestPerBlock).to.be.equal(INTEREST_TOKEN_PER_BLOCK);
+      expect(_interestToken).to.be.equal(interestToken.address);
+      expect(_sInterestToken).to.be.equal(sInterestToken.address);
+      expect(_developmentAccount).to.be.equal(developer.address);
+      expect(_startBlock).to.be.equal(START_BLOCK);
+    });
   });
 
   describe('function: setDevAccount', () => {
@@ -255,7 +315,7 @@ describe('Case de Papel', () => {
     });
     it('sets the start block as the last reward block if the pool is added before the start block', async () => {
       // Need to redeploy casa de papel with longer start_block
-      const contract: CasaDePapel = await deploy('CasaDePapel', [
+      const contract: CasaDePapel = await deployUUPS('CasaDePapel', [
         interestToken.address,
         sInterestToken.address,
         developer.address,
@@ -639,10 +699,10 @@ describe('Case de Papel', () => {
   });
   describe('function: stake', () => {
     it('allows the user to only get the rewards by staking 0', async () => {
-      await [
+      await Promise.all([
         casaDePapel.connect(bob).stake(parseEther('20')),
         casaDePapel.connect(alice).stake(parseEther('5')),
-      ];
+      ]);
 
       const [pool, user, balance] = await Promise.all([
         casaDePapel.pools(0),
@@ -1030,5 +1090,35 @@ describe('Case de Papel', () => {
         pool2.totalSupply
       )
     );
+  });
+
+  describe('Upgrade functionality', () => {
+    it('reverts if a non owner tries to upgrade', async () => {
+      await casaDePapel.connect(owner).transferOwnership(alice.address);
+
+      await expect(upgrade(casaDePapel, 'TestCasaDePapelV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
+
+    it('upgrades to version 2', async () => {
+      await casaDePapel.connect(alice).stake(parseEther('5'));
+
+      const casaDePapelV2: TestCasaDePapelV2 = await upgrade(
+        casaDePapel,
+        'TestCasaDePapelV2'
+      );
+
+      const [pool, user, version] = await Promise.all([
+        casaDePapelV2.pools(0),
+        casaDePapelV2.userInfo(0, alice.address),
+        casaDePapelV2.version(),
+      ]);
+
+      expect(pool.totalSupply).to.be.equal(parseEther('5'));
+      expect(user.amount).to.be.equal(parseEther('5'));
+      expect(user.rewardsPaid).to.be.equal(0);
+      expect(version).to.be.equal('V2');
+    });
   });
 });

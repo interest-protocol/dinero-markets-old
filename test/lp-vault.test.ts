@@ -8,8 +8,15 @@ import {
   MasterChef,
   MockERC20,
   SyrupBar,
+  TestLPVaultV2,
 } from '../typechain';
-import { advanceBlock, deploy, multiDeploy } from './lib/test-utils';
+import {
+  advanceBlock,
+  deploy,
+  deployUUPS,
+  multiDeploy,
+  upgrade,
+} from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
@@ -55,7 +62,7 @@ describe('Master Chef LPVault', () => {
       ]
     );
 
-    lpVault = await deploy('LPVault', [
+    lpVault = await deployUUPS('LPVault', [
       masterChef.address,
       cake.address,
       lpToken.address,
@@ -85,8 +92,50 @@ describe('Master Chef LPVault', () => {
     ]);
   });
 
+  describe('function: initialize', () => {
+    it('reverts if you initialize after deployment', async () => {
+      await expect(
+        lpVault.initialize(masterChef.address, cake.address, lpToken.address, 1)
+      ).to.revertedWith('Initializable: contract is already initialized');
+    });
+
+    it('gives maximum approval to the master chef', async () => {
+      expect(
+        await cake.allowance(lpVault.address, masterChef.address)
+      ).to.be.equal(ethers.constants.MaxUint256);
+      expect(
+        await lpToken.allowance(lpVault.address, masterChef.address)
+      ).to.be.equal(ethers.constants.MaxUint256);
+    });
+
+    it('reverts if the pool id is 0', async () => {
+      expect(
+        deployUUPS('LPVault', [
+          masterChef.address,
+          cake.address,
+          lpToken.address,
+          0,
+        ])
+      ).to.revertedWith('LPVault: this is a LP vault');
+    });
+
+    it('sets the initial state correctly', async () => {
+      const [_masterChef, _cake, _stakingToken, _poolId] = await Promise.all([
+        lpVault.CAKE_MASTER_CHEF(),
+        lpVault.CAKE(),
+        lpVault.STAKING_TOKEN(),
+        lpVault.POOL_ID(),
+      ]);
+
+      expect(_masterChef).to.be.equal(masterChef.address);
+      expect(_cake).to.be.equal(cake.address);
+      expect(_stakingToken).to.be.equal(lpToken.address);
+      expect(_poolId).to.be.equal(1);
+    });
+  });
+
   describe('function: setMarket', () => {
-    it('reverts if it is not called byt he owner', async () => {
+    it('reverts if it is not called by the owner', async () => {
       await expect(
         lpVault.connect(alice).setMarket(bob.address)
       ).to.revertedWith('Ownable: caller is not the owner');
@@ -692,4 +741,120 @@ describe('Master Chef LPVault', () => {
       expect(totalRewardsPerAmount3).to.be.equal(0);
     });
   });
-});
+
+  describe('Upgrade functionality', () => {
+    it('reverts if a non-owner tries to update', async () => {
+      await lpVault.connect(owner).transferOwnership(alice.address);
+
+      await expect(upgrade(lpVault, 'TestLPVaultV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
+    });
+
+    it('upgrades to version 2', async () => {
+      expect(await lpVault.getUserPendingRewards(alice.address)).to.be.equal(0);
+
+      await lpVault
+        .connect(market)
+        .deposit(alice.address, alice.address, parseEther('10'));
+
+      // accrue some cake
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      // to get Cake rewards
+      await lpVault.compound();
+
+      lpVault
+        .connect(market)
+        .deposit(bob.address, bob.address, parseEther('20'));
+
+      // accrue some cake
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      await Promise.all([
+        lpVault
+          .connect(market)
+          .deposit(alice.address, alice.address, parseEther('20')),
+        lpVault
+          .connect(market)
+          .deposit(bob.address, bob.address, parseEther('15')),
+      ]);
+
+      // to get Cake rewards
+      await lpVault.compound();
+
+      // accrue some cake
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      const lpVaultV2: TestLPVaultV2 = await upgrade(lpVault, 'TestLPVaultV2');
+
+      const [
+        totalAmount,
+        totalRewardsPerAmount,
+        pendingRewards,
+        aliceInfo,
+        bobInfo,
+      ] = await Promise.all([
+        lpVaultV2.totalAmount(),
+        lpVaultV2.totalRewardsPerAmount(),
+        lpVaultV2.getPendingRewards(),
+        lpVaultV2.userInfo(alice.address),
+        lpVaultV2.userInfo(bob.address),
+      ]);
+
+      const rewardsPerAmount = totalRewardsPerAmount.add(
+        pendingRewards.mul(parseEther('1')).div(totalAmount)
+      );
+
+      const aliceRewards = aliceInfo.rewards.add(
+        rewardsPerAmount
+          .mul(parseEther('30'))
+          .div(parseEther('1'))
+          .sub(aliceInfo.rewardDebt)
+      );
+
+      const bobRewards = bobInfo.rewards.add(
+        rewardsPerAmount
+          .mul(parseEther('35'))
+          .div(parseEther('1'))
+          .sub(bobInfo.rewardDebt)
+      );
+
+      const [
+        alicePendingRewards,
+        bobPendingRewards,
+        ownerPendingRewards,
+        version,
+      ] = await Promise.all([
+        lpVaultV2.getUserPendingRewards(alice.address),
+        lpVaultV2.getUserPendingRewards(bob.address),
+        lpVaultV2.getUserPendingRewards(owner.address),
+        lpVaultV2.version(),
+      ]);
+
+      expect(alicePendingRewards).to.be.equal(aliceRewards);
+
+      expect(bobPendingRewards).to.be.equal(bobRewards);
+
+      expect(ownerPendingRewards).to.be.equal(0);
+
+      // @notice pending rewards need to account for current pending cake in the pool + the auto compounded cake
+      expect(aliceRewards.add(bobRewards)).to.be.equal(
+        totalRewardsPerAmount
+          .add(pendingRewards.mul(parseEther('1')).div(totalAmount))
+          .mul(parseEther('65'))
+          .div(parseEther('1'))
+          .sub(aliceInfo.rewardDebt)
+          .sub(bobInfo.rewardDebt)
+          .add(aliceInfo.rewards)
+          .add(bobInfo.rewards)
+      );
+
+      expect(version).to.be.equal('V2');
+    });
+  });
+}).timeout(5000);
