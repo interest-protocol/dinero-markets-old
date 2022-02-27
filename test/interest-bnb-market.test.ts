@@ -12,12 +12,15 @@ import {
   MockTWAP,
   OracleV1,
   PancakeFactory,
+  ReentrantInterestBNBMarketLiquidate,
+  ReentrantInterestBNBMarketWithdrawCollateral,
   TestInterestBNBMarketV2,
   WETH9,
 } from '../typechain';
 import { BURNER_ROLE, MINTER_ROLE } from './lib/constants';
 import {
   advanceTime,
+  deploy,
   deployUUPS,
   multiDeploy,
   upgrade,
@@ -399,6 +402,24 @@ describe('InterestBNBMarketV1', () => {
         await interestBNBMarket.userCollateral(alice.address)
       );
     });
+    it('reverts if the caller tries to reenter', async () => {
+      const attackContract: ReentrantInterestBNBMarketWithdrawCollateral =
+        await deploy('ReentrantInterestBNBMarketWithdrawCollateral', [
+          interestBNBMarket.address,
+        ]);
+
+      await interestBNBMarket
+        .connect(alice)
+        .addCollateral(attackContract.address, { value: parseEther('2') });
+
+      await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('51000000000'));
+
+      await expect(
+        attackContract
+          .connect(alice)
+          .withdrawCollateral(attackContract.address, parseEther('1.5'))
+      ).to.revertedWith('ReentrancyGuard: reentrant call');
+    });
   });
   describe('function: borrow', () => {
     it('reverts if you borrow to the zero address', async () => {
@@ -630,6 +651,56 @@ describe('InterestBNBMarketV1', () => {
     });
   });
   describe('function: liquidate', () => {
+    it('reverts if you try to reenter', async () => {
+      await Promise.all([
+        interestBNBMarket
+          .connect(alice)
+          .addCollateral(alice.address, { value: parseEther('2') }),
+        interestBNBMarket
+          .connect(bob)
+          .addCollateral(bob.address, { value: parseEther('1') }),
+        interestBNBMarket
+          .connect(jose)
+          .addCollateral(jose.address, { value: parseEther('10') }),
+      ]);
+
+      await Promise.all([
+        interestBNBMarket
+          .connect(alice)
+          .borrow(alice.address, parseEther('499')),
+        interestBNBMarket.connect(bob).borrow(bob.address, parseEther('200')),
+        interestBNBMarket
+          .connect(jose)
+          .borrow(jose.address, parseEther('1000')),
+      ]);
+
+      const attackContract: ReentrantInterestBNBMarketLiquidate = await deploy(
+        'ReentrantInterestBNBMarketLiquidate',
+        [interestBNBMarket.address]
+      );
+
+      // Drop BNB to 250. Alice and Bob can now be liquidated
+      await Promise.all([
+        dinero
+          .connect(owner)
+          .mint(attackContract.address, parseEther('7000000')),
+        mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('25000000000')),
+      ]);
+
+      // Pass time to accrue fees
+      await advanceTime(63_113_904, ethers); // advance 2 years
+
+      await expect(
+        attackContract
+          .connect(owner)
+          .liquidate(
+            [alice.address, bob.address, jose.address],
+            [parseEther('400'), parseEther('200'), parseEther('1000')],
+            attackContract.address,
+            []
+          )
+      ).to.revertedWith('ReentrancyGuard: reentrant call');
+    });
     it('reverts if last item on path is not dinero', async () => {
       await expect(
         interestBNBMarket
@@ -1048,4 +1119,4 @@ describe('InterestBNBMarketV1', () => {
       );
     });
   });
-});
+}).timeout(5000);

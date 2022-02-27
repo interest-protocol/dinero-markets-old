@@ -595,8 +595,13 @@ contract InterestBNBMarketV1 is
         require(address(this).balance >= amount, "MKT: insufficient balance");
 
         //solhint-disable-next-line avoid-low-level-calls
-        (bool success, ) = to.call{value: amount}("");
-        require(success, "MKT: unable to remove collateral");
+        (bool success, bytes memory returnData) = to.call{value: amount}("");
+        require(
+            success,
+            returnData.length == 0
+                ? "MKT: unable to remove collateral"
+                : string(returnData)
+        );
     }
 
     /**

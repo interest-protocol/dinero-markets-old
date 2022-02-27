@@ -2,9 +2,19 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { MockERC20, MockNFT, NFTMarket, TestNFTMarketV2 } from '../typechain';
+import {
+  MockERC20,
+  MockNFT,
+  NFTMarket,
+  ReentrantNFTMarketBorrowerStartLoan,
+  ReentrantNFTMarketLenderStartLoan,
+  ReentrantNFTMarketRepay,
+  ReentrantNFTMarketWithdrawBNB,
+  TestNFTMarketV2,
+} from '../typechain';
 import {
   advanceBlockAndTime,
+  deploy,
   deployUUPS,
   multiDeploy,
   upgrade,
@@ -373,6 +383,34 @@ describe('NFTMarket', () => {
   });
 
   describe('function: lenderStartLoan', () => {
+    it('reverts if you try to reenter', async () => {
+      const attackContract: ReentrantNFTMarketLenderStartLoan = await deploy(
+        'ReentrantNFTMarketLenderStartLoan',
+        [nftMarket.address]
+      );
+
+      await nft
+        .connect(alice)
+        .transferFrom(alice.address, attackContract.address, 1);
+
+      await attackContract
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          ethers.constants.AddressZero,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await expect(
+        nftMarket
+          .connect(bob)
+          .lenderStartLoan(nft.address, 1, { value: TEN_BTC })
+      ).to.revertedWith('ReentrancyGuard: reentrant call');
+    });
+
     it('reverts if the loan has already started', async () => {
       await nftMarket
         .connect(alice)
@@ -712,6 +750,51 @@ describe('NFTMarket', () => {
         nftMarket.connect(alice).borrowerStartLoan(nft.address, 1, bob.address)
       ).to.revertedWith('NFTM: proposal not found');
     });
+
+    it('reverts if you the borrower tries to reenter', async () => {
+      // ReentrantNFTMarketBorrowerStartLoan
+
+      const attackContract: ReentrantNFTMarketBorrowerStartLoan = await deploy(
+        'ReentrantNFTMarketBorrowerStartLoan',
+        [nftMarket.address]
+      );
+
+      await nft
+        .connect(alice)
+        .transferFrom(alice.address, attackContract.address, 1);
+
+      await attackContract
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          btc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await nftMarket
+        .connect(bob)
+        .counterOffer(
+          nft.address,
+          ethers.constants.AddressZero,
+          1,
+          TEN_BTC.mul(2),
+          INTEREST_RATE.add(1),
+          ONE_DAY.mul(30),
+          {
+            value: TEN_BTC.mul(2),
+          }
+        );
+
+      await expect(
+        attackContract
+          .connect(alice)
+          .borrowerStartLoan(nft.address, 1, bob.address)
+      ).to.revertedWith('ReentrancyGuard: reentrant call');
+    });
+
     it('allows a borrower to start an ERC20 loan from a proposal', async () => {
       await nftMarket
         .connect(alice)
@@ -953,6 +1036,41 @@ describe('NFTMarket', () => {
       await expect(
         nftMarket.connect(bob).withdrawBNB(nft.address, 2, bob.address)
       ).to.revertedWith('NFTM: no permission');
+    });
+    it('reverts if the caller tries to reenter', async () => {
+      const attackContract: ReentrantNFTMarketWithdrawBNB = await deploy(
+        'ReentrantNFTMarketWithdrawBNB',
+        [nftMarket.address]
+      );
+
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await attackContract
+        .connect(bob)
+        .counterOffer(
+          nft.address,
+          ethers.constants.AddressZero,
+          1,
+          TEN_BTC.mul(2),
+          INTEREST_RATE.add(1),
+          ONE_DAY.mul(30),
+          { value: TEN_BTC.mul(2) }
+        );
+
+      await expect(
+        attackContract
+          .connect(bob)
+          .withdrawBNB(nft.address, 1, attackContract.address)
+      ).to.revertedWith('ReentrancyGuard: reentrant call');
     });
     it('allows you to withdraw ETH if the proposal was not accepted', async () => {
       await nftMarket
@@ -1461,6 +1579,49 @@ describe('NFTMarket', () => {
         nftMarket.connect(alice).repay(nft.address, 99)
       ).to.revertedWith('NFTM: no loan');
     });
+
+    it('reverts if the caller tries to reenter', async () => {
+      const attackContract: ReentrantNFTMarketRepay = await deploy(
+        'ReentrantNFTMarketRepay',
+        [nftMarket.address]
+      );
+
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          ethers.constants.AddressZero,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await attackContract
+        .connect(bob)
+        .lenderStartLoan(nft.address, 1, { value: TEN_BTC });
+
+      // Send a bit mroe because of time delays
+      const fee = ONE_DAY.mul(16).mul(INTEREST_RATE).div(parseEther('1'));
+
+      // 0.02e18
+      const protocolFee = fee
+        .mul(
+          ethers.BigNumber.from(200).mul(
+            ethers.BigNumber.from('100000000000000')
+          )
+        )
+        .div(parseEther('1'));
+
+      await advanceBlockAndTime(ONE_DAY.mul(16).toNumber(), ethers);
+
+      await expect(
+        nftMarket
+          .connect(bob)
+          .repay(nft.address, 1, { value: fee.add(protocolFee).add(TEN_BTC) })
+      ).to.revertedWith('ReentrancyGuard: reentrant call');
+    });
+
     it('allows a loan to be repaid in ERC20', async () => {
       await nftMarket
         .connect(alice)
