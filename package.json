@@ -1,10 +1,14 @@
 {
-  "name": "v1-core",
+  "name": "@interest-protocol/v1-core",
   "version": "1.0.0",
   "description": "Interest Protocol contracts",
   "author": "DeFi, Lda <jose@interestprotocol.com>",
   "main": "index.js",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/interest-protocol/v1-core.git"
+  },
   "keywords": [
     "DeFi",
     "solidity",
