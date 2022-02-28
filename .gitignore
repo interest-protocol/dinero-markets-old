@@ -13,3 +13,9 @@ artifacts
 # Open Zeppelin
 .openzeppelin
 .openzeppelin/**.json
+
+# npm
+.npmrc
+
+# Yarn
+yarn-error.log

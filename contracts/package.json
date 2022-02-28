@@ -1,0 +1,26 @@
+{
+  "name": "@interest-protocol/contracts",
+  "description": "Core contracts for Interest Protocol",
+  "version": "1.0.0-alpha",
+   "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "**/*.sol",
+    "!/mocks/**/*"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/interest-protocol/v1-core.git"
+  },
+  "keywords": [
+    "solidity",
+    "ethereum",
+    "smart",
+    "contracts",
+    "DeFi"
+  ],
+  "author": "DeFi, Lda <jose@interestprotocol.com>",
+  "license": "MIT",
+  "homepage": "https://interestprotocol.com"
+}

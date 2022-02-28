@@ -1,10 +1,11 @@
 {
-  "name": "@interest-protocol/v1-core",
+  "name": "interest-protocol",
   "version": "1.0.0",
   "description": "Interest Protocol contracts",
   "author": "DeFi, Lda <jose@interestprotocol.com>",
   "main": "index.js",
   "license": "MIT",
+  "homepage": "https://interestprotocol.com",
   "repository": {
     "type": "git",
     "url": "https://github.com/interest-protocol/v1-core.git"
@@ -31,7 +32,8 @@
     "test": "npx hardhat test",
     "compile": "npx hardhat compile",
     "coverage:hh": "env COVERAGE=true hardhat coverage --testfiles './test/**.ts'",
-    "coverage": "node --max-old-space-size=8192 `which npm` run coverage:hh"
+    "coverage": "node --max-old-space-size=8192 `which npm` run coverage:hh",
+    "publish": "yarn publish contracts"
   },
   "devDependencies": {
     "@commitlint/cli": "^15.0.0",
