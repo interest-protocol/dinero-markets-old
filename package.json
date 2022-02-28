@@ -28,8 +28,8 @@
     "type-check": "tsc --pretty --noEmit",
     "pre-commit": "yarn lint && yarn type-check && yarn solhint",
     "solhint": "solhint contracts/**/*.sol",
-    "test": "hardhat test",
-    "compile": "hardhat compile",
+    "test": "npx hardhat test",
+    "compile": "npx hardhat compile",
     "coverage:hh": "env COVERAGE=true hardhat coverage --testfiles './test/**.ts'",
     "coverage": "node --max-old-space-size=8192 `which npm` run coverage:hh"
   },
