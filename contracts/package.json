@@ -1,7 +1,7 @@
 {
   "name": "@interest-protocol/contracts",
   "description": "Core contracts for Interest Protocol",
-  "version": "1.0.0-alpha",
+  "version": "1.0.1-alpha",
    "publishConfig": {
     "access": "public"
   },
