@@ -33,7 +33,7 @@
     "compile": "npx hardhat compile",
     "coverage:hh": "env COVERAGE=true hardhat coverage --testfiles './test/**.ts'",
     "coverage": "node --max-old-space-size=8192 `which npm` run coverage:hh",
-    "publish": "yarn publish contracts"
+    "publish": "yarn publish contracts --access public"
   },
   "devDependencies": {
     "@commitlint/cli": "^15.0.0",

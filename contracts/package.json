@@ -1,8 +1,8 @@
 {
   "name": "@interest-protocol/contracts",
   "description": "Core contracts for Interest Protocol",
-  "version": "1.0.1-alpha",
-   "publishConfig": {
+  "version": "1.0.3-alpha",
+  "publishConfig": {
     "access": "public"
   },
   "files": [
@@ -22,5 +22,9 @@
   ],
   "author": "DeFi, Lda <jose@interestprotocol.com>",
   "license": "MIT",
-  "homepage": "https://interestprotocol.com"
+  "homepage": "https://interestprotocol.com",
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.5.0",
+    "@openzeppelin/contracts-upgradeable": "^4.5.1"
+  }
 }
