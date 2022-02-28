@@ -14,6 +14,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           # Defaults to the user or organization that owns the workflow file
           scope: '@josemvcerqueira'
+      - run: yarn install
       - run: yarn compile
       - run: yarn publish
         env:
