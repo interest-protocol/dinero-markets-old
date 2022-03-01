@@ -1,6 +1,6 @@
 # :seedling: Welcome to Interest Protocol! :seedling:
 
-Interest Protocol is a decentralised protocol designed to provide money markets to all asset classes including NFTs, interest-bearing tokens and liquidity-provider tokens with high security.
+Interest Protocol is a decentralized protocol designed to provide money markets to all asset classes including NFTs, interest-bearing tokens, and liquidity-provider tokens with high security.
 
 ## :money_with_wings: Features :money_with_wings:
 
@@ -10,7 +10,7 @@ Interest Protocol is a decentralised protocol designed to provide money markets 
 
 ## :fire: Technology :fire:
 
-The core technologies used are:
+Core technologies:
 
  - [Typescript](https://www.typescriptlang.org/)
  - [Hardhat](https://hardhat.org/)
@@ -40,7 +40,7 @@ Interest Protocol integrates with popular DeFi protocols to maximize the returns
 
 - [PancakeSwap](https://pancakeswap.finance/)
 - [Chainlink](https://chain.link/)
-
+- [Venus](https://venus.io/)
 
 
 ## BSC Test Net V1 Contracts
@@ -63,9 +63,9 @@ Interest Protocol integrates with popular DeFi protocols to maximize the returns
 
 ## :thought_balloon: Philosophy :thought_balloon:
 
-We do not follow the famous Facebook mantra of “Move fast and break things". Interest Protocol contracts will **never** go live before tests, audits, a test net MVP and when possible combed by a formal verification tool.
+We do not follow the famous Facebook mantra of “Move fast and break things". Interest Protocol contracts will **never** go live before tests, audits, a test net MVP, and when possible combed by a formal verification tool.
 
-We chose upgradeable contracts so assure security post deployment and tweak settings based on community proposals. Our contracts will never go from V1.0.0 to V2.0.0 through an upgrade. A whole new contract will be deployed.
+We chose upgradeable contracts to assure security post-deployment and tweak settings based on community proposals. Our contracts will never go from V1.0.0 to V2.0.0 through an upgrade. A whole new contract will be deployed. Upgrades that involve any code upgrade will go through the normal security process.
 
 ## Resources
 
@@ -83,3 +83,4 @@ Learn more about the UUPS pattern here:
 - [Medium](https://medium.com/@interestprotocol)
 - [Reddit](https://www.reddit.com/user/InterestProtocol)
 - [Telegram](https://t.me/interestprotocol)
+- [Discord](https://discord.gg/9rkxJDv7)
