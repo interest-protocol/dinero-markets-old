@@ -1,8 +1,25 @@
 {
-  "name": "v1-core",
+  "name": "interest-protocol",
   "version": "1.0.0",
+  "description": "Interest Protocol contracts",
+  "author": "DeFi, Lda <jose@interestprotocol.com>",
   "main": "index.js",
   "license": "MIT",
+  "homepage": "https://interestprotocol.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/interest-protocol/v1-core.git"
+  },
+  "keywords": [
+    "DeFi",
+    "solidity",
+    "contracts",
+    "ethereum"
+  ],
+  "files": [
+    "/contracts/**/*.sol",
+    "!/contracts/mock/**/*"
+  ],
   "publishConfig": {
     "access": "public"
   },
@@ -12,7 +29,11 @@
     "type-check": "tsc --pretty --noEmit",
     "pre-commit": "yarn lint && yarn type-check && yarn solhint",
     "solhint": "solhint contracts/**/*.sol",
-    "test": "npx hardhat test"
+    "test": "npx hardhat test",
+    "compile": "npx hardhat compile",
+    "coverage:hh": "env COVERAGE=true hardhat coverage --testfiles './test/**.ts'",
+    "coverage": "node --max-old-space-size=8192 `which npm` run coverage:hh",
+    "publish": "yarn publish contracts --access public"
   },
   "devDependencies": {
     "@commitlint/cli": "^15.0.0",

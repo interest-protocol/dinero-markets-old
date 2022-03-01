@@ -156,4 +156,4 @@ describe('Staked Interest Token', () => {
       expect(aliceBalance).to.be.equal(parseEther('100'));
     });
   });
-});
+}).timeout(5000);
