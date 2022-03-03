@@ -37,6 +37,7 @@ contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /*///////////////////////////////////////////////////////////////
                             STRUCTS
     //////////////////////////////////////////////////////////////*/
+
     struct Observation {
         uint256 timestamp;
         uint256 price0Cumulative;

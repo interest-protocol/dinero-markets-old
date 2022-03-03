@@ -31,9 +31,11 @@
     "solhint": "solhint contracts/**/*.sol",
     "test": "npx hardhat test",
     "compile": "npx hardhat compile",
-    "coverage:hh": "env COVERAGE=true hardhat coverage --testfiles './test/**.ts'",
-    "coverage": "node --max-old-space-size=8192 `which npm` run coverage:hh",
-    "publish": "yarn publish contracts --access public"
+    "coverage": "npx hardhat coverage --testfiles './test/**.ts'",
+    "publish": "yarn publish contracts --access public",
+    "postinstall": "husky install",
+    "prepack": "pinst --disable",
+    "postpack": "pinst --enable"
   },
   "devDependencies": {
     "@commitlint/cli": "^15.0.0",
@@ -64,6 +66,7 @@
     "hardhat": "^2.8.0",
     "hardhat-gas-reporter": "^1.0.4",
     "husky": "^7.0.0",
+    "pinst": "^3.0.0",
     "prettier": "^2.3.2",
     "prettier-plugin-solidity": "^1.0.0-beta.13",
     "solhint": "^3.3.6",
@@ -75,9 +78,10 @@
   "dependencies": {
     "@openzeppelin/contracts": "^4.5.0",
     "@openzeppelin/contracts-upgradeable": "^4.5.1",
-    "@openzeppelin/hardhat-upgrades": "^1.14.0"
+    "@openzeppelin/hardhat-upgrades": "^1.15.0"
   },
   "engines": {
     "node": ">=14.15.1"
-  }
+  },
+  "packageManager": "yarn@3.2.0"
 }

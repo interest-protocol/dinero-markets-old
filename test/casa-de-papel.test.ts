@@ -1,6 +1,6 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
-import { ethers } from 'hardhat';
+import { ethers, network } from 'hardhat';
 
 import {
   CasaDePapel,
@@ -182,6 +182,18 @@ describe('Case de Papel', () => {
       await expect(
         casaDePapel.connect(alice).setAllocationPoints(1, 500, false)
       ).to.revertedWith('Ownable: caller is not the owner');
+    });
+    it("does not update the pool allocation if the points don't change", async () => {
+      await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
+      await expect(
+        casaDePapel.connect(owner).setAllocationPoints(1, 3000, false)
+      )
+        .to.emit(casaDePapel, 'UpdatePoolAllocationPoint')
+        .withArgs(1, 3000);
+
+      await expect(
+        casaDePapel.connect(owner).setAllocationPoints(1, 3000, false)
+      ).to.not.emit(casaDePapel, 'UpdatePoolAllocationPoint');
     });
     it('updates a pool allocation points without updating all pools', async () => {
       await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
@@ -588,6 +600,22 @@ describe('Case de Papel', () => {
         ).add(parseEther('494'))
       );
     });
+    it('does not mint rewards if the interest token block production is set to 0', async () => {
+      const aliceIntBalance = await interestToken.balanceOf(alice.address);
+      await casaDePapel.connect(owner).setIntPerBlock(0, true);
+      await casaDePapel.connect(alice).stake(parseEther('10'));
+      // Spend some blocks to accrue rewards
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      await casaDePapel
+        .connect(alice)
+        .unstake(alice.address, alice.address, parseEther('10'));
+
+      expect(await interestToken.balanceOf(alice.address)).to.be.equal(
+        aliceIntBalance
+      );
+    });
   });
 
   describe('function: emergencyWithdraw', () => {
@@ -884,6 +912,24 @@ describe('Case de Papel', () => {
       // Withdraw is on the pool token
       expect(lpBalance1).to.be.equal(lpBalance.add(parseEther('3')));
     });
+    it('does not give pending rewards if interest block production is set to 0', async () => {
+      const [aliceIntBalance] = await Promise.all([
+        interestToken.balanceOf(alice.address),
+        casaDePapel.connect(owner).addPool(1500, lpToken.address, false),
+        casaDePapel.connect(owner).setIntPerBlock(0, false),
+      ]);
+      await casaDePapel.connect(alice).deposit(1, parseEther('7'));
+
+      // Accrue rewards
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      await casaDePapel.connect(alice).withdraw(1, parseEther('3'));
+
+      expect(await interestToken.balanceOf(alice.address)).to.be.equal(
+        aliceIntBalance
+      );
+    });
   });
   describe('function: deposit', () => {
     it('reverts if the user tries to deposit to the pool 0', async () => {
@@ -1063,33 +1109,63 @@ describe('Case de Papel', () => {
       )
     );
   });
-  it('updates one pool', async () => {
-    const pool = await casaDePapel.pools(0);
 
-    expect(pool.lastRewardBlock).to.be.equal(START_BLOCK);
-    expect(pool.accruedIntPerShare).to.be.equal(0);
+  describe('function: updatePool', async () => {
+    it('does not update a pool if it has already been updated in the same block', async () => {
+      await network.provider.send('evm_setAutomine', [false]);
+      await network.provider.send('evm_setIntervalMining', [5000]);
 
-    await casaDePapel.connect(alice).stake(parseEther('50'));
+      await casaDePapel.connect(alice).stake(parseEther('50'));
 
-    const pool1 = await casaDePapel.pools(0);
-    expect(pool1.lastRewardBlock.gt(pool.lastRewardBlock)).to.be.equal(true);
-    // No deposits yet
-    expect(pool1.accruedIntPerShare).to.be.equal(0);
+      // Stake function updates the pool already and each block is getting mined every 5 seconds
+      await expect(casaDePapel.updatePool(0)).to.not.emit(
+        casaDePapel,
+        'UpdatePool'
+      );
+      await network.provider.send('evm_setAutomine', [true]);
+    });
+    it('does not mint tokens to the account if there are no rewards', async () => {
+      await casaDePapel.connect(owner).setIntPerBlock(0, false);
 
-    await casaDePapel.updatePool(0);
+      const pool = await casaDePapel.pools(0);
 
-    const pool2 = await casaDePapel.pools(0);
+      await expect(casaDePapel.updatePool(0)).to.not.emit(
+        interestToken,
+        'Transfer'
+      );
 
-    expect(pool2.lastRewardBlock.gt(pool.lastRewardBlock)).to.be.equal(true);
-    expect(pool2.accruedIntPerShare).to.be.equal(
-      calculateAccruedInt(
-        pool1.accruedIntPerShare,
-        pool2.lastRewardBlock.sub(pool1.lastRewardBlock),
-        BigNumber.from(1000),
-        BigNumber.from(1000),
-        pool2.totalSupply
-      )
-    );
+      const pool2 = await casaDePapel.pools(0);
+
+      expect(pool2.lastRewardBlock.gt(pool.lastRewardBlock)).to.be.equal(true);
+    });
+    it('updates one pool', async () => {
+      const pool = await casaDePapel.pools(0);
+
+      expect(pool.lastRewardBlock).to.be.equal(START_BLOCK);
+      expect(pool.accruedIntPerShare).to.be.equal(0);
+
+      await casaDePapel.connect(alice).stake(parseEther('50'));
+
+      const pool1 = await casaDePapel.pools(0);
+      expect(pool1.lastRewardBlock.gt(pool.lastRewardBlock)).to.be.equal(true);
+      // No deposits yet
+      expect(pool1.accruedIntPerShare).to.be.equal(0);
+
+      await casaDePapel.updatePool(0);
+
+      const pool2 = await casaDePapel.pools(0);
+
+      expect(pool2.lastRewardBlock.gt(pool.lastRewardBlock)).to.be.equal(true);
+      expect(pool2.accruedIntPerShare).to.be.equal(
+        calculateAccruedInt(
+          pool1.accruedIntPerShare,
+          pool2.lastRewardBlock.sub(pool1.lastRewardBlock),
+          BigNumber.from(1000),
+          BigNumber.from(1000),
+          pool2.totalSupply
+        )
+      );
+    });
   });
 
   describe('Upgrade functionality', () => {

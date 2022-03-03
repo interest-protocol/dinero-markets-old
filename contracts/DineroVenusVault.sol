@@ -797,10 +797,7 @@ contract DineroVenusVault is
         uint256 totalFreeVTokens = totalFreeVTokenOf[vToken];
 
         // It should never happen, but since we will use it as a denominator, we need to consider it.
-        if (totalFreeVTokens == 0) {
-            _mintVToken(vToken);
-            return;
-        }
+        assert(totalFreeVTokens != 0);
 
         uint256 minted = _mintVToken(vToken);
 

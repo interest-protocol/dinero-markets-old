@@ -2,7 +2,7 @@
 pragma solidity 0.8.10;
 
 import "../interfaces/IVenusController.sol";
-import "./MockERC20.sol";
+import "./ERC20/MockERC20.sol";
 
 //solhint-disable
 

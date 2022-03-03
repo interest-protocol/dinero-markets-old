@@ -10,6 +10,7 @@ import {
   ReentrantNFTMarketLenderStartLoan,
   ReentrantNFTMarketRepay,
   ReentrantNFTMarketWithdrawBNB,
+  TestNFTMarket,
   TestNFTMarketV2,
 } from '../typechain';
 import {
@@ -60,6 +61,8 @@ describe('NFTMarket', () => {
       nft.connect(alice).setApprovalForAll(nftMarket.address, true),
       btc.mint(bob.address, parseEther('10000')),
       usdc.mint(bob.address, parseEther('10000')),
+      btc.mint(owner.address, parseEther('10000')),
+      usdc.mint(owner.address, parseEther('10000')),
       btc.connect(bob).approve(nftMarket.address, ethers.constants.MaxUint256),
       usdc.connect(bob).approve(nftMarket.address, ethers.constants.MaxUint256),
       btc.mint(alice.address, parseEther('10000')),
@@ -69,6 +72,12 @@ describe('NFTMarket', () => {
         .approve(nftMarket.address, ethers.constants.MaxUint256),
       usdc
         .connect(alice)
+        .approve(nftMarket.address, ethers.constants.MaxUint256),
+      btc
+        .connect(owner)
+        .approve(nftMarket.address, ethers.constants.MaxUint256),
+      usdc
+        .connect(owner)
         .approve(nftMarket.address, ethers.constants.MaxUint256),
     ]);
   });
@@ -379,6 +388,87 @@ describe('NFTMarket', () => {
 
       expect(loanId).to.be.equal(1);
       expect(proposer).to.be.equal(bob.address);
+    });
+    it('reverts if the user does not send enough ETH to cover the principal', async () => {
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          btc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await expect(
+        nftMarket
+          .connect(bob)
+          .counterOffer(
+            nft.address,
+            ethers.constants.AddressZero,
+            1,
+            TEN_BTC.mul(4),
+            INTEREST_RATE.add(1),
+            ONE_DAY.mul(30),
+            { value: TEN_BTC.mul(2) }
+          )
+      ).to.revertedWith('NFTM: not enough BNB');
+    });
+    it('reverts if the user did not give enough allowance ot does not have enough ERC20 balance', async () => {
+      await Promise.all([
+        nftMarket
+          .connect(alice)
+          .proposeLoan(
+            nft.address,
+            btc.address,
+            1,
+            TEN_BTC,
+            INTEREST_RATE,
+            ONE_DAY.mul(15)
+          ),
+        usdc
+          .connect(bob)
+          .decreaseAllowance(
+            nftMarket.address,
+            await usdc.allowance(bob.address, nftMarket.address)
+          ),
+      ]);
+
+      await expect(
+        nftMarket
+          .connect(bob)
+          .counterOffer(
+            nft.address,
+            usdc.address,
+            1,
+            TEN_BTC.mul(2),
+            INTEREST_RATE.add(1),
+            ONE_DAY.mul(30)
+          )
+      ).to.revertedWith('NFTM: need approval');
+
+      await usdc
+        .connect(bob)
+        .increaseAllowance(nftMarket.address, TEN_BTC.mul(10));
+
+      // Throw away all tokens
+      await usdc
+        .connect(bob)
+        .transfer(feeTo.address, await usdc.balanceOf(bob.address));
+
+      await expect(
+        nftMarket
+          .connect(bob)
+          .counterOffer(
+            nft.address,
+            usdc.address,
+            1,
+            TEN_BTC.mul(2),
+            INTEREST_RATE.add(1),
+            ONE_DAY.mul(30)
+          )
+      ).to.revertedWith('NFTM: need approval');
     });
   });
 
@@ -1072,6 +1162,41 @@ describe('NFTMarket', () => {
           .withdrawBNB(nft.address, 1, attackContract.address)
       ).to.revertedWith('ReentrancyGuard: reentrant call');
     });
+    it('reverts if the contract does not have enough BNB', async () => {
+      const testNFTMarket: TestNFTMarket = await deployUUPS('TestNFTMarket', [
+        feeTo.address,
+      ]);
+
+      await nft.connect(alice).setApprovalForAll(testNFTMarket.address, true);
+
+      await testNFTMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          usdc.address,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+      await testNFTMarket
+        .connect(bob)
+        .counterOffer(
+          nft.address,
+          ethers.constants.AddressZero,
+          1,
+          TEN_BTC.mul(2),
+          INTEREST_RATE.add(1),
+          ONE_DAY.mul(30),
+          { value: TEN_BTC.mul(2) }
+        );
+
+      await testNFTMarket.connect(owner).stealBNB();
+
+      await expect(
+        testNFTMarket.connect(bob).withdrawBNB(nft.address, 1, bob.address)
+      ).to.revertedWith('NFTM: not enough BNB');
+    });
     it('allows you to withdraw ETH if the proposal was not accepted', async () => {
       await nftMarket
         .connect(alice)
@@ -1484,7 +1609,9 @@ describe('NFTMarket', () => {
 
     await nftMarket.connect(alice).repay(nft.address, 1);
 
-    const fee = ONE_DAY.mul(15).mul(INTEREST_RATE).div(parseEther('1'));
+    const fee = ONE_DAY.mul(15)
+      .mul(INTEREST_RATE.mul(TEN_BTC))
+      .div(parseEther('1'));
 
     // 0.02e18
     const protocolFee = fee
@@ -1520,6 +1647,7 @@ describe('NFTMarket', () => {
     await advanceBlockAndTime(ONE_DAY.mul(90).toNumber(), ethers);
 
     const fee2 = INTEREST_RATE.mul(1000)
+      .mul(TEN_BTC.mul(100))
       .mul(ONE_DAY.mul(90).add(60 * 3)) // 3 minutes to estimate the amount needed
       .div(parseEther('1'));
 
@@ -1601,8 +1729,10 @@ describe('NFTMarket', () => {
         .connect(bob)
         .lenderStartLoan(nft.address, 1, { value: TEN_BTC });
 
-      // Send a bit mroe because of time delays
-      const fee = ONE_DAY.mul(16).mul(INTEREST_RATE).div(parseEther('1'));
+      // Send a bit more because of time delays
+      const fee = ONE_DAY.mul(20)
+        .mul(INTEREST_RATE.mul(TEN_BTC))
+        .div(parseEther('1'));
 
       // 0.02e18
       const protocolFee = fee
@@ -1671,7 +1801,9 @@ describe('NFTMarket', () => {
           nft.ownerOf(1),
         ]);
 
-      const fee = ONE_DAY.mul(15).mul(INTEREST_RATE).div(parseEther('1'));
+      const fee = ONE_DAY.mul(15)
+        .mul(INTEREST_RATE.mul(TEN_BTC))
+        .div(parseEther('1'));
 
       // 0.02e18
       const protocolFee = fee
@@ -1738,7 +1870,9 @@ describe('NFTMarket', () => {
         expect(nftOwner).to.be.equal(nftMarket.address);
 
         // Send a bit mroe because of time delays
-        const fee = ONE_DAY.mul(16).mul(INTEREST_RATE).div(parseEther('1'));
+        const fee = ONE_DAY.mul(16)
+          .mul(INTEREST_RATE.mul(TEN_BTC))
+          .div(parseEther('1'));
 
         // 0.02e18
         const protocolFee = fee
@@ -1799,6 +1933,28 @@ describe('NFTMarket', () => {
         expect(nftOwner2).to.be.equal(alice.address);
       });
     });
+    it('reverts if you the caller does not send enough ETH', async () => {
+      await nftMarket
+        .connect(alice)
+        .proposeLoan(
+          nft.address,
+          ethers.constants.AddressZero,
+          1,
+          TEN_BTC,
+          INTEREST_RATE,
+          ONE_DAY.mul(15)
+        );
+
+      await nftMarket
+        .connect(bob)
+        .lenderStartLoan(nft.address, 1, { value: TEN_BTC });
+
+      await advanceBlockAndTime(ONE_DAY.mul(16).toNumber(), ethers);
+
+      await expect(
+        nftMarket.connect(bob).repay(nft.address, 1, { value: TEN_BTC })
+      ).to.revertedWith('NFTM: incorrect amount');
+    });
   });
 
   describe('Upgrade functionality', () => {
@@ -1843,4 +1999,43 @@ describe('NFTMarket', () => {
       expect(loan.principal).to.be.equal(TEN_BTC);
     });
   });
-});
+  it('returns the total number of counterOffers', async () => {
+    await nftMarket
+      .connect(alice)
+      .proposeLoan(
+        nft.address,
+        btc.address,
+        1,
+        TEN_BTC,
+        INTEREST_RATE,
+        ONE_DAY.mul(15)
+      );
+
+    expect(await nftMarket.getTotalProposals(nft.address, 1)).to.be.equal(0);
+
+    await Promise.all([
+      nftMarket
+        .connect(bob)
+        .counterOffer(
+          nft.address,
+          btc.address,
+          1,
+          TEN_BTC.mul(2),
+          INTEREST_RATE.add(1),
+          ONE_DAY.mul(30)
+        ),
+      nftMarket
+        .connect(owner)
+        .counterOffer(
+          nft.address,
+          usdc.address,
+          1,
+          TEN_BTC.mul(2),
+          INTEREST_RATE.add(1),
+          ONE_DAY.mul(30)
+        ),
+    ]);
+
+    expect(await nftMarket.getTotalProposals(nft.address, 1)).to.be.equal(2);
+  });
+}).timeout(5000);
