@@ -12,7 +12,7 @@ import {
   ReentrantNFTMarketWithdrawBNB,
   TestNFTMarket,
   TestNFTMarketV2,
-} from '../typechain';
+} from '../typechain-types';
 import {
   advanceBlockAndTime,
   deploy,

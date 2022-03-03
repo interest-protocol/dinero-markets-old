@@ -2,7 +2,10 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { StakedInterestToken, TestStakedInterestTokenV2 } from '../typechain';
+import {
+  StakedInterestToken,
+  TestStakedInterestTokenV2,
+} from '../typechain-types';
 import {
   BURNER_ROLE,
   DEFAULT_ADMIN_ROLE,

@@ -27,14 +27,14 @@
   "scripts": {
     "lint": "eslint --fix --ext .js,.ts .",
     "type-check": "tsc --pretty --noEmit",
-    "clean": "npm run lint && npm run type-check && npm run solhint",
+    "check": "npm run lint && npm run type-check && npm run solhint",
     "solhint": "solhint contracts/**/*.sol",
     "test": "npx hardhat test",
+    "clean": "npx hardhat clean",
     "compile": "npx hardhat compile",
     "coverage": "npx hardhat coverage --testfiles './test/**.ts'",
-    "publish": "yarn publish contracts --access public",
-    "postinstall": "husky install",
-    "prepare": "husky install"
+    "publish": "npm publish contracts --access public",
+    "postinstall": "husky install && typechain"
   },
   "devDependencies": {
     "@commitlint/cli": "^16.2.1",

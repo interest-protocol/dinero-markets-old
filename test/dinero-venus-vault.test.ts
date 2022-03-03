@@ -15,7 +15,7 @@ import {
   TestDineroVenusVault,
   TestDineroVenusVaultV2,
   WETH9,
-} from '../typechain';
+} from '../typechain-types';
 import { BURNER_ROLE, MINTER_ROLE } from './lib/constants';
 import { deployUUPS, multiDeploy, upgrade } from './lib/test-utils';
 
