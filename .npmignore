@@ -2,4 +2,3 @@ hardhat.config.ts
 scripts
 test
 .npmrc
-typechain-types

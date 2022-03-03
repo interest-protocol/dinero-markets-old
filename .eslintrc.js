@@ -36,7 +36,7 @@ module.exports = {
     'unicorn/escape-case': 'error',
     'unicorn/expiring-todo-comments': 'error',
     'unicorn/explicit-length-check': 'error',
-    'unicorn/filename-case': 'error',
+    'unicorn/filename-case': 'off',
     'unicorn/import-index': 'off',
     'unicorn/import-style': 'error',
     'unicorn/new-for-builtins': 'error',
