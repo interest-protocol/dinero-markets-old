@@ -27,7 +27,7 @@
     "prepare": "husky install",
     "lint": "eslint --fix --ext .js,.ts .",
     "type-check": "tsc --pretty --noEmit",
-    "pre-commit": "yarn lint && yarn type-check && yarn solhint",
+    "clean": "yarn lint && yarn type-check && yarn solhint",
     "solhint": "solhint contracts/**/*.sol",
     "test": "npx hardhat test",
     "compile": "npx hardhat compile",
