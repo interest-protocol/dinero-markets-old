@@ -36,7 +36,6 @@ Core technologies:
 
 > :warning: **If  your node runs out of memory write in your terminal ```export NODE_OPTIONS="--max-old-space-size=8192" ```**
 
-
 ## Underlying Protocols
 
 Interest Protocol integrates with popular DeFi protocols to maximize the returns for users. 
