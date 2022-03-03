@@ -25,6 +25,7 @@ jobs:
           restore-keys: npm-
       - run: npm install
         if: steps.cache.outputs.cache-hit != 'true'
+      - run: npm run compile
       - run: npm run clean:npm
       - run: npm run coverage
         env:
