@@ -184,19 +184,11 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         require(supply > 0, "SV: no supply");
 
-        // Get our current collateral requirement ratio
-        uint256 currentCollateralFactor = borrow.bdiv(supply);
-
-        // If we are over the limit. We might not be liquidated because we use a safe margin.
-        if (currentCollateralFactor >= _collateralLimit) {
-            return 0;
-        }
-
         // Maximum amount we can borrow based on our supply.
         uint256 maxBorrowAmount = supply.bmul(_collateralLimit);
 
         // If we are borrowing more than the recommended amount. We return 0;
-        if (borrow > maxBorrowAmount) return 0;
+        if (borrow >= maxBorrowAmount) return 0;
 
         // We calculate how much more we can borrow until we hit our safe maximum.
         // We check how much liquidity there is. We cannot borrow more than the liquidity.

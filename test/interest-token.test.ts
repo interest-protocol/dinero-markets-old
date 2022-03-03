@@ -2,7 +2,7 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { InterestToken, TestInterestTokenV2 } from '../typechain';
+import { InterestToken, TestInterestTokenV2 } from '../typechain-types';
 import {
   DEFAULT_ADMIN_ROLE,
   DEVELOPER_ROLE,
@@ -62,6 +62,66 @@ describe('Interest Token', () => {
         parseEther('100')
       );
     });
+  });
+
+  describe('function: burnFrom', () => {
+    it('reverts if you try a caller tries to burn more than this allowance', async () => {
+      await interestToken.connect(owner).grantRole(MINTER_ROLE, alice.address);
+      await interestToken
+        .connect(alice)
+        .mint(alice.address, parseEther('1000'));
+
+      expect(await interestToken.balanceOf(alice.address)).to.be.equal(
+        parseEther('1000')
+      );
+
+      await expect(
+        interestToken.connect(alice).burnFrom(alice.address, parseEther('3000'))
+      ).to.revertedWith('ERC20: burn amount exceeds allowance');
+    });
+
+    it('allows for a caller to burn his allowance', async () => {
+      await interestToken.connect(owner).grantRole(MINTER_ROLE, alice.address);
+      await Promise.all([
+        interestToken.connect(alice).mint(alice.address, parseEther('1000')),
+        interestToken.connect(alice).approve(owner.address, parseEther('1000')),
+      ]);
+
+      expect(await interestToken.balanceOf(alice.address)).to.be.equal(
+        parseEther('1000')
+      );
+
+      await expect(
+        interestToken.connect(owner).burnFrom(alice.address, parseEther('1000'))
+      )
+        .to.emit(interestToken, 'Transfer')
+        .withArgs(
+          alice.address,
+          ethers.constants.AddressZero,
+          parseEther('1000')
+        );
+
+      expect(await interestToken.balanceOf(alice.address)).to.be.equal(0);
+    });
+  });
+
+  it('allows for a caller to burn his/her tokens', async () => {
+    await interestToken.connect(owner).grantRole(MINTER_ROLE, alice.address);
+    await interestToken.connect(alice).mint(alice.address, parseEther('1000'));
+
+    expect(await interestToken.balanceOf(alice.address)).to.be.equal(
+      parseEther('1000')
+    );
+
+    await expect(interestToken.connect(alice).burn(parseEther('1000')))
+      .to.emit(interestToken, 'Transfer')
+      .withArgs(
+        alice.address,
+        ethers.constants.AddressZero,
+        parseEther('1000')
+      );
+
+    expect(await interestToken.balanceOf(alice.address)).to.be.equal(0);
   });
 
   describe('Upgrade functionality', () => {

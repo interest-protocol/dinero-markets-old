@@ -1,3 +1,4 @@
+/* eslint-disable  @typescript-eslint/no-explicit-any */
 // eslint-disable-next-line node/no-unpublished-import
 import { ContractAddressOrInstance } from '@openzeppelin/hardhat-upgrades/dist/utils';
 import { BigNumber } from 'ethers';
@@ -65,16 +66,18 @@ export const upgrade = async (
   return upgrades.upgradeProxy(proxy, factory);
 };
 
-export const advanceTime = (time: number, _ethers: typeof ethers) =>
-  _ethers.provider.send('evm_increaseTime', [time]);
+export const advanceTime = (
+  time: number,
+  _ethers: typeof ethers
+): Promise<void> => _ethers.provider.send('evm_increaseTime', [time]);
 
-export const advanceBlock = (_ethers: typeof ethers) =>
+export const advanceBlock = (_ethers: typeof ethers): Promise<void> =>
   _ethers.provider.send('evm_mine', []);
 
 export const advanceBlockAndTime = async (
   time: number,
   _ethers: typeof ethers
-) => {
+): Promise<void> => {
   await _ethers.provider.send('evm_increaseTime', [time]);
   await _ethers.provider.send('evm_mine', []);
 };
@@ -87,7 +90,7 @@ export const makeCalculateAccruedInt =
     allocationPoints: BigNumber,
     totalAllocationPoints: BigNumber,
     totalSupply: BigNumber
-  ) => {
+  ): BigNumber => {
     const rewards = blocksElapsed
       .mul(interestPerBlock)
       .mul(allocationPoints)
@@ -101,7 +104,7 @@ export const calculateUserPendingRewards = (
   userAmount: BigNumber,
   poolAccruedIntPerShare: BigNumber,
   userRewardsPaid: BigNumber
-) =>
+): BigNumber =>
   userAmount
     .mul(poolAccruedIntPerShare)
     .div(ethers.utils.parseEther('1'))

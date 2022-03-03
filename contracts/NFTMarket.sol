@@ -706,7 +706,7 @@ contract NFTMarket is
         // Calculate the interest rate | (timeElaped * interest per second) + principal
         //solhint-disable-next-line not-rely-on-time
         uint256 timeElapsed = block.timestamp - _loan.startDate;
-        uint256 fee = timeElapsed.bmul(_loan.interestRate);
+        uint256 fee = timeElapsed.bmul(_loan.interestRate * _loan.principal);
         uint256 protocolFee = fee.bmul(0.02e18); // 2% of the fee
         uint256 total = _loan.principal + fee;
 

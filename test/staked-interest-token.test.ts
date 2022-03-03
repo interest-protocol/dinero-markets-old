@@ -2,7 +2,10 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { StakedInterestToken, TestStakedInterestTokenV2 } from '../typechain';
+import {
+  StakedInterestToken,
+  TestStakedInterestTokenV2,
+} from '../typechain-types';
 import {
   BURNER_ROLE,
   DEFAULT_ADMIN_ROLE,
@@ -121,15 +124,24 @@ describe('Staked Interest Token', () => {
     });
   });
 
-  describe('Upgrade functionality', () => {
-    it('reverts if a caller without the developer role tries to upgrade', async () => {
+  describe('function: _authorizeUpgrade', () => {
+    it('reverts if the caller does not have the developer role', async () => {
       await stakedInterestToken
         .connect(owner)
-        .renounceRole(DEVELOPER_ROLE, owner.address);
+        .revokeRole(DEVELOPER_ROLE, owner.address);
 
-      expect(
+      await expect(
         upgrade(stakedInterestToken, 'TestStakedInterestTokenV2')
-      ).to.revertedWith('Ownable: caller is not the owner');
+      ).to.revertedWith(
+        'AccessControl: account 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 is missing role 0x4504b9dfd7400a1522f49a8b4a100552da9236849581fd59b7363eb48c6a474c'
+      );
+
+      await stakedInterestToken
+        .connect(owner)
+        .grantRole(DEVELOPER_ROLE, owner.address);
+
+      await expect(upgrade(stakedInterestToken, 'TestStakedInterestTokenV2')).to
+        .not.reverted;
     });
     it('upgrades to version 2', async () => {
       await stakedInterestToken

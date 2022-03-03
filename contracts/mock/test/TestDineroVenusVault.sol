@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.10;
 
-import "../interfaces/IVenusController.sol";
-import "../interfaces/IVToken.sol";
-import "../interfaces/IPancakeRouter02.sol";
+import "../../interfaces/IVenusController.sol";
+import "../../interfaces/IVToken.sol";
+import "../../interfaces/IPancakeRouter02.sol";
 
-import "../tokens/Dinero.sol";
+import "../../tokens/Dinero.sol";
 
-import "../DineroVenusVault.sol";
-import "../SafeVenus.sol";
+import "../../DineroVenusVault.sol";
+import "../../SafeVenus.sol";
 
 //solhint-disable
 

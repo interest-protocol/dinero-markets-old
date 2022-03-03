@@ -592,7 +592,7 @@ contract InterestBNBMarketV1 is
      * @param amount How much BNB to send to the `to` address.
      */
     function _sendCollateral(address payable to, uint256 amount) private {
-        require(address(this).balance >= amount, "MKT: insufficient balance");
+        assert(address(this).balance >= amount);
 
         //solhint-disable-next-line avoid-low-level-calls
         (bool success, bytes memory returnData) = to.call{value: amount}("");

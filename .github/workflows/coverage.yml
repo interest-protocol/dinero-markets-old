@@ -1,0 +1,26 @@
+name: Coverage
+on:
+  push
+
+jobs:
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 16.x
+      - uses: actions/cache@v2  
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - run: npm install
+      - run: npm run clean
+      - run: npm run compile
+      - run: npm run coverage
+        env:
+          NODE_OPTIONS: --max_old_space_size=8192
+      - uses: codecov/codecov-action@v2
