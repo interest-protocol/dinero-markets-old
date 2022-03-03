@@ -29,7 +29,6 @@
     "lint": "eslint --fix --ext .js,.ts .",
     "type-check": "tsc --pretty --noEmit",
     "clean": "yarn lint && yarn type-check && yarn solhint",
-    "clean:npm": "npm run lint && npm run type-check && npm run solhint",
     "solhint": "solhint contracts/**/*.sol",
     "test": "npx hardhat test",
     "compile": "npx hardhat compile",
