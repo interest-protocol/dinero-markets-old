@@ -35,7 +35,8 @@
     "publish": "yarn publish contracts --access public",
     "postinstall": "husky install",
     "prepack": "pinst --disable",
-    "postpack": "pinst --enable"
+    "postpack": "pinst --enable",
+    "slither": "slither . --detect reentrancy-eth,reentrancy-no-eth,reentrancy-unlimited-gas"
   },
   "devDependencies": {
     "@commitlint/cli": "^15.0.0",
