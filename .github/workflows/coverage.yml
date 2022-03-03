@@ -22,7 +22,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-      - run: npm run install
+      - run: npm install
       - run: npm run compile
       - run: npm run coverage
         env:
