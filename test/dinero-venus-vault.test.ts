@@ -1375,7 +1375,7 @@ describe('DineroVenusVault', () => {
       // The vault has no leverage
       expect(totalFreeUnderlying).to.be.within(
         // TS does not know that Chai supports big number in this matcher with waffle
-        // @ts-expect-error
+        // @ts-expect-error Type files for within assertions are incorrect
         vaultVUSDCBalance4.mul(exchangeRate).div(parseEther('1')),
         vaultVUSDCBalance4
           .mul(exchangeRate)
@@ -1786,7 +1786,6 @@ describe('DineroVenusVault', () => {
         .div(exchangeRate);
 
       // TS does not know closeTo supports BigNumber ont he second parameter
-      // @ts-expect-error
       expect(totalFreeUnderlying3).to.be.closeTo(
         totalFreeUnderlying2
           // Alice first rewards
@@ -1945,7 +1944,6 @@ describe('DineroVenusVault', () => {
         dineroVenusVault.totalFreeVTokenOf(vUSDC.address),
       ]);
 
-      // @ts-expect-error
       expect(aliceAccount.principal).to.be.closeTo(
         parseEther('100000').sub(
           vTokenWithdrawAmount
@@ -1956,7 +1954,6 @@ describe('DineroVenusVault', () => {
         parseEther('1')
       );
 
-      // @ts-expect-error
       expect(aliceAccount.vTokens).to.be.closeTo(
         parseEther('40000').mul(parseEther('1')).div(exchangeRate),
         oneVToken
@@ -1964,7 +1961,6 @@ describe('DineroVenusVault', () => {
       expect(aliceAccount.rewardsPaid).to.be.equal(0);
 
       // Alice has incurred all losses
-      // @ts-expect-error
       expect(aliceAccount.lossVTokensAccrued).to.be.closeTo(
         parseEther('40000')
           .mul(parseEther('1'))
@@ -1981,7 +1977,6 @@ describe('DineroVenusVault', () => {
       );
 
       // Free USDC should be updated
-      // @ts-expect-error
       expect(freeVUSDC2).to.be.closeTo(
         parseEther('40000').mul(parseEther('1')).div(exchangeRate),
         oneVToken
@@ -2017,7 +2012,6 @@ describe('DineroVenusVault', () => {
 
       // DUST
       // 1 dollar = 1e18
-      // @ts-expect-error
       expect(balanceOfUnderlying).to.be.closeTo(
         ethers.BigNumber.from(0),
         parseEther('0.0001')
