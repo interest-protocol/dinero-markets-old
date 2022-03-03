@@ -23,7 +23,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-yarn-
       - run: rm -f yarn.lock
-      - run: yarn
+      - run: YARN_ENABLE_IMMUTABLE_INSTALLS=false yarn install
       - run: yarn compile
       - run: yarn clean
       - run: yarn coverage
