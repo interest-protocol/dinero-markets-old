@@ -19,6 +19,7 @@ artifacts
 .npmrc
 
 # Yarn
+<<<<<<< HEAD
 yarn-error.log
 .pnp.*
 .yarn/*
@@ -31,3 +32,4 @@ yarn-error.log
 
 # Typescript
 typechain-types
+
