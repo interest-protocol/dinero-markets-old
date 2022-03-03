@@ -6,6 +6,7 @@ module.exports = {
     mocha: true,
     node: true,
   },
+  parser: '@typescript-eslint/parser',
   plugins: ['@typescript-eslint', 'unicorn', 'simple-import-sort'],
   extends: [
     'standard',
@@ -13,8 +14,9 @@ module.exports = {
     'plugin:node/recommended',
     'plugin:unicorn/all',
     'prettier',
+    'plugin:@typescript-eslint/eslint-recommended',
+    'plugin:@typescript-eslint/recommended',
   ],
-  parser: '@typescript-eslint/parser',
   parserOptions: {
     ecmaVersion: 'latest',
   },

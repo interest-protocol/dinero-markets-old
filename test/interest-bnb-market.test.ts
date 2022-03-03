@@ -1,6 +1,6 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
-import { ethers } from 'hardhat';
+import { ethers, network } from 'hardhat';
 
 import {
   Dinero,
@@ -16,9 +16,11 @@ import {
   ReentrantInterestBNBMarketWithdrawCollateral,
   TestInterestBNBMarketV2,
   WETH9,
-} from '../typechain';
+} from '../typechain-types';
 import { BURNER_ROLE, MINTER_ROLE } from './lib/constants';
 import {
+  advanceBlock,
+  advanceBlockAndTime,
   advanceTime,
   deploy,
   deployUUPS,
@@ -239,6 +241,45 @@ describe('InterestBNBMarketV1', () => {
       expect(loan2.feesEarned).to.be.equal(0);
       expect((await interestBNBMarket.totalLoan()).base).to.be.equal(0);
     });
+    it('does not update if no time has passed', async () => {
+      await network.provider.send('evm_setAutomine', [false]);
+
+      // Add 50 CAKE as collateral
+      await interestBNBMarket
+        .connect(alice)
+        .addCollateral(alice.address, { value: parseEther('10') });
+
+      await advanceBlock(ethers);
+
+      // Borrow 490 DINERO
+      await interestBNBMarket
+        .connect(alice)
+        .borrow(alice.address, parseEther('490'));
+
+      await advanceBlock(ethers);
+
+      await advanceBlockAndTime(50_000, ethers);
+
+      const receipt = await interestBNBMarket.accrue();
+      const receipt2 = await interestBNBMarket.accrue();
+
+      await advanceBlock(ethers);
+
+      const [awaitedReceipt, awaitedReceipt2] = await Promise.all([
+        receipt.wait(),
+        receipt2.wait(),
+      ]);
+
+      expect(
+        awaitedReceipt.events?.filter((x) => x.event === 'Accrue').length
+      ).to.be.equal(1);
+
+      expect(
+        awaitedReceipt2.events?.filter((x) => x.event === 'Accrue').length
+      ).to.be.equal(0);
+
+      await network.provider.send('evm_setAutomine', [true]);
+    });
     it('accrues the interest rate', async () => {
       await alice.sendTransaction({
         to: interestBNBMarket.address,
@@ -363,6 +404,12 @@ describe('InterestBNBMarketV1', () => {
       await interestBNBMarket
         .connect(alice)
         .borrow(alice.address, parseEther('400'));
+
+      await expect(
+        interestBNBMarket
+          .connect(alice)
+          .withdrawCollateral(alice.address, parseEther('2'))
+      ).to.revertedWith('MKT: sender is insolvent');
 
       await expect(
         interestBNBMarket
@@ -711,6 +758,17 @@ describe('InterestBNBMarketV1', () => {
             weth.address,
           ])
       ).to.revertedWith('MKT: no dinero at last index');
+    });
+    it('ignores accounts without opened loans', async () => {
+      await interestBNBMarket
+        .connect(alice)
+        .addCollateral(alice.address, { value: parseEther('2') });
+
+      await expect(
+        interestBNBMarket
+          .connect(owner)
+          .liquidate([alice.address], [0], owner.address, [])
+      ).to.revertedWith('MKT: no liquidations');
     });
     it('reverts if there are no liquidations', async () => {
       await interestBNBMarket
@@ -1064,6 +1122,33 @@ describe('InterestBNBMarketV1', () => {
       // We repaid debt for 600 DNR + interest rate. So the remaining debt should be for 1099 DNR + fees
       // While it is hard to get the exact number we know it has to be smaller 1320 DNR after 2 years at interest rate of 4%
       expect(totalLoan.elastic.lt(parseEther('1320'))).to.be.equal(true);
+    });
+    it('cleans up dust when liquidating full positions', async () => {
+      await interestBNBMarket
+        .connect(alice)
+        .addCollateral(alice.address, { value: parseEther('2') });
+
+      await interestBNBMarket
+        .connect(alice)
+        .borrow(alice.address, parseEther('499'));
+
+      // Drop BNB to 250. Alice and Bob can now be liquidated
+      await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('30000000000'));
+
+      // Pass time to accrue fees
+      await advanceTime(63_113_904, ethers); // advance 2 years
+
+      await interestBNBMarket
+        .connect(owner)
+        .liquidate([alice.address], [parseEther('499')], recipient.address, [
+          weth.address,
+          dinero.address,
+        ]);
+
+      const totalLoan = await interestBNBMarket.totalLoan();
+
+      expect(totalLoan.elastic).to.be.equal(0);
+      expect(totalLoan.base).to.be.equal(0);
     });
   });
 

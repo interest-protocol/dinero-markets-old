@@ -3,6 +3,7 @@ import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
 import {
+  MockBytesErrorChainLinkFeed,
   MockChainLinkFeed,
   MockERC20,
   MockErrorChainLinkFeed,
@@ -10,7 +11,7 @@ import {
   MockTWAP,
   OracleV1,
   TestOracleV2,
-} from '../typechain';
+} from '../typechain-types';
 import { deploy, deployUUPS, multiDeploy, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
@@ -34,6 +35,7 @@ describe('OracleV1', () => {
   let mockCakeBnbFeed: MockChainLinkFeed;
   let mockTWAP: MockTWAP;
   let mockErrorFeed: MockErrorChainLinkFeed;
+  let mockBytesErrorFeed: MockBytesErrorChainLinkFeed;
 
   let mockWbnb: MockERC20;
   let mockCake: MockERC20;
@@ -58,6 +60,7 @@ describe('OracleV1', () => {
         mockBUSD,
         mockTWAP,
         mockErrorFeed,
+        mockBytesErrorFeed,
       ],
       [owner, alice, { address: dudUsdFeed }, { address: dudBnBFeed }],
     ] = await Promise.all([
@@ -71,6 +74,7 @@ describe('OracleV1', () => {
           'MockERC20',
           'MockTWAP',
           'MockErrorChainLinkFeed',
+          'MockBytesErrorChainLinkFeed',
         ],
         [
           [8, 'BNB/USD', 1],
@@ -79,6 +83,7 @@ describe('OracleV1', () => {
           ['Wrapped BNB', 'WBNB', INITIAL_TOKEN_SUPPLY],
           ['Cake', 'CAKE', INITIAL_TOKEN_SUPPLY],
           ['Binance USD', 'BUSD', INITIAL_TOKEN_SUPPLY],
+          [],
           [],
           [],
         ]
@@ -182,10 +187,21 @@ describe('OracleV1', () => {
         await oracleV1.getTokenUSDPrice(mockCake.address, parseEther('2'))
       ).to.be.equal(CAKE_USD_PRICE.mul(2).mul(1e10)); // USD feeds are 8 decimal but contract converts all to 18
     });
-    it('calls the TWAP as a back up and properly returns the price', async () => {
+    it('calls the TWAP as a back up if it catches a string error and properly returns the price', async () => {
       await oracleV1
         .connect(owner)
         .setFeed(mockCake.address, mockErrorFeed.address, 0);
+
+      expect(
+        await oracleV1.getTokenUSDPrice(mockCake.address, parseEther('1'))
+      ).to.be.equal(
+        TWAP_CAKE_BNB_PRICE.mul(BNB_USD_PRICE.mul(1e10)).div(parseEther('1'))
+      );
+    });
+    it('calls the TWAP as a back up if it catches a bytes error and properly returns the price', async () => {
+      await oracleV1
+        .connect(owner)
+        .setFeed(mockCake.address, mockBytesErrorFeed.address, 0);
 
       expect(
         await oracleV1.getTokenUSDPrice(mockCake.address, parseEther('1'))
@@ -223,7 +239,18 @@ describe('OracleV1', () => {
         await oracleV1.getTokenBNBPrice(mockCake.address, parseEther('3'))
       ).to.be.equal(ethers.BigNumber.from(CAKE_BNB_PRICE.mul(3)));
     });
-    it('calls the TWAP as a back up and properly returns the price in BNB', async () => {
+    it('calls the TWAP on a bytes error as a back up and properly returns the price in BNB', async () => {
+      await oracleV1
+        .connect(owner)
+        .setFeed(mockCake.address, mockBytesErrorFeed.address, 1);
+
+      expect(
+        await oracleV1.getTokenBNBPrice(mockCake.address, parseEther('2.5'))
+      ).to.be.equal(
+        TWAP_CAKE_BNB_PRICE.mul(parseEther('2.5')).div(parseEther('1'))
+      );
+    });
+    it('calls the TWAP on a string error as a back up and properly returns the price in BNB', async () => {
       await oracleV1
         .connect(owner)
         .setFeed(mockCake.address, mockErrorFeed.address, 1);
@@ -242,7 +269,46 @@ describe('OracleV1', () => {
       );
     });
 
-    it('calls the TWAP as a back up and properly returns the price of BNB in USD', async () => {
+    it('scales to 18 decimals if the feed decimals is above 18', async () => {
+      const feed: MockChainLinkFeed = await deploy('MockChainLinkFeed', [
+        20,
+        'BNB/USD',
+        1,
+      ]);
+
+      const oracle: OracleV1 = await deployUUPS('OracleV1', [
+        mockTWAP.address,
+        feed.address,
+        mockWbnb.address,
+        mockBUSD.address,
+      ]);
+
+      await feed.setAnswer(BNB_USD_PRICE.mul(1e10).mul(1e2));
+
+      expect(await oracle.getBNBUSDPrice(parseEther('10'))).to.be.equal(
+        BNB_USD_PRICE.mul(10).mul(1e10)
+      );
+    });
+
+    it('calls the TWAP as a back up on a bytes error and properly returns the price of BNB in USD', async () => {
+      const oracle: OracleV1 = await deployUUPS('OracleV1', [
+        mockTWAP.address,
+        mockBytesErrorFeed.address,
+        mockWbnb.address,
+        mockBUSD.address,
+      ]);
+
+      // BUSD has 10 decimals so we try to emulate the real price
+      await mockTWAP.setValue(TWAP_BNB_USD_PRICE.mul(1e10));
+
+      expect(await oracle.getBNBUSDPrice(parseEther('12.7'))).to.be.equal(
+        TWAP_BNB_USD_PRICE.mul(1e10)
+          .mul(parseEther('12.7'))
+          .div(parseEther('1'))
+      );
+    });
+
+    it('calls the TWAP as a back up on a string error and properly returns the price of BNB in USD', async () => {
       const oracle: OracleV1 = await deployUUPS('OracleV1', [
         mockTWAP.address,
         mockErrorFeed.address,

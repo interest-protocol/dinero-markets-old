@@ -69,6 +69,17 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 amount
     );
 
+    event UpdatePool(
+        uint256 indexed poolId,
+        uint256 blockNumber,
+        uint256 accruedIntPerShare
+    );
+
+    event UpdatePoolAllocationPoint(
+        uint256 indexed poolId,
+        uint256 allocationPoints
+    );
+
     /*///////////////////////////////////////////////////////////////
                                 STRUCTS
     //////////////////////////////////////////////////////////////*/
@@ -217,8 +228,11 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             totalAllocationPoints
         );
 
-        // We mint an additional 10% to the devAccount.
-        INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
+        // There is no point to mint 0 tokens.
+        if (intReward > 0) {
+            // We mint an additional 10% to the devAccount.
+            INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
+        }
 
         // This value stores all rewards the pool ever got.
         // Note: this variable i already per share as we divide by the `amountOfStakedTokens`.
@@ -228,6 +242,8 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // Update global state
         pools[poolId] = pool;
+
+        emit UpdatePool(poolId, block.number, pool.accruedIntPerShare);
     }
 
     /**
@@ -543,20 +559,17 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 allOtherPoolsPoints = _totalAllocationPoints -
             pools[0].allocationPoints;
 
-        // If we have other pools
-        if (allOtherPoolsPoints != 0) {
-            // {INTEREST_TOKEN} pool allocation points is always equal to 1/3 of all the other pools.
-            // We reuse the same variable to save memory. Even though, it says allOtherPoolsPoints. At this point is the pool 0 points.
-            allOtherPoolsPoints = allOtherPoolsPoints / 3;
+        // {INTEREST_TOKEN} pool allocation points is always equal to 1/3 of all the other pools.
+        // We reuse the same variable to save memory. Even though, it says allOtherPoolsPoints. At this point is the pool 0 points.
+        allOtherPoolsPoints = allOtherPoolsPoints / 3;
 
-            // Update the total allocation pools.
-            _totalAllocationPoints -= pools[0].allocationPoints;
-            _totalAllocationPoints += allOtherPoolsPoints;
+        // Update the total allocation pools.
+        _totalAllocationPoints -= pools[0].allocationPoints;
+        _totalAllocationPoints += allOtherPoolsPoints;
 
-            // Update the global state
-            totalAllocationPoints = _totalAllocationPoints;
-            pools[0].allocationPoints = allOtherPoolsPoints;
-        }
+        // Update the global state
+        totalAllocationPoints = _totalAllocationPoints;
+        pools[0].allocationPoints = allOtherPoolsPoints;
     }
 
     /**
@@ -717,6 +730,8 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // update the pool 0.
         _updateStakingPool();
+
+        emit UpdatePoolAllocationPoint(poolId, allocationPoints);
     }
 
     /**

@@ -11,7 +11,7 @@ import {
   PancakeRouter,
   TestPancakeOracleV2,
   WETH9,
-} from '../typechain';
+} from '../typechain-types';
 import {
   advanceBlockAndTime,
   deploy,

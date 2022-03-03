@@ -344,8 +344,9 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             uint80
         ) {
             return
-                (_scaleDecimals(answer.toUint256(), bnb_usd.decimals()) *
-                    amount) / 1 ether;
+                (_scaleDecimals(answer.toUint256(), bnb_usd.decimals())).bmul(
+                    amount
+                );
         } catch Error(string memory) {
             address busd = BUSD;
             return

@@ -1,6 +1,6 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
-import { ethers } from 'hardhat';
+import { ethers, network } from 'hardhat';
 
 import {
   CakeToken,
@@ -18,9 +18,11 @@ import {
   SyrupBar,
   TestInterestMarketV2,
   WETH9,
-} from '../typechain';
+} from '../typechain-types';
 import { BURNER_ROLE, MINTER_ROLE } from './lib/constants';
 import {
+  advanceBlock,
+  advanceBlockAndTime,
   advanceTime,
   deploy,
   deployUUPS,
@@ -420,6 +422,43 @@ describe('InterestMarketV1', () => {
       expect(
         loan.lastAccrued.lt((await cakeMarket.loan()).lastAccrued)
       ).to.be.equal(true);
+    });
+    it('does not update if no time has passed', async () => {
+      await network.provider.send('evm_setAutomine', [false]);
+
+      // Add 50 CAKE as collateral
+      await cakeMarket
+        .connect(alice)
+        .addCollateral(alice.address, parseEther('50'));
+
+      await advanceBlock(ethers);
+
+      // Borrow 490 DINERO
+      await cakeMarket.connect(alice).borrow(alice.address, parseEther('490'));
+
+      await advanceBlock(ethers);
+
+      await advanceBlockAndTime(50_000, ethers);
+
+      const receipt = await cakeMarket.accrue();
+      const receipt2 = await cakeMarket.accrue();
+
+      await advanceBlock(ethers);
+
+      const [awaitedReceipt, awaitedReceipt2] = await Promise.all([
+        receipt.wait(),
+        receipt2.wait(),
+      ]);
+
+      expect(
+        awaitedReceipt.events?.filter((x) => x.event === 'Accrue').length
+      ).to.be.equal(1);
+
+      expect(
+        awaitedReceipt2.events?.filter((x) => x.event === 'Accrue').length
+      ).to.be.equal(0);
+
+      await network.provider.send('evm_setAutomine', [true]);
     });
     it('accrues the interest rate', async () => {
       // Add 50 CAKE as collateral
@@ -945,68 +984,80 @@ describe('InterestMarketV1', () => {
       expect(totalLoan3.elastic.gt(parseEther('80'))).to.be.equal(true); // includes fees
     });
   });
-  it('allows loans to be repaid', async () => {
-    await cakeMarket
-      .connect(alice)
-      .addCollateral(alice.address, parseEther('10')); // 200 USD of collateral
+  describe('function: repay', () => {
+    it('reverts if you try to repay for address(0) or try to repay nothing', async () => {
+      await expect(
+        cakeMarket.connect(alice).repay(ethers.constants.AddressZero, 0)
+      ).to.revertedWith('MKT: no zero address');
+      await expect(
+        cakeMarket.connect(alice).repay(alice.address, 0)
+      ).to.revertedWith('MKT: principal cannot be 0');
+    });
+    it('allows loans to be repaid', async () => {
+      await cakeMarket
+        .connect(alice)
+        .addCollateral(alice.address, parseEther('10')); // 200 USD of collateral
 
-    await cakeMarket.connect(alice).borrow(alice.address, parseEther('30'));
+      await cakeMarket.connect(alice).borrow(alice.address, parseEther('30'));
 
-    const totalLoan = await cakeMarket.totalLoan();
+      const totalLoan = await cakeMarket.totalLoan();
 
-    expect(await cakeMarket.userLoan(alice.address)).to.be.equal(
-      parseEther('30')
-    );
+      expect(await cakeMarket.userLoan(alice.address)).to.be.equal(
+        parseEther('30')
+      );
 
-    expect(totalLoan.base).to.be.equal(parseEther('30'));
+      expect(totalLoan.base).to.be.equal(parseEther('30'));
 
-    expect(await dinero.balanceOf(alice.address)).to.be.equal(parseEther('30'));
+      expect(await dinero.balanceOf(alice.address)).to.be.equal(
+        parseEther('30')
+      );
 
-    // specific debt is very hard to calculate
-    await expect(
-      cakeMarket.connect(alice).repay(alice.address, parseEther('10'))
-    )
-      .to.emit(cakeMarket, 'Repay')
-      .to.emit(dinero, 'Transfer')
-      .to.emit(cakeMarket, ' Accrue');
+      // specific debt is very hard to calculate
+      await expect(
+        cakeMarket.connect(alice).repay(alice.address, parseEther('10'))
+      )
+        .to.emit(cakeMarket, 'Repay')
+        .to.emit(dinero, 'Transfer')
+        .to.emit(cakeMarket, ' Accrue');
 
-    const totalLoan2 = await cakeMarket.totalLoan();
+      const totalLoan2 = await cakeMarket.totalLoan();
 
-    expect(await cakeMarket.userLoan(alice.address)).to.be.equal(
-      parseEther('20')
-    );
+      expect(await cakeMarket.userLoan(alice.address)).to.be.equal(
+        parseEther('20')
+      );
 
-    // She paid fees
-    expect(
-      (await dinero.balanceOf(alice.address)).lt(parseEther('20'))
-    ).to.be.equal(true);
+      // She paid fees
+      expect(
+        (await dinero.balanceOf(alice.address)).lt(parseEther('20'))
+      ).to.be.equal(true);
 
-    expect(totalLoan2.base).to.be.equal(parseEther('20'));
-    expect(totalLoan2.elastic.lt(totalLoan.elastic)).to.be.equal(true);
+      expect(totalLoan2.base).to.be.equal(parseEther('20'));
+      expect(totalLoan2.elastic.lt(totalLoan.elastic)).to.be.equal(true);
 
-    const ownerDineroBalance = await dinero.balanceOf(owner.address);
+      const ownerDineroBalance = await dinero.balanceOf(owner.address);
 
-    // specific debt is very hard to calculate
-    await expect(
-      cakeMarket.connect(owner).repay(alice.address, parseEther('20'))
-    )
-      .to.emit(cakeMarket, 'Repay')
-      .to.emit(dinero, 'Transfer')
-      .to.emit(cakeMarket, ' Accrue');
+      // specific debt is very hard to calculate
+      await expect(
+        cakeMarket.connect(owner).repay(alice.address, parseEther('20'))
+      )
+        .to.emit(cakeMarket, 'Repay')
+        .to.emit(dinero, 'Transfer')
+        .to.emit(cakeMarket, ' Accrue');
 
-    const totalLoan3 = await cakeMarket.totalLoan();
+      const totalLoan3 = await cakeMarket.totalLoan();
 
-    expect(await cakeMarket.userLoan(alice.address)).to.be.equal(0);
+      expect(await cakeMarket.userLoan(alice.address)).to.be.equal(0);
 
-    // She did not pay for her loan. The owner did
-    expect((await dinero.balanceOf(alice.address)).gt(0)).to.be.equal(true);
+      // She did not pay for her loan. The owner did
+      expect((await dinero.balanceOf(alice.address)).gt(0)).to.be.equal(true);
 
-    expect(
-      (await dinero.balanceOf(owner.address)).lt(ownerDineroBalance)
-    ).to.be.equal(true);
+      expect(
+        (await dinero.balanceOf(owner.address)).lt(ownerDineroBalance)
+      ).to.be.equal(true);
 
-    expect(totalLoan3.base).to.be.equal(0);
-    expect(totalLoan3.elastic).to.be.equal(0);
+      expect(totalLoan3.base).to.be.equal(0);
+      expect(totalLoan3.elastic).to.be.equal(0);
+    });
   });
   describe('function: liquidate', () => {
     it('reverts if the path exists and does not need in dinero', async () => {
@@ -1665,4 +1716,4 @@ describe('InterestMarketV1', () => {
       expect(marketCakeBalance).to.be.equal(0); // Cake is in the masterChef
     });
   });
-});
+}).timeout(7000);
