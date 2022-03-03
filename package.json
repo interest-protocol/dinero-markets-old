@@ -25,7 +25,6 @@
   },
   "private": false,
   "scripts": {
-    "prepare": "husky install",
     "lint": "eslint --fix --ext .js,.ts .",
     "type-check": "tsc --pretty --noEmit",
     "clean": "yarn lint && yarn type-check && yarn solhint",
