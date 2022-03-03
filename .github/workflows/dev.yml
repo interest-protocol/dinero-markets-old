@@ -54,5 +54,5 @@ jobs:
         run: pip3 install slither-analyzer
 
       - name: Summary of static analysis
-      - run: npm run slither
+        run: npm run slither
     
