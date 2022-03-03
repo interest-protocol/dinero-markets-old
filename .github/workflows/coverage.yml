@@ -16,17 +16,15 @@ jobs:
         run: echo "::set-output name=dir::$(yarn config get cacheFolder)"
 
       - uses: actions/cache@v2
-        id: yarn-cache # use this to check for `cache-hit` (`steps.yarn-cache.outputs.cache-hit != 'true'`)
         with:
-          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
-          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-              ${{ runner.os }}-yarn-
+            ${{ runner.os }}-node-
 
-      - run: yarn install --frozen-lockfile
-      - run: yarn compile
-      - run: yarn clean
-      - run: yarn coverage
+      - run: npm run install
+      - run: npm run compile
+      - run: npm run coverage
         env:
           NODE_OPTIONS: --max_old_space_size=8192
       - uses: codecov/codecov-action@v2
