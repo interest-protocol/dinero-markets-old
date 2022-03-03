@@ -11,22 +11,15 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 16.x
-      - name: Get yarn cache directory path
-        id: yarn-cache-dir-path
-        run: echo "::set-output name=dir::$(yarn config get cacheFolder)"
-
-      - uses: actions/cache@v2
-        id: yarn-cache # use this to check for `cache-hit` (`steps.yarn-cache.outputs.cache-hit != 'true'`)
+      - uses: actions/cache@v2  
         with:
-          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
-          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-yarn-
-      - run: rm -f yarn.lock
-      - run: yarn clean && yarn install
-      - run: yarn compile
-      - run: yarn clean
-      - run: yarn coverage
+            ${{ runner.os }}-node-
+      - run: npm install
+      - run: npm run compile
+      - run: npm run coverage
         env:
           NODE_OPTIONS: --max_old_space_size=8192
       - uses: codecov/codecov-action@v2
