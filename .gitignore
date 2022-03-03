@@ -19,7 +19,6 @@ artifacts
 .npmrc
 
 # Yarn
-<<<<<<< HEAD
 yarn-error.log
 .pnp.*
 .yarn/*

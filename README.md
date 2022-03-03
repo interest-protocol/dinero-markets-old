@@ -1,7 +1,10 @@
 # :seedling: Welcome to Interest Protocol! :seedling:
 
+<<<<<<< HEAD
 [![codecov](https://codecov.io/gh/interest-protocol/v1-core/branch/main/graph/badge.svg?token=O77FGAB2MX)](https://codecov.io/gh/interest-protocol/v1-core)
 
+=======
+>>>>>>> main
 Interest Protocol is a decentralized protocol designed to provide money markets to all asset classes including NFTs, interest-bearing tokens, and liquidity-provider tokens with high security.
 
 ## :money_with_wings: Features :money_with_wings:
@@ -34,8 +37,11 @@ Core technologies:
 
 ```
 
+<<<<<<< HEAD
 > :warning: **If  your node runs out of memory write in your terminal ```export NODE_OPTIONS="--max-old-space-size=8192" ```**
 
+=======
+>>>>>>> main
 ## Underlying Protocols
 
 Interest Protocol integrates with popular DeFi protocols to maximize the returns for users. 
