@@ -46,7 +46,7 @@ jobs:
           path: '**/node_modules'
           key: modules-${{ hashFiles('**/package-lock.json') }}
           restore-keys: modules-
-      - run: yarn install
+      - run: npm install
         if: steps.cache.outputs.cache-hit != 'true'
         
       - name: Set up Python
