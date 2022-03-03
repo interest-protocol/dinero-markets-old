@@ -23,6 +23,7 @@
   "publishConfig": {
     "access": "public"
   },
+  "private":false,
   "scripts": {
     "prepare": "husky install",
     "lint": "eslint --fix --ext .js,.ts .",
