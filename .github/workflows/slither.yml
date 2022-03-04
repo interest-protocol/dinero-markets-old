@@ -20,10 +20,8 @@
               ${{ runner.os }}-node-
         - run: npm install
           if: steps.cache.outputs.cache-hit != 'true'
-        - run: npm install -g solc
-        - run: npm run clean
-        - run: npm run compile
-        - uses: actions/setup-python@v2
-        - run: pip3 install slither-analyzer
-        - run: npm run slither
+        - uses: actions/checkout@v2
+        - uses: crytic/slither-action@v0.1.0
+          with:
+            slither-args: --filter-paths "mock"
 
