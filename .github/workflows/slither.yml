@@ -12,6 +12,7 @@
         security-events: write
       steps:
         - uses: actions/checkout@v2
+        - run: npm ci
         - run: npm run compile
         - uses: crytic/slither-action@v0.1.0
           with:
