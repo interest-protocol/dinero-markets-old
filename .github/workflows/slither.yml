@@ -7,10 +7,15 @@
   jobs:
     slither:
       runs-on: ubuntu-latest
+      permissions:
+        contents: read
+        security-events: write
       steps:
         - uses: actions/checkout@v2
         - uses: crytic/slither-action@v0.1.0
           with:
             slither-args: --filter-paths "mock"
             node-version: 16.0.0
+            target: './contracts'
+            ignore-compile: true
 

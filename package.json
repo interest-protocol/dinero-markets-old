@@ -80,7 +80,6 @@
     "@openzeppelin/hardhat-upgrades": "^1.15.0"
   },
   "engines": {
-    "node": ">=14.15.1"
-  },
-  "packageManager": "yarn@3.2.0"
+    "node": ">=16.0.0"
+  }
 }
