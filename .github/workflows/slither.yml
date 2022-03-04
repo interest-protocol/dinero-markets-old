@@ -1,0 +1,28 @@
+  name: Slither
+  on:
+    pull_request:
+      branches:
+        - dev
+  
+  jobs:
+    slither:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v3
+        - uses: actions/setup-node@v3
+          with: 
+            node-version: 16.x 
+        - uses: actions/cache@v2  
+          with:
+            path: ~/.npm
+            key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+            restore-keys: |
+              ${{ runner.os }}-node-
+        - run: npm install
+          if: steps.cache.outputs.cache-hit != 'true'
+        - run: npm run clean
+        - run: npm run compile
+        - uses: actions/setup-python@v2
+        - run: pip3 install slither-analyzer
+        - run: npm run slither
+
