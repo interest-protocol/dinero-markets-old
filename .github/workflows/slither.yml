@@ -8,20 +8,9 @@
     slither:
       runs-on: ubuntu-latest
       steps:
-        - uses: actions/checkout@v3
-        - uses: actions/setup-node@v3
-          with: 
-            node-version: 16.x 
-        - uses: actions/cache@v2  
-          with:
-            path: ~/.npm
-            key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-            restore-keys: |
-              ${{ runner.os }}-node-
-        - run: npm install
-          if: steps.cache.outputs.cache-hit != 'true'
         - uses: actions/checkout@v2
         - uses: crytic/slither-action@v0.1.0
           with:
             slither-args: --filter-paths "mock"
+            node-version: 16.0.0
 
