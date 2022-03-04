@@ -16,6 +16,5 @@
           with:
             slither-args: --filter-paths "mock"
             node-version: 16.0.0
-            target: './contracts'
             ignore-compile: true
 
