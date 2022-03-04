@@ -34,7 +34,7 @@
     "compile": "npx hardhat compile",
     "coverage": "npx hardhat coverage --testfiles './test/**.ts'",
     "publish": "npm publish contracts --access public",
-    "postinstall": "husky install && typechain"
+    "postinstall": "husky install"
   },
   "devDependencies": {
     "@commitlint/cli": "^16.2.1",
