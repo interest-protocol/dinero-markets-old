@@ -11,7 +11,7 @@ import {
   MockTWAP,
   OracleV1,
   TestOracleV2,
-} from '../typechain-types';
+} from '../typechain';
 import { deploy, deployUUPS, multiDeploy, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;

@@ -9,7 +9,7 @@ import {
   MockERC20,
   SyrupBar,
   TestLPVaultV2,
-} from '../typechain-types';
+} from '../typechain';
 import {
   advanceBlock,
   deploy,

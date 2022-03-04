@@ -8,7 +8,7 @@ import {
   MockERC20,
   StakedInterestToken,
   TestCasaDePapelV2,
-} from '../typechain-types';
+} from '../typechain';
 import { BURNER_ROLE, MINTER_ROLE } from './lib/constants';
 import {
   advanceBlock,
