@@ -35,7 +35,7 @@
     "coverage": "npx hardhat coverage --testfiles './test/**.ts'",
     "publish": "npm publish contracts --access public",
     "postinstall": "husky install && typechain",
-    "slither": "slither . --filter-paths \"mock\" --detect reentrancy-eth,reentrancy-no-eth,reentrancy-unlimited-gas"
+    "slither": "slither . --filter-paths \"mock\""
   },
   "devDependencies": {
     "@commitlint/cli": "^16.2.1",
