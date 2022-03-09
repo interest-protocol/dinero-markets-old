@@ -8,7 +8,7 @@ import {
   MasterChef,
   SyrupBar,
   TestCakeVaultV2,
-} from '../typechain-types';
+} from '../typechain';
 import { advanceBlock, deploy, deployUUPS, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
