@@ -85,7 +85,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     //////////////////////////////////////////////////////////////*/
 
     struct User {
-        uint256 amount; // How many {InterestToken} the user has in a specific pool.
+        uint256 amount; // How many {StakingToken} the user has in a specific pool.
         uint256 rewardsPaid; // How many rewards the user has been paid so far.
     }
 
@@ -94,7 +94,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 allocationPoints; // These points determine how many {InterestToken} tokens the pool will get per block.
         uint256 lastRewardBlock; // The last block the pool has distributed rewards to properly calculate new rewards.
         uint256 accruedIntPerShare; // Total of accrued {InterestToken} tokens per share.
-        uint256 totalSupply; // Total number of {InterestToken} the pool has in it.
+        uint256 totalSupply; // Total number of {StakingToken} the pool has in it.
     }
 
     /*///////////////////////////////////////////////////////////////
