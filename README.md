@@ -1,9 +1,9 @@
 # :seedling: Welcome to Interest Protocol! :seedling:
 
+[![docs](./assets/gitbook_2.svg)](https://docs.interestprotocol.com/)
 [![codecov](https://codecov.io/gh/interest-protocol/v1-core/branch/main/graph/badge.svg?token=O77FGAB2MX)](https://codecov.io/gh/interest-protocol/v1-core)
-[![gitbook](./assets/gitbook_2.svg)](https://google.com)
 [![twitter](./assets/twitter.svg)](https://twitter.com/interest_dinero)
-[![discord](./assets/discord.svg)](https://discord.gg/9rkxJDv7)
+[![discord](./assets/discord.svg)](https://discord.gg/PJEkqM4Crk)
 [![reddit](./assets/reddit.svg)](https://www.reddit.com/user/InterestProtocol)
 
 Interest Protocol is a decentralized protocol designed to provide money markets to all asset classes including NFTs, interest-bearing tokens, and liquidity-provider tokens with high security.
@@ -79,6 +79,7 @@ We chose upgradeable contracts to assure security post-deployment and tweak sett
 
 Learn more about the UUPS pattern here:
 
+- [Docs](https://docs.interestprotocol.com/)
 - [OZ Article](https://blog.openzeppelin.com/workshop-recap-deploying-more-efficient-upgradeable-contracts/)
 - [EIP-1822](https://eips.ethereum.org/EIPS/eip-1822)
 
@@ -91,4 +92,4 @@ Learn more about the UUPS pattern here:
 - [Medium](https://medium.com/@interestprotocol)
 - [Reddit](https://www.reddit.com/user/InterestProtocol)
 - [Telegram](https://t.me/interestprotocol)
-- [Discord](https://discord.gg/9rkxJDv7)
+- [Discord](https://discord.gg/PJEkqM4Crk)
