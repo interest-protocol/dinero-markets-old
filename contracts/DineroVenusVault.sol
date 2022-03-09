@@ -296,7 +296,7 @@ contract DineroVenusVault is
      * - `amount` must be greater than 0, as it makes no sense to deposit nothing.
      */
     function deposit(address underlying, uint256 amount)
-        public
+        external
         isWhitelisted(underlying)
         whenNotPaused
     {

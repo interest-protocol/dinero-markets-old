@@ -14,7 +14,7 @@ import {
   SafeVenus,
   TestSafeVenus,
   TestSafeVenusV2,
-} from '../typechain-types';
+} from '../typechain';
 import { deploy, deployUUPS, multiDeploy, upgrade } from './lib/test-utils';
 
 const { parseEther } = ethers.utils;

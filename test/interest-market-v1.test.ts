@@ -18,7 +18,7 @@ import {
   SyrupBar,
   TestInterestMarketV2,
   WETH9,
-} from '../typechain-types';
+} from '../typechain';
 import { BURNER_ROLE, MINTER_ROLE } from './lib/constants';
 import {
   advanceBlock,
