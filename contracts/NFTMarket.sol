@@ -201,7 +201,7 @@ contract NFTMarket is
 
     /**
      * @dev Helper function for the UI to know how many loans a user is currently engaged in.
-     * @notice It will nt differentiate between lender or borrower.
+     * @notice It will not differentiate between lender or borrower.
      *
      * @param collection The contract of the NFT
      * @param user The address of the user
