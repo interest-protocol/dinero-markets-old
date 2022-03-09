@@ -1,13 +1,9 @@
 # :seedling: Welcome to Interest Protocol! :seedling:
 
 [![codecov](https://codecov.io/gh/interest-protocol/v1-core/branch/main/graph/badge.svg?token=O77FGAB2MX)](https://codecov.io/gh/interest-protocol/v1-core)
-
 [![gitbook](./assets/gitbook_2.svg)](https://google.com)
-
 [![twitter](./assets/twitter.svg)](https://twitter.com/interest_dinero)
-
 [![discord](./assets/discord.svg)](https://discord.gg/9rkxJDv7)
-
 [![reddit](./assets/reddit.svg)](https://www.reddit.com/user/InterestProtocol)
 
 Interest Protocol is a decentralized protocol designed to provide money markets to all asset classes including NFTs, interest-bearing tokens, and liquidity-provider tokens with high security.
