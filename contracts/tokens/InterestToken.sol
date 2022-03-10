@@ -80,7 +80,7 @@ contract InterestToken is
      *
      * See {ERC20-_burn}.
      */
-    function burn(uint256 amount) public {
+    function burn(uint256 amount) external {
         _burn(_msgSender(), amount);
     }
 
@@ -95,7 +95,7 @@ contract InterestToken is
      * - the caller must have allowance for ``accounts``'s tokens of at least
      * `amount`.
      */
-    function burnFrom(address account, uint256 amount) public {
+    function burnFrom(address account, uint256 amount) external {
         uint256 currentAllowance = allowance(account, _msgSender());
         //solhint-disable-next-line reason-string
         require(

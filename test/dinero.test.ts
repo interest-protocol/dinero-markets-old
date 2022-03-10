@@ -2,7 +2,7 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import { Dinero, TestDineroV2 } from '../typechain-types';
+import { Dinero, TestDineroV2 } from '../typechain';
 import {
   BURNER_ROLE,
   DEFAULT_ADMIN_ROLE,

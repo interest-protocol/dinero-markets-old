@@ -9,7 +9,7 @@ import "./lib/UniswapV2OracleLibrary.sol";
  */
 contract LibraryWrapper {
     function sortTokens(address tokenA, address tokenB)
-        public
+        external
         pure
         returns (address, address)
     {
