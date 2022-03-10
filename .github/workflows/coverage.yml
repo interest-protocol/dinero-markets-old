@@ -26,7 +26,7 @@ jobs:
           NODE_OPTIONS: --max_old_space_size=8192
       - uses: codecov/codecov-action@v2
 
-  slither-params: 
+  slither: 
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -44,5 +44,8 @@ jobs:
       - run: npm run clean
       - run: npm run compile
       - uses: actions/setup-python@v2
+      - run: add-apt-repository ppa:ethereum/ethereum
+      - run: apt-get update
+      - run: apt-get install solc
       - run: pip3 install slither-analyzer
       - run: npm run slither
