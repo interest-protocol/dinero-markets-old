@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: Unlicensed
-pragma solidity 0.8.10;
+pragma solidity 0.8.12;
 
 abstract contract Context {
     // Empty internal constructor, to prevent people from mistakenly deploying
