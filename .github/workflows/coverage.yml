@@ -26,8 +26,8 @@ jobs:
         uses: luisfontes19/slither-static-analysis-action@v0.3.4
         with:
           run-npm-install: false
-          slither-params: --solc-remaps @openzeppelin/=$(pwd)/node_modules/@openzeppelin/ --filter-paths "./contracts/mock" --detect suicidal,uninitialized-state,msg-value-loop,unchecked-transfer,reentrancy-eth,enum-conversion,erc20-interface,erc721-interface,reentrancy-no-eth,unchecked-lowlevel,unchecked-send,dead-code,reentrancy-unlimited-gas 
-          projectPath: "contracts"
+          slither-params: --solc-remaps @openzeppelin/=$(pwd)/node_modules/@openzeppelin/
+          projectPath: "./contracts"
       - run: npm run coverage
         env:
           NODE_OPTIONS: --max_old_space_size=8192
