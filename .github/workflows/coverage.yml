@@ -26,7 +26,7 @@ jobs:
         uses: luisfontes19/slither-static-analysis-action@v0.3.4
         with:
           run-npm-install: false
-          slither-params: slither . --filter-paths "./contracts/mock"
+          slither-params: --filter-paths "./contracts/mock"
       - run: npm run coverage
         env:
           NODE_OPTIONS: --max_old_space_size=8192
