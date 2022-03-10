@@ -44,8 +44,8 @@ jobs:
       - run: npm run clean
       - run: npm run compile
       - uses: actions/setup-python@v2
-      - run: add-apt-repository ppa:ethereum/ethereum
-      - run: apt-get update
-      - run: apt-get install solc
+      - run: sudo add-apt-repository ppa:ethereum/ethereum
+      - run: sudo apt-get update
+      - run: sudo apt-get install solc
       - run: pip3 install slither-analyzer
       - run: npm run slither
