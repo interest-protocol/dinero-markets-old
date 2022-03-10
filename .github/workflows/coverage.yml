@@ -21,6 +21,12 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
       - run: npm run clean
       - run: npm run compile
+      - name: slither-static-analysis
+        continue-on-error: true
+        uses: luisfontes19/slither-static-analysis-action@v0.3.4
+        with:
+          run-npm-install: false
+          slither-params: slither . --filter-paths "mock"
       - run: npm run coverage
         env:
           NODE_OPTIONS: --max_old_space_size=8192
