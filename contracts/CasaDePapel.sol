@@ -24,7 +24,7 @@ import "./tokens/InterestToken.sol";
 import "./tokens/StakedInterestToken.sol";
 
 /**
- * @dev This is a 0.8.10 implementation of the master chef pioneered by the Sushi Team. It is a staking contact that allows multiple tokens to get rewarded in {InterestToken}.
+ * @dev This is a 0.8.12 implementation of the master chef pioneered by the Sushi Team. It is a staking contact that allows multiple tokens to get rewarded in {InterestToken}.
  *
  * @notice This implementation of the master chef gives a receipt token {StakedInterestToken} that is required when unstaking {InterestToken}.
  * @notice We allow for another user to unstake tokens from another user if he has given full approval to the first user.
@@ -228,12 +228,6 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             totalAllocationPoints
         );
 
-        // There is no point to mint 0 tokens.
-        if (intReward > 0) {
-            // We mint an additional 10% to the devAccount.
-            INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
-        }
-
         // This value stores all rewards the pool ever got.
         // Note: this variable i already per share as we divide by the `amountOfStakedTokens`.
         pool.accruedIntPerShare += intReward.bdiv(amountOfStakedTokens);
@@ -242,6 +236,12 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // Update global state
         pools[poolId] = pool;
+
+        // There is no point to mint 0 tokens.
+        if (intReward > 0) {
+            // We mint an additional 10% to the devAccount.
+            INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
+        }
 
         emit UpdatePool(poolId, block.number, pool.accruedIntPerShare);
     }
@@ -293,17 +293,17 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // If he is making a deposit, we get the token and update the relevant state.
         if (amount > 0) {
-            // Update user deposited amount
-            user.amount += amount;
-            // Update pool total supply
-            pool.totalSupply += amount;
-
             // Get the tokens from the user first
             pool.stakingToken.safeTransferFrom(
                 _msgSender(),
                 address(this),
                 amount
             );
+
+            // Update user deposited amount
+            user.amount += amount;
+            // Update pool total supply
+            pool.totalSupply += amount;
         }
 
         // He has been paid all rewards up to this point.
@@ -358,7 +358,6 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             // Update the relevant state and send tokens to the user.
             user.amount -= amount;
             pool.totalSupply -= amount;
-            pool.stakingToken.safeTransfer(_msgSender(), amount);
         }
 
         // Update the amount of reward paid to the user.
@@ -367,6 +366,10 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // Update global state
         pools[poolId] = pool;
         userInfo[poolId][_msgSender()] = user;
+
+        if (amount > 0) {
+            pool.stakingToken.safeTransfer(_msgSender(), amount);
+        }
 
         // Send the rewards if the user has any pending rewards.
         if (_pendingRewards > 0) {
@@ -405,23 +408,29 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // Similarly to the {deposit} function, the user can simply harvest the rewards.
         if (amount > 0) {
-            // Update the relevant state if he is depositing tokens.
-            user.amount += amount;
-            pool.totalSupply += amount;
             // Get {INTEREST_TOKEN} from the `msg.sender`.
             pool.stakingToken.safeTransferFrom(
                 _msgSender(),
                 address(this),
                 amount
             );
-
-            // Give the user the receipt token.
-            // Note the user needs this token to get his {INTEREST_TOKEN} back.
-            STAKED_INTEREST_TOKEN.mint(_msgSender(), amount);
+            // Update the relevant state if he is depositing tokens.
+            user.amount += amount;
+            pool.totalSupply += amount;
         }
 
         // Update the state to indicate that the user has been paid all the rewards up to this block.
         user.rewardsPaid = user.amount.bmul(pool.accruedIntPerShare);
+
+        // Update the global state.
+        pools[0] = pool;
+        userInfo[0][_msgSender()] = user;
+
+        if (amount > 0) {
+            // Give the user the receipt token.
+            // Note the user needs this token to get his {INTEREST_TOKEN} back.
+            STAKED_INTEREST_TOKEN.mint(_msgSender(), amount);
+        }
 
         // If the user has any pending rewards. We send it to him.
         if (_pendingRewards > 0) {
@@ -430,10 +439,6 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                 _pendingRewards
             );
         }
-
-        // Update the global state.
-        pools[0] = pool;
-        userInfo[0][_msgSender()] = user;
 
         emit Deposit(_msgSender(), 0, amount);
     }
@@ -604,10 +609,8 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         if (amount > 0) {
             // `recipient` must have enough receipt tokens. As {STAKED_INTEREST_TOKEN}
             // totalSupply must always be equal to the `pool.totalSupply` of {INTEREST_TOKEN}.
-            STAKED_INTEREST_TOKEN.burn(recipient, amount);
             user.amount -= amount;
             pool.totalSupply -= amount;
-            pool.stakingToken.safeTransfer(recipient, amount);
         }
 
         // Update `account` rewardsPaid. `Account` has been  paid in full amount up to this block.
@@ -615,6 +618,11 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // Update the global state.
         pools[0] = pool;
         userInfo[0][account] = user;
+
+        if (amount > 0) {
+            STAKED_INTEREST_TOKEN.burn(recipient, amount);
+            pool.stakingToken.safeTransfer(recipient, amount);
+        }
 
         // If there are any pending rewards we {mint} for the `recipient`.
         if (_pendingRewards > 0) {

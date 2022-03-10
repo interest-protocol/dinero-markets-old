@@ -21,14 +21,28 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
       - run: npm run clean
       - run: npm run compile
-      - name: slither-static-analysis
-        continue-on-error: true
-        uses: luisfontes19/slither-static-analysis-action@v0.3.4
-        with:
-          run-npm-install: false
-          slither-params: --solc-remaps @openzeppelin/=$(pwd)/node_modules/@openzeppelin/
-          projectPath: "./contracts"
       - run: npm run coverage
         env:
           NODE_OPTIONS: --max_old_space_size=8192
       - uses: codecov/codecov-action@v2
+
+  slither-params: 
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 16.x
+      - uses: actions/cache@v2  
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - run: npm ci
+        if: steps.cache.outputs.cache-hit != 'true'
+      - run: npm run clean
+      - run: npm run compile
+      - uses: actions/setup-python@v2
+      - run: pip3 install slither-analyzer
+      - run: npm run slither
