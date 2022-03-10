@@ -204,46 +204,13 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @param poolId The id of the pool to be updated.
      */
     function updatePool(uint256 poolId) public {
-        // Save storage in memory to save gas.
-        Pool memory pool = pools[poolId];
-
-        // If the rewards have been updated up to this block. We do not need to do anything.
-        if (block.number <= pool.lastRewardBlock) return;
-
-        // Total amount of tokens in the pool.
-        uint256 amountOfStakedTokens = pool.totalSupply;
-
-        // If the pool is empty. We simply  need to update the last block the pool was updated.
-        if (amountOfStakedTokens == 0) {
-            pools[poolId].lastRewardBlock = block.number;
-            return;
-        }
-
-        // Calculate how many blocks has passed since the last block.
-        uint256 blocksElapsed = block.number - pool.lastRewardBlock;
-
-        // We calculate how many {InterestToken} this pool is rewarded up to this block.
-        uint256 intReward = (blocksElapsed * interestTokenPerBlock).mulDiv(
-            pool.allocationPoints,
-            totalAllocationPoints
-        );
-
-        // This value stores all rewards the pool ever got.
-        // Note: this variable i already per share as we divide by the `amountOfStakedTokens`.
-        pool.accruedIntPerShare += intReward.bdiv(amountOfStakedTokens);
-
-        pool.lastRewardBlock = block.number;
-
-        // Update global state
-        pools[poolId] = pool;
+        uint256 intReward = _updatePool(poolId);
 
         // There is no point to mint 0 tokens.
         if (intReward > 0) {
             // We mint an additional 10% to the devAccount.
             INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
         }
-
-        emit UpdatePool(poolId, block.number, pool.accruedIntPerShare);
     }
 
     /**
@@ -273,7 +240,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(poolId != 0, "CP: use the staking function");
 
         // Update all rewards before any operation for proper distribution of rewards.
-        updatePool(poolId);
+        uint256 intReward = _updatePool(poolId);
 
         // Get global state in memory to save gas.
         Pool memory pool = pools[poolId];
@@ -319,6 +286,12 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             INTEREST_TOKEN.mint(_msgSender(), _pendingRewards);
         }
 
+        // There is no point to mint 0 tokens.
+        if (intReward > 0) {
+            // We mint an additional 10% to the devAccount.
+            INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
+        }
+
         emit Deposit(_msgSender(), poolId, amount);
     }
 
@@ -342,7 +315,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         );
 
         // Update the rewards to properly pay the user.
-        updatePool(poolId);
+        uint256 intReward = _updatePool(poolId);
 
         // Get global state in memory to save gas.
         Pool memory pool = pools[poolId];
@@ -376,6 +349,12 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             INTEREST_TOKEN.mint(_msgSender(), _pendingRewards);
         }
 
+        // There is no point to mint 0 tokens.
+        if (intReward > 0) {
+            // We mint an additional 10% to the devAccount.
+            INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
+        }
+
         emit Withdraw(_msgSender(), _msgSender(), poolId, amount);
     }
 
@@ -389,7 +368,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function stake(uint256 amount) external {
         // Update the pool to correctly calculate the rewards in this pool.
-        updatePool(0);
+        uint256 intReward = _updatePool(0);
 
         // Save relevant state in memory.
         Pool memory pool = pools[0];
@@ -440,6 +419,12 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             );
         }
 
+        // There is no point to mint 0 tokens.
+        if (intReward > 0) {
+            // We mint an additional 10% to the devAccount.
+            INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
+        }
+
         emit Deposit(_msgSender(), 0, amount);
     }
 
@@ -485,16 +470,16 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         uint256 amount = user.amount;
 
-        if (poolId == 0) {
-            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
-        }
-
         // Clean user history
         user.amount = 0;
         user.rewardsPaid = 0;
 
         // Update the pool total supply
         pool.totalSupply -= amount;
+
+        if (poolId == 0) {
+            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
+        }
 
         pool.stakingToken.safeTransfer(_msgSender(), amount);
 
@@ -554,6 +539,50 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /**************************** PRIVATE FUNCTIONS ****************************/
 
     /**
+     * @dev This function updates the rewards for the pool with id `poolId`.
+     *
+     * @param poolId The id of the pool to be updated.
+     */
+    function _updatePool(uint256 poolId) private returns (uint256) {
+        // Save storage in memory to save gas.
+        Pool memory pool = pools[poolId];
+
+        // If the rewards have been updated up to this block. We do not need to do anything.
+        if (block.number <= pool.lastRewardBlock) return 0;
+
+        // Total amount of tokens in the pool.
+        uint256 amountOfStakedTokens = pool.totalSupply;
+
+        // If the pool is empty. We simply  need to update the last block the pool was updated.
+        if (amountOfStakedTokens == 0) {
+            pools[poolId].lastRewardBlock = block.number;
+            return 0;
+        }
+
+        // Calculate how many blocks has passed since the last block.
+        uint256 blocksElapsed = block.number - pool.lastRewardBlock;
+
+        // We calculate how many {InterestToken} this pool is rewarded up to this block.
+        uint256 intReward = (blocksElapsed * interestTokenPerBlock).mulDiv(
+            pool.allocationPoints,
+            totalAllocationPoints
+        );
+
+        // This value stores all rewards the pool ever got.
+        // Note: this variable i already per share as we divide by the `amountOfStakedTokens`.
+        pool.accruedIntPerShare += intReward.bdiv(amountOfStakedTokens);
+
+        pool.lastRewardBlock = block.number;
+
+        // Update global state
+        pools[poolId] = pool;
+
+        emit UpdatePool(poolId, block.number, pool.accruedIntPerShare);
+
+        return intReward;
+    }
+
+    /**
      * @dev This function updates the allocation points of the {INTEREST_TOKEN} pool rewards based on the allocation of all other pools
      */
     function _updateStakingPool() private {
@@ -595,7 +624,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(userInfo[0][account].amount >= amount, "CP: not enough tokens");
 
         // Update the pool first to properly calculate the rewards.
-        updatePool(0);
+        uint256 intReward = _updatePool(0);
 
         // Save relevant state in memory.
         Pool memory pool = pools[0];
@@ -630,6 +659,12 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                 recipient,
                 _pendingRewards
             );
+        }
+
+        // There is no point to mint 0 tokens.
+        if (intReward > 0) {
+            // We mint an additional 10% to the devAccount.
+            INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
         }
     }
 

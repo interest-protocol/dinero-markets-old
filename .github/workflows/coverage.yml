@@ -49,3 +49,4 @@ jobs:
       - run: sudo apt-get install solc
       - run: pip3 install slither-analyzer
       - run: npm run slither
+        continue-on-error: true
