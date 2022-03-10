@@ -1,0 +1,5 @@
+{
+    "detectors_to_run": "suicidal,msg-value-loop,unchecked-transfer,reentrancy-eth,enum-conversion,erc20-interface,erc721-interface,reentrancy-no-eth,unchecked-lowlevel,unchecked-send,reentrancy-unlimited-gas",
+    "filter_paths": "openzeppelin",
+    "legacy_ast": false
+}

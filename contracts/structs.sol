@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: MIT
-pragma solidity 0.8.10;
+pragma solidity 0.8.12;
 
 /**
  * @notice We use 2 uint64 and 1 uint128 for memory efficiency. These ranges should cover all cases.

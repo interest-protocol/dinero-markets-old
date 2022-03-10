@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-pragma solidity 0.8.10;
+pragma solidity 0.8.12;
 
 import "./IntMath.sol";
 
 // solhint-disable
 /**
  * @notice We copied the functions we needed from https://github.com/Uniswap/solidity-lib/blob/master/contracts/libraries/FixedPoint.sol
- * @notice We also changed a line in uniswap full math to be compliant with solidity 0.8.10.
+ * @notice We also changed a line in uniswap full math to be compliant with solidity 0.8.12.
  */
 // a library for handling binary fixed point numbers (https://en.wikipedia.org/wiki/Q_(number_format))
 library FixedPoint {
