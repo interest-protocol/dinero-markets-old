@@ -30,11 +30,12 @@
     "check": "npm run lint && npm run type-check && npm run solhint",
     "solhint": "solhint contracts/**/*.sol",
     "test": "npx hardhat test",
-    "clean": "npx hardhat clean",
+    "clean": "npx hardhat clean && rimraf cache && rimraf artifacts",
     "compile": "npx hardhat compile",
     "coverage": "npx hardhat coverage --testfiles './test/**.ts'",
     "publish": "npm publish contracts --access public",
-    "postinstall": "husky install"
+    "postinstall": "husky install",
+    "slither": "slither contracts --solc-remaps @openzeppelin/=$(pwd)/node_modules/@openzeppelin/"
   },
   "devDependencies": {
     "@commitlint/cli": "^16.2.1",
@@ -68,6 +69,7 @@
     "pinst": "^3.0.0",
     "prettier": "^2.5.1",
     "prettier-plugin-solidity": "^1.0.0-beta.13",
+    "rimraf": "^3.0.2",
     "solhint": "^3.3.7",
     "solidity-coverage": "^0.7.20",
     "ts-node": "^10.6.0",
@@ -77,7 +79,7 @@
   "dependencies": {
     "@openzeppelin/contracts": "^4.5.0",
     "@openzeppelin/contracts-upgradeable": "^4.5.1",
-    "@openzeppelin/hardhat-upgrades": "^1.15.0"
+    "@openzeppelin/hardhat-upgrades": "^1.16.0"
   },
   "engines": {
     "node": ">=16.0.0"

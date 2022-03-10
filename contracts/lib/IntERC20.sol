@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.10;
+pragma solidity 0.8.12;
 
 /**
  * @dev All credits to boring crypto https://github.com/boringcrypto/BoringSolidity/blob/master/contracts/libraries/BoringERC20.sol
