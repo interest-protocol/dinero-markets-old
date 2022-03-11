@@ -31,6 +31,7 @@ import "../lib/IntERC20.sol";
 import "../OracleV1.sol";
 
 import "./DineroMarket.sol";
+import "hardhat/console.sol";
 
 /**
  * @dev It is an overcollaterized isolated lending market between an underlying Venus Token and the synthetic stable coin Dinero.
@@ -107,7 +108,7 @@ contract InterestBearingMarket is Initializable, DineroMarket {
     IVToken public VTOKEN; // A Venus Market.
 
     // Total amount of deposited underlying converted into vToken.
-    uint256 public totalCollateral;
+    uint256 public totalVCollateral;
 
     // Total Amount of XVS earned per VToken.
     uint256 public totalRewardsPerVToken;
@@ -191,7 +192,7 @@ contract InterestBearingMarket is Initializable, DineroMarket {
      */
     function approve() external {
         // BNB does not need approval.
-        if (_isBNB()) return;
+        if (_isBNB()) revert("IM: not allowed");
 
         COLLATERAL.safeIncreaseAllowance(
             address(ROUTER),
@@ -222,8 +223,7 @@ contract InterestBearingMarket is Initializable, DineroMarket {
         returns (uint256 rate)
     {
         uint256 one = 1 ether;
-        // exchangeRateCurrent is 0, it should throw as it means there is something wrong with Venus.
-        uint256 underlyingAmount = one.bdiv(VTOKEN.exchangeRateCurrent());
+        uint256 underlyingAmount = one.bmul(VTOKEN.exchangeRateCurrent());
 
         if (_isBNB()) {
             // Get USD price for 1 VToken (18 decimals). The USD price also has 18 decimals. We need to reduce
@@ -290,7 +290,7 @@ contract InterestBearingMarket is Initializable, DineroMarket {
 
         // Update Global state
         userCollateral[_msgSender()] = newAmount;
-        totalCollateral += vTokenAmount;
+        totalVCollateral += vTokenAmount;
 
         // User has been paid all rewards.
         rewardsOf[_msgSender()] = _totalRewardsPerVToken.mulDiv(
@@ -298,10 +298,8 @@ contract InterestBearingMarket is Initializable, DineroMarket {
             10**address(VTOKEN).safeDecimals()
         );
 
-        // Only send XVS if there are rewards.
-        if (rewards > 0)
-            // Pay the rewards to the user.
-            XVS.safeTransfer(_msgSender(), rewards);
+        // Send the rewards.
+        _transferXVS(_msgSender(), rewards);
 
         emit AddCollateral(_msgSender(), underlyingAmount, vTokenAmount);
     }
@@ -341,7 +339,7 @@ contract InterestBearingMarket is Initializable, DineroMarket {
 
         // Update State
         userCollateral[_msgSender()] = newAmount;
-        totalCollateral -= amount;
+        totalVCollateral -= amount;
         rewardsOf[_msgSender()] = _totalRewardsPerVToken.mulDiv(
             newAmount,
             10**address(VTOKEN).safeDecimals()
@@ -354,8 +352,9 @@ contract InterestBearingMarket is Initializable, DineroMarket {
                 _msgSender(),
                 amount
             );
-            // Send the rewards
-            XVS.safeTransfer(_msgSender(), rewards);
+
+            // Send the rewards.
+            _transferXVS(_msgSender(), rewards);
 
             // 0 represents that vTokens were withdrawn.
             emit WithdrawCollateral(_msgSender(), 0, amount);
@@ -374,8 +373,8 @@ contract InterestBearingMarket is Initializable, DineroMarket {
             COLLATERAL.safeTransfer(_msgSender(), underlyingAmount);
         }
 
-        // Send the rewards
-        XVS.safeTransfer(_msgSender(), rewards);
+        // Send the rewards.
+        _transferXVS(_msgSender(), rewards);
 
         emit WithdrawCollateral(_msgSender(), underlyingAmount, amount);
     }
@@ -384,8 +383,8 @@ contract InterestBearingMarket is Initializable, DineroMarket {
      * @dev We need to be able to receive BNB after redeeming from vBNB.
      */
     receive() external payable {
-        // We should not accept BNB if the collateral is an ERC20.
-        if (!_isBNB()) revert("IM: not allowed");
+        // Only accept BNB from vBNB.
+        if (_msgSender() != address(VTOKEN)) revert("IM: not allowed");
     }
 
     /**
@@ -499,7 +498,7 @@ contract InterestBearingMarket is Initializable, DineroMarket {
                 );
 
                 // Send the rewards.
-                XVS.safeTransfer(account, rewards);
+                _transferXVS(account, rewards);
             }
 
             uint256 underlyingAmount;
@@ -543,7 +542,7 @@ contract InterestBearingMarket is Initializable, DineroMarket {
         );
 
         // Update the total collateral.
-        totalCollateral -= liquidationInfo.allCollateral;
+        totalVCollateral -= liquidationInfo.allCollateral;
 
         // 10% of the liquidation fee to be given to the protocol.
         uint256 protocolFee = uint256(liquidationInfo.allFee).bmul(0.1e18);
@@ -762,7 +761,7 @@ contract InterestBearingMarket is Initializable, DineroMarket {
      * @dev Helper function to claim Venus from VToken and fairly calculate the rewards.
      */
     function _claimVenus() private {
-        uint256 _totalCollateral = totalCollateral;
+        uint256 _totalCollateral = totalVCollateral;
 
         // If there is no collateral in this contract, there is no XVS to claim.
         if (_totalCollateral == 0) return;
@@ -788,5 +787,17 @@ contract InterestBearingMarket is Initializable, DineroMarket {
             10**address(vToken).safeDecimals(),
             _totalCollateral
         );
+    }
+
+    /**
+     * @dev A helper function to only send XVS if there are rewards.
+     *
+     * @param to The address that will receive XVS
+     * @param amount The number of XVS to send
+     */
+    function _transferXVS(address to, uint256 amount) private {
+        if (amount == 0) return;
+        // Send the rewards
+        XVS.safeTransfer(to, amount);
     }
 }

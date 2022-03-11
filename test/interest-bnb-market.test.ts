@@ -208,7 +208,7 @@ describe('InterestBNBMarketV1', () => {
       .div(parseEther('1'));
 
     expect(await dinero.balanceOf(treasury.address)).to.be.equal(0);
-    // Acrrue has not been called
+    // Accrue has not been called
     expect((await interestBNBMarket.totalLoan()).elastic).to.be.equal(
       parseEther('700')
     );
