@@ -131,6 +131,14 @@ contract InterestMarketV1 is Initializable, DineroMarket {
         uint256 _maxLTVRatio,
         uint256 _liquidationFee
     ) external initializer {
+        // Collateral must not be zero address.
+        require(address(collateral) != address(0), "MKT: no zero address");
+        // {maxLTVRatio} must be within the acceptable bounds.
+        require(
+            0.9e18 >= _maxLTVRatio && _maxLTVRatio >= 0.5e18,
+            "MKT: ltc ratio out of bounds"
+        );
+
         __DineroMarket_init();
 
         ROUTER = router;
@@ -142,14 +150,6 @@ contract InterestMarketV1 is Initializable, DineroMarket {
         loan.INTEREST_RATE = interestRate;
         maxLTVRatio = _maxLTVRatio;
         liquidationFee = _liquidationFee;
-
-        // Collateral must not be zero address.
-        require(address(COLLATERAL) != address(0), "MKT: no zero address");
-        // {maxLTVRatio} must be within the acceptable bounds.
-        require(
-            0.9e18 >= maxLTVRatio && maxLTVRatio >= 0.5e18,
-            "MKT: ltc ratio out of bounds"
-        );
 
         // Also make sure that {COLLATERAL} is a deployed ERC20.
         // Approve the router to trade the collateral.
