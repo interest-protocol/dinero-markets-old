@@ -8,7 +8,7 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 
 */
 
-//SPDX-License-Identifier: Unlicense
+//SPDX-License-Identifier: MIT
 pragma solidity 0.8.12;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -19,7 +19,6 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeab
 import "../interfaces/IPancakeRouter02.sol";
 import "../interfaces/IPancakePair.sol";
 import "../interfaces/IVToken.sol";
-import "../interfaces/IVBNB.sol";
 import "../interfaces/IVenusController.sol";
 
 import "../tokens/Dinero.sol";
@@ -56,9 +55,8 @@ import "hardhat/console.sol";
  *
  * BTC - 0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c
  * ETH - 0x2170Ed0880ac9A755fd29B2688956BD959F933F8
- * NATIVE BNB - 18 decimals
  */
-contract InterestBearingMarket is Initializable, DineroMarket {
+contract InterestERC20BearingMarket is Initializable, DineroMarket {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -154,6 +152,12 @@ contract InterestBearingMarket is Initializable, DineroMarket {
         uint256 _maxLTVRatio,
         uint256 _liquidationFee
     ) external initializer {
+        // {maxLTVRatio} must be within the acceptable bounds.
+        require(
+            0.9e18 >= _maxLTVRatio && _maxLTVRatio >= 0.5e18,
+            "MKT: ltc ratio out of bounds"
+        );
+
         __DineroMarket_init();
 
         ROUTER = router;
@@ -167,15 +171,6 @@ contract InterestBearingMarket is Initializable, DineroMarket {
         loan.INTEREST_RATE = interestRate;
         maxLTVRatio = _maxLTVRatio;
         liquidationFee = _liquidationFee;
-
-        // {maxLTVRatio} must be within the acceptable bounds.
-        require(
-            0.9e18 >= maxLTVRatio && maxLTVRatio >= 0.5e18,
-            "MKT: ltc ratio out of bounds"
-        );
-
-        // We do not need to approve BNB to sell on PCS or to mint vBNB.
-        if (_isBNB()) return;
 
         // Approve the router to trade the collateral in case of liquidations.
         COLLATERAL.safeApprove(address(router), type(uint256).max);
@@ -191,9 +186,6 @@ contract InterestBearingMarket is Initializable, DineroMarket {
      * @dev This function is to increase the allowance to the PCS router for liquidation purposes and the vToken. It will bring it to the maximum.
      */
     function approve() external {
-        // BNB does not need approval.
-        if (_isBNB()) revert("IM: not allowed");
-
         COLLATERAL.safeIncreaseAllowance(
             address(ROUTER),
             type(uint256).max -
@@ -225,16 +217,8 @@ contract InterestBearingMarket is Initializable, DineroMarket {
         uint256 one = 1 ether;
         uint256 underlyingAmount = one.bmul(VTOKEN.exchangeRateCurrent());
 
-        if (_isBNB()) {
-            // Get USD price for 1 VToken (18 decimals). The USD price also has 18 decimals. We need to reduce
-            rate = ORACLE.getBNBUSDPrice(underlyingAmount);
-        } else {
-            // Get USD price for 1 VToken (18 decimals). The USD price also has 18 decimals. We need to reduce
-            rate = ORACLE.getTokenUSDPrice(
-                address(COLLATERAL),
-                underlyingAmount
-            );
-        }
+        // Get USD price for 1 VToken (18 decimals). The USD price also has 18 decimals. We need to reduce
+        rate = ORACLE.getTokenUSDPrice(address(COLLATERAL), underlyingAmount);
 
         require(rate > 0, "MKT: invalid exchange rate");
 
@@ -252,7 +236,7 @@ contract InterestBearingMarket is Initializable, DineroMarket {
      *
      * @param amount The number of `COLLATERAL` tokens to be used for collateral. This argument is not used if the underlying is BNB.
      */
-    function addCollateral(uint256 amount) external payable {
+    function addCollateral(uint256 amount) external {
         // Update rewards.
         _claimVenus();
 
@@ -275,16 +259,9 @@ contract InterestBearingMarket is Initializable, DineroMarket {
         uint256 vTokenAmount;
         uint256 underlyingAmount;
 
-        if (_isBNB()) {
-            // If we are sending BNB
-            vTokenAmount = _mintBNBVToken(msg.value);
-            underlyingAmount = msg.value;
-        } else {
-            // If we are depositing an ERC20
-            COLLATERAL.safeTransferFrom(_msgSender(), address(this), amount);
-            vTokenAmount = _mintERC20VToken(amount);
-            underlyingAmount = amount;
-        }
+        COLLATERAL.safeTransferFrom(_msgSender(), address(this), amount);
+        vTokenAmount = _mintERC20VToken(amount);
+        underlyingAmount = amount;
 
         uint256 newAmount = _userCollateral + vTokenAmount;
 
@@ -364,27 +341,13 @@ contract InterestBearingMarket is Initializable, DineroMarket {
         // How much underlying was redeemed.
         uint256 underlyingAmount;
 
-        // BNB requires a different way to send it.
-        if (_isBNB()) {
-            underlyingAmount = _redeemBNBVToken(amount);
-            _sendBNB(payable(_msgSender()), underlyingAmount);
-        } else {
-            underlyingAmount = _redeemERC20VToken(amount);
-            COLLATERAL.safeTransfer(_msgSender(), underlyingAmount);
-        }
+        underlyingAmount = _redeemERC20VToken(amount);
+        COLLATERAL.safeTransfer(_msgSender(), underlyingAmount);
 
         // Send the rewards.
         _transferXVS(_msgSender(), rewards);
 
         emit WithdrawCollateral(_msgSender(), underlyingAmount, amount);
-    }
-
-    /**
-     * @dev We need to be able to receive BNB after redeeming from vBNB.
-     */
-    receive() external payable {
-        // Only accept BNB from vBNB.
-        if (_msgSender() != address(VTOKEN)) revert("IM: not allowed");
     }
 
     /**
@@ -504,11 +467,7 @@ contract InterestBearingMarket is Initializable, DineroMarket {
             uint256 underlyingAmount;
             // If the liquidator wishes to receive his reward in underlying, we need to redeem.
             if (inUnderlying) {
-                if (_isBNB()) {
-                    underlyingAmount = _redeemBNBVToken(collateralToCover);
-                } else {
-                    underlyingAmount = _redeemERC20VToken(collateralToCover);
-                }
+                underlyingAmount = _redeemERC20VToken(collateralToCover);
             }
 
             emit WithdrawCollateral(
@@ -557,37 +516,21 @@ contract InterestBearingMarket is Initializable, DineroMarket {
         if (path.length >= 2) {
             // Sell `COLLATERAL` and send `DINERO` to recipient.
 
-            if (_isBNB()) {
-                // Sell all collateral in underlying
-                // We assume all BNB balance in the contract right now is from redeeming.
-                ROUTER.swapExactETHForTokens{value: address(this).balance}(
-                    // Minimum amount to cover the collateral
-                    0,
-                    // Sell COLLATERAL -> DINERO
-                    path,
-                    // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
-                    recipient,
-                    // This TX must happen in this block.
-                    //solhint-disable-next-line not-rely-on-time
-                    block.timestamp
-                );
-            } else {
-                // If it is an ERC20
-                ROUTER.swapExactTokensForTokens(
-                    // Sell all collateral for this liquidation
-                    // We assume that all underlying in the contract was from the vToken
-                    _contractBalanceOf(address(COLLATERAL)),
-                    // Liquidator will pay for slippage
-                    0,
-                    // Sell COLLATERAL -> ... -> DINERO
-                    path,
-                    // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
-                    recipient,
-                    // This TX must happen in this block.
-                    //solhint-disable-next-line not-rely-on-time
-                    block.timestamp
-                );
-            }
+            // If it is an ERC20
+            ROUTER.swapExactTokensForTokens(
+                // Sell all collateral for this liquidation
+                // We assume that all underlying in the contract was from the vToken
+                _contractBalanceOf(address(COLLATERAL)),
+                // Liquidator will pay for slippage
+                0,
+                // Sell COLLATERAL -> ... -> DINERO
+                path,
+                // Send DINERO to the recipient. Since this has to happen in this block. We can burn right after
+                recipient,
+                // This TX must happen in this block.
+                //solhint-disable-next-line not-rely-on-time
+                block.timestamp
+            );
 
             // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
             // Liquidator keeps the rest as profit.
@@ -600,8 +543,9 @@ contract InterestBearingMarket is Initializable, DineroMarket {
                 // Send collateral in Underlying to the `recipient` (includes liquidator fee + protocol fee)
                 COLLATERAL.safeTransfer(
                     recipient,
-                    // We assume that all underlying in the contract was from the vToken
-                    _contractBalanceOf(address(COLLATERAL))
+                    uint256(liquidationInfo.allCollateral).bmul(
+                        VTOKEN.exchangeRateCurrent()
+                    )
                 );
             } else {
                 // Send as a VToken
@@ -620,13 +564,6 @@ contract InterestBearingMarket is Initializable, DineroMarket {
     /*///////////////////////////////////////////////////////////////
                             PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @dev Helper function to know if `COLLATERAL` is BNB.
-     */
-    function _isBNB() private view returns (bool) {
-        return COLLATERAL == IERC20Upgradeable(address(0));
-    }
 
     /**
      * @dev Helper function to check the balance of a `token` this contract has.
@@ -675,31 +612,6 @@ contract InterestBearingMarket is Initializable, DineroMarket {
     }
 
     /**
-     * @dev Helper function to supply underlying to a `vToken` to mint vTokens and know how many vTokens we got.
-     *
-     * @param amount The amount of BNB tokens to be supplied.
-     *
-     * It supplies all underlying.
-     */
-    function _mintBNBVToken(uint256 amount)
-        private
-        returns (uint256 mintedAmount)
-    {
-        address vToken = address(VTOKEN);
-        // Find how many VTokens we currently have.
-        uint256 balanceBefore = _contractBalanceOf(vToken);
-
-        // Supply ALL underlyings present in the contract even lost tokens to mint VTokens. It will revert if it fails.
-        _invariant(
-            IVBNB(vToken).mint{value: amount}(amount),
-            "DV: failed to mint"
-        );
-
-        // Subtract the new balance from the previous one, to find out how many VTokens we minted.
-        mintedAmount = _contractBalanceOf(vToken) - balanceBefore;
-    }
-
-    /**
      * @dev It redeems the underlying asset from a VToken market and returns the amount redeemed.
      *
      * @param amount The amount of VToken to redeem NOT UNDERLYING.
@@ -717,44 +629,6 @@ contract InterestBearingMarket is Initializable, DineroMarket {
 
         // Subtract the new balance from the previous one, to find out how many VTokens we minted.
         mintedAmount = _contractBalanceOf(collateral) - balanceBefore;
-    }
-
-    /**
-     * @dev It redeems BNB from vBNB market and returns the amount of BNB received.
-     *
-     * @param amount The amount of vBNB to redeem not BNB.
-     */
-    function _redeemBNBVToken(uint256 amount)
-        private
-        returns (uint256 mintedAmount)
-    {
-        // Find how many VTokens we currently have.
-        uint256 balanceBefore = address(this).balance;
-
-        // Supply ALL underlyings present in the contract even lost tokens to mint VTokens. It will revert if it fails.
-        _invariant(VTOKEN.redeem(amount), "DV: failed to redeem");
-
-        // Subtract the new balance from the previous one, to find out how many VTokens we minted.
-        mintedAmount = address(this).balance - balanceBefore;
-    }
-
-    /**
-     * @dev A helper function to send BNB to an address.
-     *
-     * @param to The account that will receive BNB.
-     * @param amount How much BNB to send to the `to` address.
-     */
-    function _sendBNB(address payable to, uint256 amount) private {
-        assert(address(this).balance >= amount);
-
-        //solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returnData) = to.call{value: amount}("");
-        require(
-            success,
-            returnData.length == 0
-                ? "MKT: unable to remove collateral"
-                : string(returnData)
-        );
     }
 
     /**

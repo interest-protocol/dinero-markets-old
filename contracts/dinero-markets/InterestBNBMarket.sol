@@ -8,7 +8,7 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 
 */
 
-//SPDX-License-Identifier: Unlicense
+//SPDX-License-Identifier: MIT
 pragma solidity 0.8.12;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
