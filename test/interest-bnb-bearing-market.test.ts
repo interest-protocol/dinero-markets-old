@@ -274,6 +274,7 @@ describe('Interest BNB Bearing Market', () => {
         ethers.BigNumber.from('100000000000000000')
       );
       expect(_owner).to.be.equal(owner.address);
+      expect(_vToken).to.be.equal(vBNB.address);
     });
   });
 
