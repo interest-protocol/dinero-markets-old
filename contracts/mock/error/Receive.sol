@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.12;
 
-contract ReceiveErrorAssert {
+//solhint-disable
+
+contract ReceiveErrorRequireNoMsg {
     receive() external payable {
-        assert(false);
+        require(false);
     }
 }
 
-contract ReceiveErrorRequire {
+contract ReceiveErrorRequireMsg {
     receive() external payable {
         require(false, "test error");
     }

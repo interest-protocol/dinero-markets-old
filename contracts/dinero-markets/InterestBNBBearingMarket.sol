@@ -148,7 +148,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         // {maxLTVRatio} must be within the acceptable bounds.
         require(
             0.9e18 >= _maxLTVRatio && _maxLTVRatio >= 0.5e18,
-            "MKT: ltc ratio out of bounds"
+            "DM: ltc ratio out of bounds"
         );
 
         __DineroMarket_init();
@@ -191,7 +191,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         // Get USD price for 1 VToken (18 decimals). The USD price also has 18 decimals. We need to reduce
         rate = ORACLE.getBNBUSDPrice(underlyingAmount);
 
-        require(rate > 0, "MKT: invalid exchange rate");
+        require(rate > 0, "DM: invalid exchange rate");
 
         // if the exchange rate is different we need to update the global state
         if (rate != exchangeRate) {
@@ -325,7 +325,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
      */
     receive() external payable {
         // Only accept BNB from vBNB.
-        if (_msgSender() != address(VTOKEN)) revert("IM: not allowed");
+        if (_msgSender() != address(VTOKEN)) revert("DM: not allowed");
     }
 
     /**
@@ -356,17 +356,17 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         bool inUnderlying,
         address[] calldata path
     ) external {
-        // Make sure the token is always exchanged to Dinero as we need to burn at the end.
-        // path can be empty if the liquidator has enough dinero in his accounts to close the positions.
-        require(
-            path.length == 0 || path[path.length - 1] == address(DINERO),
-            "MKT: no dinero at last index"
-        );
-        require(
-            path.length == 0 || (path.length > 0 && inUnderlying),
-            "IM: cannot sell VTokens"
-        );
-        require(path[0] != address(XVS), "IM: not allowed to sell XVS");
+        if (path.length > 0) {
+            // Make sure the token is always exchanged to Dinero as we need to burn at the end.
+            // path can be empty if the liquidator has enough dinero in his accounts to close the positions.
+            require(
+                path[path.length - 1] == address(DINERO),
+                "DM: no dinero at last index"
+            );
+            require(inUnderlying, "DM: cannot sell VTokens");
+            require(path[0] != address(XVS), "DM: not allowed to sell XVS");
+        }
+
         // Liquidations must be based on the current exchange rate.
         uint256 _exchangeRate = updateExchangeRate();
 
@@ -408,13 +408,15 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
 
             // How much is owed in principal + accrued fees
             uint256 debt = _totalLoan.toElastic(principal, false);
-
             // Calculate the collateralFee (for the liquidator and the protocol)
             uint256 fee = debt.bmul(_liquidationFee);
 
             // How much collateral is needed to cover the loan + fees.
             // Since Dinero is always USD we can calculate this way.
             uint256 collateralToCover = (debt + fee).bdiv(_exchangeRate);
+
+            // on very low values due to math restrictions this can be 0.
+            require(collateralToCover > 0, "DM: principal too low");
 
             {
                 // Save Gas
@@ -437,7 +439,6 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
                     newAmount,
                     10**address(VTOKEN).safeDecimals()
                 );
-
                 // Send the rewards.
                 _transferXVS(account, rewards);
             }
@@ -465,7 +466,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         // There must have liquidations or we throw an error;
         // We throw an error instead of returning because we already changed state, sent events and withdrew tokens from collateral.
         // We need to revert all that.
-        require(liquidationInfo.allPrincipal > 0, "MKT: no liquidations");
+        require(liquidationInfo.allPrincipal > 0, "DM: no liquidations");
 
         // If the there is no more open positions, the elastic should also equal to 0.
         // Due to limits of math in solidity. elastic might end up with dust.
@@ -493,10 +494,15 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         // If a path is provided, we will use the collateral in Underlying to cover the debt.
         if (path.length >= 2) {
             // Sell `COLLATERAL` and send `DINERO` to recipient.
-
             // Sell all collateral in underlying
-            // We assume all BNB balance in the contract right now is from redeeming.
-            ROUTER.swapExactETHForTokens{value: address(this).balance}(
+
+            uint256 bnbAmount = uint256(liquidationInfo.allCollateral).bmul(
+                VTOKEN.exchangeRateCurrent()
+            );
+
+            ROUTER.swapExactETHForTokens{
+                value: _calculateSafeBNBTransferAmount(bnbAmount)
+            }(
                 // Minimum amount to cover the collateral
                 0,
                 // Sell COLLATERAL -> DINERO
@@ -515,6 +521,11 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         } else {
             // Liquidator will be paid in `COLLATERAL`
 
+            // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
+            // Liquidator keeps the rest as profit.
+            // Liquidator has dinero in this scenario
+            DINERO.burn(_msgSender(), liquidationInfo.allDebt + protocolFee);
+
             if (inUnderlying) {
                 // Send collateral in Underlying to the `recipient` (includes liquidator fee + protocol fee)
                 _sendBNB(
@@ -530,10 +541,6 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
                     liquidationInfo.allCollateral
                 );
             }
-            // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
-            // Liquidator keeps the rest as profit.
-            // Liquidator has dinero in this scenario
-            DINERO.burn(_msgSender(), liquidationInfo.allDebt + protocolFee);
         }
     }
 
@@ -583,7 +590,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         // Supply ALL underlyings present in the contract even lost tokens to mint VTokens. It will revert if it fails.
         _invariant(
             IVBNB(vToken).mint{value: amount}(amount),
-            "DV: failed to mint"
+            "DM: failed to mint"
         );
 
         // Subtract the new balance from the previous one, to find out how many VTokens we minted.
@@ -603,7 +610,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         uint256 balanceBefore = address(this).balance;
 
         // Supply ALL underlyings present in the contract even lost tokens to mint VTokens. It will revert if it fails.
-        _invariant(VTOKEN.redeem(amount), "DV: failed to redeem");
+        _invariant(VTOKEN.redeem(amount), "DM: failed to redeem");
 
         // Subtract the new balance from the previous one, to find out how many VTokens we minted.
         mintedAmount = address(this).balance - balanceBefore;
@@ -616,14 +623,14 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
      * @param amount How much BNB to send to the `to` address.
      */
     function _sendBNB(address payable to, uint256 amount) private {
-        assert(address(this).balance >= amount);
-
         //solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returnData) = to.call{value: amount}("");
+        (bool success, bytes memory returnData) = to.call{
+            value: _calculateSafeBNBTransferAmount(amount)
+        }("");
         require(
             success,
             returnData.length == 0
-                ? "MKT: unable to remove collateral"
+                ? "DM: unable to remove collateral"
                 : string(returnData)
         );
     }
@@ -668,7 +675,35 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
      */
     function _transferXVS(address to, uint256 amount) private {
         if (amount == 0) return;
+
+        IERC20Upgradeable xvs = XVS;
+
+        //solhint-disable-next-line var-name-mixedcase
+        uint256 XVSBalance = _contractBalanceOf(address(xvs));
+
+        // In this contract our math should never cause a deviation bigger than this one.
+        assert(XVSBalance + 0.001 ether >= amount);
+
         // Send the rewards
-        XVS.safeTransfer(to, amount);
+        xvs.safeTransfer(to, amount > XVSBalance ? XVSBalance : amount);
+    }
+
+    /**
+     * dev A helper function to not send more BNB than the current balance.
+     *
+     * @param amount The desired amount of BNB to send.
+     * @return uint256 The safe amount of BNB to send
+     */
+    function _calculateSafeBNBTransferAmount(uint256 amount)
+        private
+        view
+        returns (uint256)
+    {
+        uint256 maximum = address(this).balance;
+
+        // In this contract our math should never cause a deviation bigger than this one.
+        assert(maximum + 0.001 ether >= amount);
+
+        return amount > maximum ? maximum : amount;
     }
 }
