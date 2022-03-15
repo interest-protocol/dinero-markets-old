@@ -30,7 +30,6 @@ import "../lib/IntERC20.sol";
 import "../OracleV1.sol";
 
 import "./DineroMarket.sol";
-import "hardhat/console.sol";
 
 /**
  * @dev It is an overcollaterized isolated lending market between an underlying Venus Token and the synthetic stable coin Dinero.
@@ -220,7 +219,7 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         // Get USD price for 1 VToken (18 decimals). The USD price also has 18 decimals. We need to reduce
         rate = ORACLE.getTokenUSDPrice(address(COLLATERAL), underlyingAmount);
 
-        require(rate > 0, "MKT: invalid exchange rate");
+        require(rate > 0, "DM: invalid exchange rate");
 
         // if the exchange rate is different we need to update the global state
         if (rate != exchangeRate) {
@@ -378,17 +377,17 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         bool inUnderlying,
         address[] calldata path
     ) external {
-        // Make sure the token is always exchanged to Dinero as we need to burn at the end.
-        // path can be empty if the liquidator has enough dinero in his accounts to close the positions.
-        require(
-            path.length == 0 || path[path.length - 1] == address(DINERO),
-            "MKT: no dinero at last index"
-        );
-        require(
-            path.length == 0 || (path.length > 0 && inUnderlying),
-            "IM: cannot sell VTokens"
-        );
-        require(path[0] != address(XVS), "IM: not allowed to sell XVS");
+        if (path.length > 0) {
+            // Make sure the token is always exchanged to Dinero as we need to burn at the end.
+            // path can be empty if the liquidator has enough dinero in his accounts to close the positions.
+            require(
+                path[path.length - 1] == address(DINERO),
+                "DM: no dinero at last index"
+            );
+            require(inUnderlying, "DM: cannot sell VTokens");
+            require(path[0] != address(XVS), "DM: not allowed to sell XVS");
+        }
+
         // Liquidations must be based on the current exchange rate.
         uint256 _exchangeRate = updateExchangeRate();
 
@@ -404,6 +403,8 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         Rebase memory _totalLoan = totalLoan;
 
         uint256 _liquidationFee = liquidationFee;
+
+        uint256 totalUnderlyingAmount;
 
         // Loop through all positions
         for (uint256 i = 0; i < accounts.length; i++) {
@@ -438,15 +439,19 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
             // Since Dinero is always USD we can calculate this way.
             uint256 collateralToCover = (debt + fee).bdiv(_exchangeRate);
 
+            // on very low values due to math restrictions this can be 0.
+            require(collateralToCover > 0, "DM: principal too low");
+
             {
                 // Save Gas
                 uint256 _totalRewardsPerVToken = totalRewardsPerVToken;
                 uint256 _userCollateral = userCollateral[account];
+                uint256 decimalsFactor = 10**address(VTOKEN).safeDecimals();
 
                 // How many rewards the user is entitled.
                 uint256 rewards = _totalRewardsPerVToken.mulDiv(
                     _userCollateral,
-                    10**address(VTOKEN).safeDecimals()
+                    decimalsFactor
                 ) - rewardsOf[account];
 
                 // New balance after being liquidated
@@ -457,14 +462,14 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
                 // We consider that all rewards have been paid.
                 rewardsOf[account] = _totalRewardsPerVToken.mulDiv(
                     newAmount,
-                    10**address(VTOKEN).safeDecimals()
+                    decimalsFactor
                 );
-
                 // Send the rewards.
                 _transferXVS(account, rewards);
             }
 
             uint256 underlyingAmount;
+
             // If the liquidator wishes to receive his reward in underlying, we need to redeem.
             if (inUnderlying) {
                 underlyingAmount = _redeemERC20VToken(collateralToCover);
@@ -482,12 +487,13 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
             liquidationInfo.allPrincipal += principal.toUint128();
             liquidationInfo.allDebt += debt.toUint128();
             liquidationInfo.allFee += fee.toUint128();
+            totalUnderlyingAmount += underlyingAmount;
         }
 
         // There must have liquidations or we throw an error;
         // We throw an error instead of returning because we already changed state, sent events and withdrew tokens from collateral.
         // We need to revert all that.
-        require(liquidationInfo.allPrincipal > 0, "MKT: no liquidations");
+        require(liquidationInfo.allPrincipal > 0, "DM: no liquidations");
 
         // If the there is no more open positions, the elastic should also equal to 0.
         // Due to limits of math in solidity. elastic might end up with dust.
@@ -515,12 +521,10 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         // If a path is provided, we will use the collateral in Underlying to cover the debt.
         if (path.length >= 2) {
             // Sell `COLLATERAL` and send `DINERO` to recipient.
-
             // If it is an ERC20
             ROUTER.swapExactTokensForTokens(
                 // Sell all collateral for this liquidation
-                // We assume that all underlying in the contract was from the vToken
-                _contractBalanceOf(address(COLLATERAL)),
+                totalUnderlyingAmount,
                 // Liquidator will pay for slippage
                 0,
                 // Sell COLLATERAL -> ... -> DINERO
@@ -537,16 +541,15 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
             // Liquidator recipient Dinero from the swap.
             DINERO.burn(recipient, liquidationInfo.allDebt + protocolFee);
         } else {
-            // Liquidator will be paid in `COLLATERAL`
+            // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
+            // Liquidator keeps the rest as profit.
+            // Liquidator has dinero in this scenario
+            DINERO.burn(_msgSender(), liquidationInfo.allDebt + protocolFee);
 
+            // Liquidator will be paid in `COLLATERAL`
             if (inUnderlying) {
                 // Send collateral in Underlying to the `recipient` (includes liquidator fee + protocol fee)
-                COLLATERAL.safeTransfer(
-                    recipient,
-                    uint256(liquidationInfo.allCollateral).bmul(
-                        VTOKEN.exchangeRateCurrent()
-                    )
-                );
+                COLLATERAL.safeTransfer(recipient, totalUnderlyingAmount);
             } else {
                 // Send as a VToken
                 IERC20Upgradeable(address(VTOKEN)).safeTransfer(
@@ -554,10 +557,6 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
                     liquidationInfo.allCollateral
                 );
             }
-            // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
-            // Liquidator keeps the rest as profit.
-            // Liquidator has dinero in this scenario
-            DINERO.burn(_msgSender(), liquidationInfo.allDebt + protocolFee);
         }
     }
 
@@ -671,7 +670,16 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
      */
     function _transferXVS(address to, uint256 amount) private {
         if (amount == 0) return;
+
+        IERC20Upgradeable xvs = XVS;
+
+        //solhint-disable-next-line var-name-mixedcase
+        uint256 XVSBalance = _contractBalanceOf(address(xvs));
+
+        // In this contract our math should never cause a deviation bigger than this one.
+        assert(XVSBalance + 0.001 ether >= amount);
+
         // Send the rewards
-        XVS.safeTransfer(to, amount);
+        xvs.safeTransfer(to, amount > XVSBalance ? XVSBalance : amount);
     }
 }

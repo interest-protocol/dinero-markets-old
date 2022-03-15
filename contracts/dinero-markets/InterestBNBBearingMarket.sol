@@ -178,7 +178,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
      *
      * Requirements:
      *
-     * - exchange rate has to be above 0.
+     * - ` rate has to be above 0.
      */
     function updateExchangeRate()
         public
@@ -383,6 +383,8 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
 
         uint256 _liquidationFee = liquidationFee;
 
+        uint256 totalUnderlyingAmount;
+
         // Loop through all positions
         for (uint256 i = 0; i < accounts.length; i++) {
             address account = accounts[i];
@@ -422,11 +424,12 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
                 // Save Gas
                 uint256 _totalRewardsPerVToken = totalRewardsPerVToken;
                 uint256 _userCollateral = userCollateral[account];
+                uint256 decimalsFactor = 10**address(VTOKEN).safeDecimals();
 
                 // How many rewards the user is entitled.
                 uint256 rewards = _totalRewardsPerVToken.mulDiv(
                     _userCollateral,
-                    10**address(VTOKEN).safeDecimals()
+                    decimalsFactor
                 ) - rewardsOf[account];
 
                 // New balance after being liquidated
@@ -437,7 +440,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
                 // We consider that all rewards have been paid.
                 rewardsOf[account] = _totalRewardsPerVToken.mulDiv(
                     newAmount,
-                    10**address(VTOKEN).safeDecimals()
+                    decimalsFactor
                 );
                 // Send the rewards.
                 _transferXVS(account, rewards);
@@ -461,6 +464,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
             liquidationInfo.allPrincipal += principal.toUint128();
             liquidationInfo.allDebt += debt.toUint128();
             liquidationInfo.allFee += fee.toUint128();
+            totalUnderlyingAmount += underlyingAmount;
         }
 
         // There must have liquidations or we throw an error;
@@ -496,13 +500,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
             // Sell `COLLATERAL` and send `DINERO` to recipient.
             // Sell all collateral in underlying
 
-            uint256 bnbAmount = uint256(liquidationInfo.allCollateral).bmul(
-                VTOKEN.exchangeRateCurrent()
-            );
-
-            ROUTER.swapExactETHForTokens{
-                value: _calculateSafeBNBTransferAmount(bnbAmount)
-            }(
+            ROUTER.swapExactETHForTokens{value: totalUnderlyingAmount}(
                 // Minimum amount to cover the collateral
                 0,
                 // Sell COLLATERAL -> DINERO
@@ -528,12 +526,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
 
             if (inUnderlying) {
                 // Send collateral in Underlying to the `recipient` (includes liquidator fee + protocol fee)
-                _sendBNB(
-                    payable(recipient),
-                    uint256(liquidationInfo.allCollateral).bmul(
-                        VTOKEN.exchangeRateCurrent()
-                    )
-                );
+                _sendBNB(payable(recipient), totalUnderlyingAmount);
             } else {
                 // Send as a VToken
                 IERC20Upgradeable(address(VTOKEN)).safeTransfer(
