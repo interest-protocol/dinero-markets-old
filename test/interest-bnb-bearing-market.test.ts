@@ -1247,6 +1247,29 @@ describe('Interest BNB Bearing Market', () => {
           )
       ).to.revertedWith('DM: principal too low');
     });
+    it('allows for full liquidation', async () => {
+      await market.connect(alice).addCollateral({ value: parseEther('10') });
+
+      await market.connect(alice).borrow(alice.address, parseEther('2450'));
+
+      // Drop BNB to 300. Alice and Jose can now be liquidated
+      await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('30000000000'));
+
+      await market
+        .connect(owner)
+        .liquidate(
+          [alice.address],
+          [parseEther('2450')],
+          recipient.address,
+          false,
+          []
+        );
+
+      const totalLoan = await market.totalLoan();
+
+      expect(totalLoan.base).to.be.equal(0);
+      expect(totalLoan.elastic).to.be.equal(0);
+    });
     it('liquidates a user by selling redeeming the collateral and burning the acquired dinero', async () => {
       await Promise.all([
         market.connect(alice).addCollateral({ value: parseEther('10') }),

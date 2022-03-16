@@ -1293,6 +1293,29 @@ describe('Interest ERC20 Bearing Market', () => {
           )
       ).to.revertedWith('DM: principal too low');
     });
+    it('rounds the loan on case of full liquidation', async () => {
+      await market.connect(alice).addCollateral(parseEther('2'));
+
+      await market.connect(alice).borrow(alice.address, parseEther('35000'));
+
+      // Drop BTC to 30_000. Alice and Jose can now be liquidated
+      await mockBTCUsdDFeed.setAnswer(ethers.BigNumber.from('3000000000000'));
+
+      await market
+        .connect(owner)
+        .liquidate(
+          [alice.address],
+          [parseEther('35000')],
+          recipient.address,
+          false,
+          []
+        );
+
+      const totalLoan = await market.totalLoan();
+
+      expect(totalLoan.base).to.be.equal(0);
+      expect(totalLoan.elastic).to.be.equal(0);
+    });
     it('liquidates a user by selling redeeming the collateral and burning the acquired dinero', async () => {
       await Promise.all([
         market.connect(alice).addCollateral(parseEther('2')),
