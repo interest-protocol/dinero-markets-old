@@ -208,7 +208,7 @@ describe('InterestBNBMarketV1', () => {
       .div(parseEther('1'));
 
     expect(await dinero.balanceOf(treasury.address)).to.be.equal(0);
-    // Acrrue has not been called
+    // Accrue has not been called
     expect((await interestBNBMarket.totalLoan()).elastic).to.be.equal(
       parseEther('700')
     );
@@ -301,7 +301,10 @@ describe('InterestBNBMarketV1', () => {
         .mul(10_000)
         .div(parseEther('1'));
 
-      expect(interestBNBMarket.accrue()).to.emit(interestBNBMarket, 'Accrue');
+      await expect(interestBNBMarket.accrue()).to.emit(
+        interestBNBMarket,
+        'Accrue'
+      );
 
       const [loan2, totalLoan2] = await Promise.all([
         interestBNBMarket.loan(),

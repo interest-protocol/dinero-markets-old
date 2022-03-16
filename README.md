@@ -60,7 +60,6 @@ Interest Protocol integrates with popular DeFi protocols to maximize the returns
 |Dinero|[Proxy](https://testnet.bscscan.com/address/0x57486681D2E0Bc9B0494446b8c5df35cd20D4E92)            |[Implementation](https://testnet.bscscan.com/address/0xd273f40b3b398b03428020329e430528793edcb3)     | [Code](https://github.com/interest-protocol/v1-core/blob/main/contracts/tokens/Dinero.sol)
 |Interest Token          |[Proxy](https://testnet.bscscan.com/address/0x0D7747F1686d67824dc5a299AAc09F438dD6aef2)            |[Implementation](https://testnet.bscscan.com/address/0x9aced15124500d1fe9c2bc08c4b37762e066fc83)           | [Code](https://github.com/interest-protocol/v1-core/blob/main/contracts/tokens/InterestToken.sol)
 |Staked Interest Token          |[Proxy](https://testnet.bscscan.com/address/0x9a7704D56FF363eD836Fc09C34bA2663A96C71f8)|[Implementation](https://testnet.bscscan.com/address/0xB63D84823e4FDD14ba41876Ce3E68Db531484cb6)| [Code](https://github.com/interest-protocol/v1-core/blob/main/contracts/tokens/StakedInterestToken.sol) 
-|NFT         |N/A|[Implementation](https://testnet.bscscan.com/address/0x0f6E2bA02F7641134E34Ed4dA05E2b877BD8F6D6)| [Code](https://github.com/interest-protocol/test-net/blob/main/contracts/NFT.sol)
 |NFTMarket         |[Proxy](https://testnet.bscscan.com/address/0x37d309ffc97ED67d1DbC11b2e5F05367b599b073)|[Implementation](https://testnet.bscscan.com/address/0x22bc4f605b7db522c99887b72b2fe32ec3ff4c61)| [Code](https://github.com/interest-protocol/v1-core/blob/main/contracts/NFTMarket.sol)
 |Casa de papel         |[Proxy](https://testnet.bscscan.com/address/0x4702a58ebdE5E09459052340dD1C1d818FE47D8B)|[Implementation](https://testnet.bscscan.com/address/0xa67cdd9eee0320b2994558b52113c2138c54cb24)| [Code](https://github.com/interest-protocol/v1-core/blob/main/contracts/CasaDePapel.sol)
 |Library Wrapper         |N/A|[Implementation](https://testnet.bscscan.com/address/0xdDbd8Fc4ef78bC8f9646d2550107b0bf03Ee8369)| [Code](https://github.com/interest-protocol/v1-core/blob/main/contracts/LibraryWrapper.sol)
@@ -77,9 +76,7 @@ We chose upgradeable contracts to assure security post-deployment and tweak sett
 
 ## Resources
 
-Learn more about the UUPS pattern here:
-
-- [Docs](https://docs.interestprotocol.com/)
+- [Interest Protocol Docs](https://docs.interestprotocol.com/)
 - [OZ Article](https://blog.openzeppelin.com/workshop-recap-deploying-more-efficient-upgradeable-contracts/)
 - [EIP-1822](https://eips.ethereum.org/EIPS/eip-1822)
 
