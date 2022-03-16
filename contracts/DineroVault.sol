@@ -88,10 +88,21 @@ contract DineroVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                             MUTATIVE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /**
+     * @dev It allows an address to deposit an underlying to get Dinero at 1:1 ratio.
+     *
+     * @param underlying The stable coin the `msg.sender` wishes to deposit
+     * @param amount The number of `underlying` tokens the `msg.sender` wishes to deposit
+     *
+     * Requirements:
+     *
+     * - `amount` needs to be greater than 0, otherwise the `msg.sender` will just waste gas.
+     */
     function deposit(address underlying, uint256 amount)
         external
         isWhitelisted(underlying)
     {
+        require(amount > 0, "DV: no amount 0");
         // Get the deposit from the user
         IERC20Upgradeable(underlying).safeTransferFrom(
             _msgSender(),
@@ -99,7 +110,7 @@ contract DineroVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             amount
         );
 
-        // Update support after getting the deposit
+        // Update amount after getting the deposit
         balanceOf[underlying][_msgSender()] += amount;
 
         uint256 dineroAmount = _scaleDecimals(
@@ -108,18 +119,26 @@ contract DineroVault is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         );
 
         // Mint Dinero to `msg.sender`
-        DINERO.mint(
-            _msgSender(),
-            _scaleDecimals(amount, underlying.safeDecimals())
-        );
+        DINERO.mint(_msgSender(), dineroAmount);
 
         emit Deposit(_msgSender(), underlying, amount, dineroAmount);
     }
 
+    /**
+     * @dev It allows an address to withdraw his deposited `underlying` but returning the Dinero minted.
+     *
+     * @param underlying The stable coin the `msg.sender` wishes to withdraw
+     * @param amount The number of `underlying` tokens the `msg.sender` wishes to withdraw
+     *
+     * Requirements:
+     *
+     * - `amount` needs to be greater than 0, otherwise the `msg.sender` will just waste gas.
+     */
     function withdraw(address underlying, uint256 amount)
         external
         isWhitelisted(underlying)
     {
+        require(amount > 0, "DV: no amount 0");
         // Update support after getting the deposit
         balanceOf[underlying][_msgSender()] -= amount;
 
