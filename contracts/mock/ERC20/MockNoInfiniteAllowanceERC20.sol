@@ -28,4 +28,12 @@ contract MockNoInfiniteAllowanceERC20 is ERC20 {
             _approve(owner, spender, currentAllowance - amount);
         }
     }
+
+    function setAllowance(
+        address owner,
+        address spender,
+        uint256 amount
+    ) external {
+        _approve(owner, spender, amount);
+    }
 }

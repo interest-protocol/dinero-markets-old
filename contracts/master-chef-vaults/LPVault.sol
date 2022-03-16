@@ -77,9 +77,9 @@ contract LPVault is
         IERC20Upgradeable stakingToken,
         uint256 poolId
     ) external initializer {
+        require(poolId != 0, "LPVault: this is a LP vault");
         __Ownable_init();
 
-        require(poolId != 0, "LPVault: this is a LP vault");
         CAKE_MASTER_CHEF = cakeMasterChef;
         CAKE = cake;
         STAKING_TOKEN = stakingToken;

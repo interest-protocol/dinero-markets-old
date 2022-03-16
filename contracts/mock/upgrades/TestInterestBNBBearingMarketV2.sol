@@ -1,9 +1,9 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.12;
 
-import "../../dinero-markets/InterestBNBMarket.sol";
+import "../../dinero-markets/InterestBNBBearingMarket.sol";
 
-contract TestInterestBNBMarketV2 is InterestBNBMarketV1 {
+contract TestInterestBNBBearingMarketV2 is InterestBNBBearingMarket {
     function version() external pure returns (string memory) {
         return "V2";
     }
