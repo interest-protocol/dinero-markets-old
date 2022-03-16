@@ -123,7 +123,7 @@ contract CakeVault is
         _totalRewardsPerAmount += (cakeRewards - fee).bdiv(_totalAmount);
 
         // Pay the `msg.sender`
-        CAKE.safeTransfer(_msgSender(), fee);
+        _safeCakeTransfer(_msgSender(), fee);
 
         // Compound the rewards. We already got all the rewards up to this block. So the {CAKE} pool rewards should be 0.
         // Therefore, we do not need to update the {_totalRewardsPerAmount}.
@@ -261,10 +261,10 @@ contract CakeVault is
         // If the `recipient` is also the `account` we only do one {transfer} call to save gas.
         // This happens when the user is removing collateral from the {InterestMarketV1}.
         if (to == from) {
-            CAKE.safeTransfer(to, rewards + amount);
+            _safeCakeTransfer(to, rewards + amount);
         } else {
-            CAKE.safeTransfer(to, amount);
-            CAKE.safeTransfer(from, rewards);
+            _safeCakeTransfer(to, amount);
+            _safeCakeTransfer(from, rewards);
         }
 
         // Only restake if there is at least 1 {CAKE} in the contract after sending the rewards and `amount`.
