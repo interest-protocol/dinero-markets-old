@@ -115,8 +115,6 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /**
      * @dev Adjusts the price to have 18 decimal houses to work easier with most {ERC20}.
      *
-     * @notice It converts int256 to uint256. Because of the chainlink price feed.
-     *
      * @param price The price of the token
      * @param decimals The current decimals the price has
      * @return uint256 the new price supporting 18 decimal houses
@@ -131,9 +129,9 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         if (decimals == baseDecimals) return price;
 
         if (decimals < baseDecimals)
-            return price * 10**uint256(baseDecimals - decimals);
+            return price * 10**(baseDecimals - decimals);
 
-        return price / 10**uint256(decimals - baseDecimals);
+        return price / 10**(decimals - baseDecimals);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -400,6 +398,7 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function _authorizeUpgrade(address)
         internal
+        view
         override
         onlyOwner
     //solhint-disable-next-line no-empty-blocks
