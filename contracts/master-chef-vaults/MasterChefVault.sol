@@ -13,6 +13,7 @@
 pragma solidity 0.8.12;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 import "../interfaces/IMasterChef.sol";
 import "../interfaces/IMasterChefVault.sol";
@@ -34,6 +35,7 @@ abstract contract MasterChefVault {
                                 LIBRARIES
     //////////////////////////////////////////////////////////////*/
 
+    using SafeERC20Upgradeable for IERC20Upgradeable;
     using IntMath for uint256;
 
     /*///////////////////////////////////////////////////////////////
@@ -181,6 +183,21 @@ abstract contract MasterChefVault {
      */
     function _getCakeBalance() internal view returns (uint256) {
         return CAKE.balanceOf(address(this));
+    }
+
+    /**
+     * @dev Due to math limitations, the amount to be sent might be a bit off. This makes sure the transfers do not fail.
+     *
+     * @param to The address that will receive the `CAKE`.
+     * @param amount The number of Cake to send.
+     */
+    function _safeCakeTransfer(address to, uint256 amount) internal {
+        uint256 contractBalance = _getCakeBalance();
+
+        CAKE.safeTransfer(
+            to,
+            amount >= contractBalance ? contractBalance : amount
+        );
     }
 
     /**
