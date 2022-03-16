@@ -157,7 +157,7 @@ contract LPVault is
         _totalRewardsPerAmount += (cakeRewards - fee).bdiv(_totalAmount);
 
         // Pay the `msg.sender` the fee.
-        CAKE.safeTransfer(_msgSender(), fee);
+        _safeCakeTransfer(_msgSender(), fee);
 
         // Compound the remaining rewards in the {CAKE} pool.
         // We already got the rewards up to this block. So the {CAKE} pool rewards should be 0.
@@ -339,7 +339,7 @@ contract LPVault is
         }
 
         // Send the rewards to the `from`.
-        CAKE.safeTransfer(from, rewards);
+        _safeCakeTransfer(from, rewards);
 
         // Only restake if there is at least 1 {CAKE} in the contract after sending the rewards.
         // If there are no {STAKING TOKENS} left, we do not need to restake. Because it means the vault is empty.
