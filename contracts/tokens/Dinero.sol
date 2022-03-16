@@ -102,6 +102,7 @@ contract Dinero is
      */
     function _authorizeUpgrade(address)
         internal
+        view
         override
         onlyRole(DEVELOPER_ROLE)
     //solhint-disable-next-line no-empty-blocks
