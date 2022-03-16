@@ -782,6 +782,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function _authorizeUpgrade(address)
         internal
+        view
         override
         onlyOwner
     //solhint-disable-next-line no-empty-blocks
