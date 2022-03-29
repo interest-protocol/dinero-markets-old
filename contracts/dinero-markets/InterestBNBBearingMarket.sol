@@ -9,7 +9,7 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 */
 
 //SPDX-License-Identifier: MIT
-pragma solidity 0.8.12;
+pragma solidity 0.8.13;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
@@ -200,11 +200,47 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
     }
 
     /**
+     * @dev A utility function to allow a user to deposit collateral and borrow in the one call.
+     *
+     * @param to The address that will receive the borrowed DNR.
+     * @param amount The amount of DNR to borrow
+     *
+     * Requirements:
+     *
+     * - `msg.sender` must remain solvent after these operations
+     */
+    function addCollateralAndBorrow(address to, uint256 amount)
+        external
+        payable
+    {
+        addCollateral();
+        borrow(to, amount);
+    }
+
+    /**
+     * @dev A utility function to allow a user to repay a portion fo his loan and then withdraw collateral in one call.
+     *
+     * @param account The that will have its loan repaid.
+     * @param principal The amount of loan shares that will be repaid.
+     * @param amount The number of collateral tokens to be withdrawn.
+     * @param inUnderlying Indicates if the collateral should be withdrawn in bearing token or underlying.
+     */
+    function repayAndWithdrawCollateral(
+        address account,
+        uint256 principal,
+        uint256 amount,
+        bool inUnderlying
+    ) external {
+        repay(account, principal);
+        withdrawCollateral(amount, inUnderlying);
+    }
+
+    /**
      * @dev Allows `msg.sender` to add collateral. It will send the rewards in XVS if applicable.
      *
      * @notice If the `COLLATERAL` is an ERC20, the `msg.sender` must approve this contract. If it is BNB, he can send directly.
      */
-    function addCollateral() external payable {
+    function addCollateral() public payable {
         // Update rewards.
         _claimVenus();
 
@@ -262,7 +298,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
      * - `msg.sender` must remain solvent after removing the collateral.
      */
     function withdrawCollateral(uint256 amount, bool inUnderlying)
-        external
+        public
         isSolvent
     {
         // Update how much is owed to the protocol before allowing collateral to be removed

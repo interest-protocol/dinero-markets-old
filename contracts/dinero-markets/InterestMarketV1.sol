@@ -9,7 +9,7 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 */
 
 //SPDX-License-Identifier: MIT
-pragma solidity 0.8.12;
+pragma solidity 0.8.13;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
@@ -200,6 +200,42 @@ contract InterestMarketV1 is Initializable, DineroMarket {
     }
 
     /**
+     * @dev A utility function to addCollateral and borrow in one call.
+     *
+     * @param to The address that will have collateral added.
+     * @param amount The number of collateral tokens to add.
+     * @param borrowTo The address that will receive the borrow dinero.
+     * @param borrowAmount The number of DNR tokens to borrow.
+     */
+    function addCollateralAndBorrow(
+        address to,
+        uint256 amount,
+        address borrowTo,
+        uint256 borrowAmount
+    ) external {
+        addCollateral(to, amount);
+        borrow(borrowTo, borrowAmount);
+    }
+
+    /**
+     * @dev A utility function to repay and withdraw collateral in one call.
+     *
+     * @param account The account that will have its loan repaid.
+     * @param principal The number of loan shares to repay.
+     * @param to The address that will receive the withdawn collateral
+     * @param amount The number of collateral tokens to remove.
+     */
+    function repayAndWithdrawCollateral(
+        address account,
+        uint256 principal,
+        address to,
+        uint256 amount
+    ) external {
+        repay(account, principal);
+        withdrawCollateral(to, amount);
+    }
+
+    /**
      * @dev Allows `msg.sender` to add collateral
      *
      * @notice If the contract has a vault `msg.sender` needs to give approval to the vault. If not it needs to give to this contract.
@@ -207,7 +243,7 @@ contract InterestMarketV1 is Initializable, DineroMarket {
      * @param to The address, which the `COLLATERAL` will be assigned to.
      * @param amount The number of `COLLATERAL` tokens to be used for collateral
      */
-    function addCollateral(address to, uint256 amount) external {
+    function addCollateral(address to, uint256 amount) public {
         // Get `COLLATERAL` from `msg.sender`
         _depositCollateral(_msgSender(), to, amount);
 
@@ -228,7 +264,7 @@ contract InterestMarketV1 is Initializable, DineroMarket {
      *
      * - `msg.sender` must remain solvent after removing the collateral.
      */
-    function withdrawCollateral(address to, uint256 amount) external isSolvent {
+    function withdrawCollateral(address to, uint256 amount) public isSolvent {
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
 

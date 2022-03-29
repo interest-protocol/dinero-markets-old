@@ -9,7 +9,7 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 */
 
 //SPDX-License-Identifier: MIT
-pragma solidity 0.8.12;
+pragma solidity 0.8.13;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
@@ -149,6 +149,38 @@ contract InterestBNBMarketV1 is
     }
 
     /**
+     * @dev A utility function to add BNB and borrow Dinero in one call. It applies all restrictions of {addCollateral} and {borrow}.
+     *
+     * @param to The address that will receive the collateral and the DNR loan
+     * @param amount The number of DNR tokens to borrow.
+     */
+    function addCollateralAndBorrow(address to, uint256 amount)
+        external
+        payable
+    {
+        addCollateral(to);
+        borrow(to, amount);
+    }
+
+    /**
+     * @dev A utility function to repay and withdraw collateral in one call.
+     *
+     * @param account The address that will have its loan paid.
+     * @param principal How many shares of loans to repay.
+     * @param to The address that will receive the collateral being withdrawn
+     * @param amount The number of collateral to withdraw.
+     */
+    function repayAndWithdrawCollateral(
+        address account,
+        uint256 principal,
+        address to,
+        uint256 amount
+    ) external {
+        repay(account, principal);
+        withdrawCollateral(to, amount);
+    }
+
+    /**
      * @dev Allows `msg.sender` to add collateral to a `to` address.
      *
      * @notice This is a payable function.
@@ -180,7 +212,7 @@ contract InterestBNBMarketV1 is
      * - `msg.sender` must remain solvent after removing the collateral.
      */
     function withdrawCollateral(address to, uint256 amount)
-        external
+        public
         nonReentrant
         isSolvent
     {

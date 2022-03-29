@@ -9,7 +9,7 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 */
 
 //SPDX-License-Identifier: MIT
-pragma solidity 0.8.12;
+pragma solidity 0.8.13;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -289,7 +289,7 @@ abstract contract DineroMarket is
      *
      * - `msg.sender` must remain solvent after borrowing Dinero.
      */
-    function borrow(address to, uint256 amount) external isSolvent {
+    function borrow(address to, uint256 amount) public isSolvent {
         // To prevent loss of funds.
         require(to != address(0), "MKT: no zero address");
         // Update how much is owed to the protocol before allowing collateral to be removed
@@ -321,7 +321,7 @@ abstract contract DineroMarket is
      * - account cannot be the zero address to avoid loss of funds
      * - principal has to be greater than 0. Otherwise, the user is just wasting gas and congesting the network.
      */
-    function repay(address account, uint256 principal) external {
+    function repay(address account, uint256 principal) public {
         require(account != address(0), "MKT: no zero address");
         require(principal > 0, "MKT: principal cannot be 0");
 

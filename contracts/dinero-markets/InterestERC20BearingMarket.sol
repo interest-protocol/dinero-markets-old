@@ -9,7 +9,7 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 */
 
 //SPDX-License-Identifier: MIT
-pragma solidity 0.8.12;
+pragma solidity 0.8.13;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
@@ -229,13 +229,47 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     }
 
     /**
+     * @dev A utility function to add collateral and borrow in one call.
+     *
+     * @param amount The number of collateral tokens to add.
+     * @param to The address that will receive the borrowed DNR.
+     * @param borrowAmount The number of DNR tokens to borrow.
+     */
+    function addCollateralAndBorrow(
+        uint256 amount,
+        address to,
+        uint256 borrowAmount
+    ) external {
+        addCollateral(amount);
+        borrow(to, borrowAmount);
+    }
+
+    /**
+     * @dev A utility function to repay and withdraw collateral in one call.
+     *
+     * @param account The address that will have its loan repaid.
+     * @param principal The number of loan shares to repay.
+     * @param amount The number of collateral tokens to remove.
+     * @param inUnderlying Indicates if the collateral should be withdrawn in bearing token or the underlying.
+     */
+    function repayAndWithdrawCollateral(
+        address account,
+        uint256 principal,
+        uint256 amount,
+        bool inUnderlying
+    ) external {
+        repay(account, principal);
+        withdrawCollateral(amount, inUnderlying);
+    }
+
+    /**
      * @dev Allows `msg.sender` to add collateral. It will send the rewards in XVS if applicable.
      *
      * @notice If the `COLLATERAL` is an ERC20, the `msg.sender` must approve this contract. If it is BNB, he can send directly.
      *
      * @param amount The number of `COLLATERAL` tokens to be used for collateral. This argument is not used if the underlying is BNB.
      */
-    function addCollateral(uint256 amount) external {
+    function addCollateral(uint256 amount) public {
         // Update rewards.
         _claimVenus();
 
@@ -293,7 +327,7 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
      * - `msg.sender` must remain solvent after removing the collateral.
      */
     function withdrawCollateral(uint256 amount, bool inUnderlying)
-        external
+        public
         isSolvent
     {
         // Update how much is owed to the protocol before allowing collateral to be removed
