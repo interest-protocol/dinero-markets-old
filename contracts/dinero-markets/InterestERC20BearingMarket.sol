@@ -239,9 +239,10 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         uint256 amount,
         address to,
         uint256 borrowAmount
-    ) external {
+    ) external isSolvent {
+        accrue();
         addCollateral(amount);
-        borrow(to, borrowAmount);
+        _borrowFresh(to, borrowAmount);
     }
 
     /**
@@ -257,9 +258,10 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         uint256 principal,
         uint256 amount,
         bool inUnderlying
-    ) external {
-        repay(account, principal);
-        withdrawCollateral(amount, inUnderlying);
+    ) external isSolvent {
+        accrue();
+        _repayFresh(account, principal);
+        _withdrawCollateralFresh(amount, inUnderlying);
     }
 
     /**
@@ -327,60 +329,13 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
      * - `msg.sender` must remain solvent after removing the collateral.
      */
     function withdrawCollateral(uint256 amount, bool inUnderlying)
-        public
+        external
         isSolvent
     {
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
 
-        // Update rewards.
-        _claimVenus();
-
-        // Save gas
-        uint256 _userCollateral = userCollateral[_msgSender()];
-        uint256 _totalRewardsPerVToken = totalRewardsPerVToken;
-
-        uint256 rewards = _totalRewardsPerVToken.mulDiv(
-            _userCollateral,
-            10**address(VTOKEN).safeDecimals()
-        ) - rewardsOf[_msgSender()];
-
-        uint256 newAmount = _userCollateral - amount;
-
-        // Update State
-        userCollateral[_msgSender()] = newAmount;
-        totalVCollateral -= amount;
-        rewardsOf[_msgSender()] = _totalRewardsPerVToken.mulDiv(
-            newAmount,
-            10**address(VTOKEN).safeDecimals()
-        );
-
-        // If the person withdrawing wants the vTokens, we do not need to redeem the underlying.
-        if (!inUnderlying) {
-            // Send the collateral
-            IERC20Upgradeable(address(VTOKEN)).safeTransfer(
-                _msgSender(),
-                amount
-            );
-
-            // Send the rewards.
-            _transferXVS(_msgSender(), rewards);
-
-            // 0 represents that vTokens were withdrawn.
-            emit WithdrawCollateral(_msgSender(), 0, amount);
-            return;
-        }
-
-        // How much underlying was redeemed.
-        uint256 underlyingAmount;
-
-        underlyingAmount = _redeemERC20VToken(amount);
-        COLLATERAL.safeTransfer(_msgSender(), underlyingAmount);
-
-        // Send the rewards.
-        _transferXVS(_msgSender(), rewards);
-
-        emit WithdrawCollateral(_msgSender(), underlyingAmount, amount);
+        _withdrawCollateralFresh(amount, inUnderlying);
     }
 
     /**
@@ -597,6 +552,67 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     /*///////////////////////////////////////////////////////////////
                             PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Allows a user to remove collateral, it does not run solvency checks nor accrue. The caller must run those.
+     *
+     * @notice This function can fail if Venus does not have enough cash.
+     *
+     * @param amount The number of VToken the `msg.sender` wishes to withdraw.
+     * @param inUnderlying If true it will redeem the underlying and send. Note: it can fail.
+     */
+    function _withdrawCollateralFresh(uint256 amount, bool inUnderlying)
+        private
+    {
+        // Update rewards.
+        _claimVenus();
+
+        // Save gas
+        uint256 _userCollateral = userCollateral[_msgSender()];
+        uint256 _totalRewardsPerVToken = totalRewardsPerVToken;
+
+        uint256 rewards = _totalRewardsPerVToken.mulDiv(
+            _userCollateral,
+            10**address(VTOKEN).safeDecimals()
+        ) - rewardsOf[_msgSender()];
+
+        uint256 newAmount = _userCollateral - amount;
+
+        // Update State
+        userCollateral[_msgSender()] = newAmount;
+        totalVCollateral -= amount;
+        rewardsOf[_msgSender()] = _totalRewardsPerVToken.mulDiv(
+            newAmount,
+            10**address(VTOKEN).safeDecimals()
+        );
+
+        // If the person withdrawing wants the vTokens, we do not need to redeem the underlying.
+        if (!inUnderlying) {
+            // Send the collateral
+            IERC20Upgradeable(address(VTOKEN)).safeTransfer(
+                _msgSender(),
+                amount
+            );
+
+            // Send the rewards.
+            _transferXVS(_msgSender(), rewards);
+
+            // 0 represents that vTokens were withdrawn.
+            emit WithdrawCollateral(_msgSender(), 0, amount);
+            return;
+        }
+
+        // How much underlying was redeemed.
+        uint256 underlyingAmount;
+
+        underlyingAmount = _redeemERC20VToken(amount);
+        COLLATERAL.safeTransfer(_msgSender(), underlyingAmount);
+
+        // Send the rewards.
+        _transferXVS(_msgSender(), rewards);
+
+        emit WithdrawCollateral(_msgSender(), underlyingAmount, amount);
+    }
 
     /**
      * @dev Helper function to check the balance of a `token` this contract has.

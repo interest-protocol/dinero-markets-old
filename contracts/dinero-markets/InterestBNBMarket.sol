@@ -152,14 +152,17 @@ contract InterestBNBMarketV1 is
      * @dev A utility function to add BNB and borrow Dinero in one call. It applies all restrictions of {addCollateral} and {borrow}.
      *
      * @param to The address that will receive the collateral and the DNR loan
-     * @param amount The number of DNR tokens to borrow.
+     * @param borrowAmount The number of DNR tokens to borrow.
      */
-    function addCollateralAndBorrow(address to, uint256 amount)
+    function addCollateralAndBorrow(address to, uint256 borrowAmount)
         external
         payable
+        isSolvent
     {
+        accrue();
+
         addCollateral(to);
-        borrow(to, amount);
+        _borrowFresh(to, borrowAmount);
     }
 
     /**
@@ -175,9 +178,12 @@ contract InterestBNBMarketV1 is
         uint256 principal,
         address to,
         uint256 amount
-    ) external {
-        repay(account, principal);
-        withdrawCollateral(to, amount);
+    ) external nonReentrant isSolvent {
+        accrue();
+
+        _repayFresh(account, principal);
+
+        _withdrawCollateralFresh(to, amount);
     }
 
     /**
@@ -212,19 +218,14 @@ contract InterestBNBMarketV1 is
      * - `msg.sender` must remain solvent after removing the collateral.
      */
     function withdrawCollateral(address to, uint256 amount)
-        public
+        external
         nonReentrant
         isSolvent
     {
         // Update how much is owed to the protocol before allowing collateral to be withdrawn
         accrue();
 
-        // Update State
-        userCollateral[_msgSender()] -= amount;
-
-        _sendCollateral(payable(to), amount);
-
-        emit WithdrawCollateral(_msgSender(), to, amount);
+        _withdrawCollateralFresh(to, amount);
     }
 
     /**
@@ -377,6 +378,21 @@ contract InterestBNBMarketV1 is
     /*///////////////////////////////////////////////////////////////
                             PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Function allows the `msg.sender` to remove his collateral as long as he remains solvent. It does not run solvency checks nor accrue beforehand. The caller must check for those.
+     *
+     * @param to The address that will receive the collateral being withdrawn.
+     * @param amount The number of BNB tokens he wishes to withdraw.
+     */
+    function _withdrawCollateralFresh(address to, uint256 amount) private {
+        // Update State
+        userCollateral[_msgSender()] -= amount;
+
+        _sendCollateral(payable(to), amount);
+
+        emit WithdrawCollateral(_msgSender(), to, amount);
+    }
 
     /**
      * @dev A helper function to send BNB to an address.

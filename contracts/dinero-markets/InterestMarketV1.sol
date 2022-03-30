@@ -212,9 +212,11 @@ contract InterestMarketV1 is Initializable, DineroMarket {
         uint256 amount,
         address borrowTo,
         uint256 borrowAmount
-    ) external {
+    ) external isSolvent {
+        accrue();
+
         addCollateral(to, amount);
-        borrow(borrowTo, borrowAmount);
+        _borrowFresh(borrowTo, borrowAmount);
     }
 
     /**
@@ -230,9 +232,11 @@ contract InterestMarketV1 is Initializable, DineroMarket {
         uint256 principal,
         address to,
         uint256 amount
-    ) external {
-        repay(account, principal);
-        withdrawCollateral(to, amount);
+    ) external isSolvent {
+        accrue();
+
+        _repayFresh(account, principal);
+        _withdrawCollateralFresh(to, amount);
     }
 
     /**
@@ -264,18 +268,11 @@ contract InterestMarketV1 is Initializable, DineroMarket {
      *
      * - `msg.sender` must remain solvent after removing the collateral.
      */
-    function withdrawCollateral(address to, uint256 amount) public isSolvent {
+    function withdrawCollateral(address to, uint256 amount) external isSolvent {
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
 
-        // Update State
-        userCollateral[_msgSender()] -= amount;
-        totalCollateral -= amount;
-
-        // Return the collateral to the user
-        _withdrawCollateral(_msgSender(), to, amount);
-
-        emit WithdrawCollateral(_msgSender(), to, amount);
+        _withdrawCollateralFresh(to, amount);
     }
 
     /**
@@ -440,6 +437,23 @@ contract InterestMarketV1 is Initializable, DineroMarket {
     /*///////////////////////////////////////////////////////////////
                             PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev It allows the `msg.sender` to remove collateral. The caller has to run {accrue beforehand}  and must do solvency checks.
+     *
+     * @param to The address that will receive the collateral being withdrawn.
+     * @param amount The number of `COLLATERAL` tokens he wishes to withdraw
+     */
+    function _withdrawCollateralFresh(address to, uint256 amount) private {
+        // Update State
+        userCollateral[_msgSender()] -= amount;
+        totalCollateral -= amount;
+
+        // Return the collateral to the user
+        _withdrawCollateral(_msgSender(), to, amount);
+
+        emit WithdrawCollateral(_msgSender(), to, amount);
+    }
 
     /**
      * @dev A helper function to sell collateral for dinero.
