@@ -1451,7 +1451,7 @@ describe('InterestBNBMarketV1', () => {
           )
       ).to.revertedWith('ReentrancyGuard: reentrant call');
     });
-    it.only('allows a user to repay and then withdraw', async () => {
+    it('allows a user to repay and then withdraw', async () => {
       await interestBNBMarket
         .connect(alice)
         .addCollateralAndBorrow(
