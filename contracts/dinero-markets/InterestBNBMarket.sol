@@ -160,6 +160,11 @@ contract InterestBNBMarketV1 is
         address loanRecipient,
         uint256 borrowAmount
     ) external payable isSolvent {
+        require(
+            collateralRecipient != address(0) && loanRecipient != address(0),
+            "DM: no zero address"
+        );
+        require(borrowAmount > 0, "DM: no zero amount");
         accrue();
 
         addCollateral(collateralRecipient);

@@ -1214,13 +1214,32 @@ describe('InterestBNBMarketV1', () => {
           .connect(alice)
           .addCollateralAndBorrow(
             ethers.constants.AddressZero,
+            alice.address,
+            1,
+            {
+              value: parseEther('2'),
+            }
+          )
+      ).to.revertedWith('DM: no zero address');
+      await expect(
+        interestBNBMarket
+          .connect(alice)
+          .addCollateralAndBorrow(
+            alice.address,
             ethers.constants.AddressZero,
             1,
             {
               value: parseEther('2'),
             }
           )
-      ).to.revertedWith('MKT: no zero address');
+      ).to.revertedWith('DM: no zero address');
+      await expect(
+        interestBNBMarket
+          .connect(alice)
+          .addCollateralAndBorrow(alice.address, alice.address, 0, {
+            value: parseEther('2'),
+          })
+      ).to.revertedWith('DM: no zero amount');
     });
     it('reverts if the user is insolvent', async () => {
       await expect(
