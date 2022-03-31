@@ -1,7 +1,7 @@
 # :seedling: Welcome to Interest Protocol! :seedling:
 
 [![docs](./assets/gitbook_2.svg)](https://docs.interestprotocol.com/)
-[![codecov](https://codecov.io/gh/interest-protocol/v1-core/branch/main/graph/badge.svg?token=O77FGAB2MX)](https://codecov.io/gh/interest-protocol/dinero-markets)
+[![codecov](https://codecov.io/gh/interest-protocol/dinero-markets/branch/main/graph/badge.svg?token=O77FGAB2MX)](https://codecov.io/gh/interest-protocol/dinero-markets)
 [![twitter](./assets/twitter.svg)](https://twitter.com/interest_dinero)
 [![discord](./assets/discord.svg)](https://discord.gg/PJEkqM4Crk)
 [![reddit](./assets/reddit.svg)](https://www.reddit.com/user/InterestProtocol)
