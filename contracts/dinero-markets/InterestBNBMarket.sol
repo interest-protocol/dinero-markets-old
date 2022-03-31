@@ -9,7 +9,7 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 */
 
 //SPDX-License-Identifier: MIT
-pragma solidity 0.8.12;
+pragma solidity 0.8.13;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
@@ -149,6 +149,51 @@ contract InterestBNBMarketV1 is
     }
 
     /**
+     * @dev A utility function to add BNB and borrow Dinero in one call. It applies all restrictions of {addCollateral} and {borrow}.
+     *
+     * @param collateralRecipient The address that will receive the collateral
+     * @param loanRecipient The address that will receive the DNR loan
+     * @param borrowAmount The number of DNR tokens to borrow.
+     */
+    function addCollateralAndBorrow(
+        address collateralRecipient,
+        address loanRecipient,
+        uint256 borrowAmount
+    ) external payable isSolvent {
+        accrue();
+
+        addCollateral(collateralRecipient);
+        _borrowFresh(loanRecipient, borrowAmount);
+    }
+
+    /**
+     * @dev A utility function to repay and withdraw collateral in one call.
+     *
+     * @param account The address that will have its loan paid.
+     * @param principal How many shares of loans to repay.
+     * @param to The address that will receive the collateral being withdrawn
+     * @param amount The number of collateral to withdraw.
+     */
+    function repayAndWithdrawCollateral(
+        address account,
+        uint256 principal,
+        address to,
+        uint256 amount
+    ) external nonReentrant isSolvent {
+        require(
+            account != address(0) && to != address(0),
+            "DM: no zero address"
+        );
+        require(principal > 0, "DM: principal cannot be 0");
+        require(amount > 0, "DM: no zero amount");
+        accrue();
+
+        _repayFresh(account, principal);
+
+        _withdrawCollateralFresh(to, amount);
+    }
+
+    /**
      * @dev Allows `msg.sender` to add collateral to a `to` address.
      *
      * @notice This is a payable function.
@@ -187,12 +232,7 @@ contract InterestBNBMarketV1 is
         // Update how much is owed to the protocol before allowing collateral to be withdrawn
         accrue();
 
-        // Update State
-        userCollateral[_msgSender()] -= amount;
-
-        _sendCollateral(payable(to), amount);
-
-        emit WithdrawCollateral(_msgSender(), to, amount);
+        _withdrawCollateralFresh(to, amount);
     }
 
     /**
@@ -345,6 +385,21 @@ contract InterestBNBMarketV1 is
     /*///////////////////////////////////////////////////////////////
                             PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Function allows the `msg.sender` to remove his collateral as long as he remains solvent. It does not run solvency checks nor accrue beforehand. The caller must check for those.
+     *
+     * @param to The address that will receive the collateral being withdrawn.
+     * @param amount The number of BNB tokens he wishes to withdraw.
+     */
+    function _withdrawCollateralFresh(address to, uint256 amount) private {
+        // Update State
+        userCollateral[_msgSender()] -= amount;
+
+        _sendCollateral(payable(to), amount);
+
+        emit WithdrawCollateral(_msgSender(), to, amount);
+    }
 
     /**
      * @dev A helper function to send BNB to an address.

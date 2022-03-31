@@ -34,7 +34,7 @@
     "compile": "npx hardhat compile",
     "coverage": "npx hardhat coverage --testfiles './test/**.ts'",
     "publish": "npm publish contracts --access public",
-    "postinstall": "husky install",
+    "postinstall": "husky install && npm run compile",
     "slither": "slither contracts --solc-remaps @openzeppelin/=$(pwd)/node_modules/@openzeppelin/"
   },
   "devDependencies": {
