@@ -151,18 +151,19 @@ contract InterestBNBMarketV1 is
     /**
      * @dev A utility function to add BNB and borrow Dinero in one call. It applies all restrictions of {addCollateral} and {borrow}.
      *
-     * @param to The address that will receive the collateral and the DNR loan
+     * @param collateralRecipient The address that will receive the collateral
+     * @param loanRecipient The address that will receive the DNR loan
      * @param borrowAmount The number of DNR tokens to borrow.
      */
-    function addCollateralAndBorrow(address to, uint256 borrowAmount)
-        external
-        payable
-        isSolvent
-    {
+    function addCollateralAndBorrow(
+        address collateralRecipient,
+        address loanRecipient,
+        uint256 borrowAmount
+    ) external payable isSolvent {
         accrue();
 
-        addCollateral(to);
-        _borrowFresh(to, borrowAmount);
+        addCollateral(collateralRecipient);
+        _borrowFresh(loanRecipient, borrowAmount);
     }
 
     /**
@@ -179,6 +180,12 @@ contract InterestBNBMarketV1 is
         address to,
         uint256 amount
     ) external nonReentrant isSolvent {
+        require(
+            account != address(0) && to != address(0),
+            "DM: no zero address"
+        );
+        require(principal > 0, "DM: principal cannot be 0");
+        require(amount > 0, "DM: no zero amount");
         accrue();
 
         _repayFresh(account, principal);

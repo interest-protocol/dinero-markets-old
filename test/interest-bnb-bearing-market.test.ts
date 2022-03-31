@@ -2355,6 +2355,9 @@ describe('Interest BNB Bearing Market', () => {
       await expect(
         market.repayAndWithdrawCollateral(alice.address, 0, 0, false)
       ).to.revertedWith('DM: principal cannot be 0');
+      await expect(
+        market.repayAndWithdrawCollateral(alice.address, 1, 0, false)
+      ).to.revertedWith('DM: amount cannot be 0');
     });
     it('reverts if the user is insolvent', async () => {
       await market.connect(alice).addCollateral({ value: parseEther('10') });
@@ -2548,7 +2551,7 @@ describe('Interest BNB Bearing Market', () => {
         totalRewardsPerVToken2.mul(aliceCollateral2).div(oneVToken)
       );
     });
-    it.only('allows a user to repay and then withdraw collateral in BNB', async () => {
+    it('allows a user to repay and then withdraw collateral in BNB', async () => {
       await market.connect(alice).addCollateral({ value: parseEther('20') });
 
       await market.connect(alice).borrow(alice.address, parseEther('300'));

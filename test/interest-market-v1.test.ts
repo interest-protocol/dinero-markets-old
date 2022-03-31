@@ -644,6 +644,26 @@ describe('InterestMarketV1', () => {
     });
   });
   describe('function: withdrawCollateral', () => {
+    it('reverts if you pass invalid arguments', async () => {
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .withdrawCollateral(ethers.constants.AddressZero, 0)
+      );
+    });
+    it('reverts if the user is insolvent', async () => {
+      await cakeMarket
+        .connect(alice)
+        .addCollateral(alice.address, parseEther('10'));
+
+      await cakeMarket.connect(alice).borrow(alice.address, parseEther('90'));
+
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .withdrawCollateral(alice.address, parseEther('10'))
+      );
+    });
     it('removes collateral using a vault', async () => {
       const aliceAmount = parseEther('12');
       const bobAmount = parseEther('7');
@@ -1714,6 +1734,451 @@ describe('InterestMarketV1', () => {
       expect(bobCollateral).to.be.equal(0);
       expect(version).to.be.equal('V2');
       expect(marketCakeBalance).to.be.equal(0); // Cake is in the masterChef
+    });
+  });
+  describe('function: addCollateralAndBorrow', () => {
+    it('reverts if it is called with invalid arguments', async () => {
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .addCollateralAndBorrow(
+            ethers.constants.AddressZero,
+            0,
+            alice.address,
+            0
+          )
+      ).to.revertedWith('DM: no zero address');
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .addCollateralAndBorrow(
+            alice.address,
+            0,
+            ethers.constants.AddressZero,
+            0
+          )
+      ).to.revertedWith('DM: no zero address');
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .addCollateralAndBorrow(alice.address, 0, alice.address, 0)
+      ).to.revertedWith('DM: no zero amount');
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .addCollateralAndBorrow(alice.address, 1, alice.address, 0)
+      ).to.revertedWith('DM: no zero amount');
+    });
+    it('reverts if the user is insolvent', async () => {
+      // @notice the collateral ratio is 49.9%
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .addCollateralAndBorrow(
+            alice.address,
+            parseEther('10'),
+            alice.address,
+            parseEther('100')
+          )
+      ).to.revertedWith('MKT: sender is insolvent');
+    });
+    it('allows a user to add collateral and borrow on the same call', async () => {
+      const [
+        totalCollateral,
+        aliceCollateral,
+        totalLoan,
+        aliceLoan,
+        aliceDineroBalance,
+      ] = await Promise.all([
+        cakeMarket.totalCollateral(),
+        cakeMarket.userCollateral(alice.address),
+        cakeMarket.totalLoan(),
+        cakeMarket.userLoan(alice.address),
+        dinero.balanceOf(alice.address),
+      ]);
+
+      expect(totalCollateral).to.be.equal(0);
+      expect(aliceCollateral).to.be.equal(0);
+      expect(totalLoan.base).to.be.equal(0);
+      expect(totalLoan.elastic).to.be.equal(0);
+      expect(aliceDineroBalance).to.be.equal(0);
+      expect(aliceLoan).to.be.equal(0);
+
+      const amount = parseEther('10');
+
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .addCollateralAndBorrow(
+            alice.address,
+            amount,
+            recipient.address,
+            parseEther('50')
+          )
+      )
+        .to.emit(cakeMarket, 'AddCollateral')
+        .withArgs(alice.address, alice.address, amount)
+        .to.emit(cakeVault, 'Deposit')
+        .withArgs(alice.address, alice.address, amount)
+        .to.emit(cake, 'Transfer')
+        .withArgs(alice.address, cakeVault.address, amount)
+        .to.emit(dinero, 'Transfer')
+        .withArgs(
+          ethers.constants.AddressZero,
+          recipient.address,
+          parseEther('50')
+        )
+        .to.emit(cakeMarket, 'Borrow')
+        .withArgs(
+          alice.address,
+          recipient.address,
+          parseEther('50'),
+          parseEther('50')
+        )
+        .to.not.emit(cakeMarket, 'Accrue');
+
+      const [
+        totalCollateral2,
+        aliceCollateral2,
+        totalLoan2,
+        aliceLoan2,
+        aliceDineroBalance2,
+        recipientDineroBalance,
+        bobDineroBalance2,
+      ] = await Promise.all([
+        cakeMarket.totalCollateral(),
+        cakeMarket.userCollateral(alice.address),
+        cakeMarket.totalLoan(),
+        cakeMarket.userLoan(alice.address),
+        dinero.balanceOf(alice.address),
+        dinero.balanceOf(recipient.address),
+        dinero.balanceOf(bob.address),
+      ]);
+
+      expect(totalCollateral2).to.be.equal(amount);
+      expect(aliceCollateral2).to.be.equal(amount);
+      expect(aliceLoan2).to.be.equal(parseEther('50'));
+      expect(aliceDineroBalance2).to.be.equal(0);
+      expect(recipientDineroBalance).to.be.equal(parseEther('50'));
+      expect(totalLoan2.base).to.be.equal(parseEther('50'));
+      expect(totalLoan2.elastic).to.be.equal(parseEther('50'));
+      expect(bobDineroBalance2).to.be.equal(0);
+
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .addCollateralAndBorrow(
+            alice.address,
+            amount,
+            bob.address,
+            parseEther('30')
+          )
+      )
+        .to.emit(cakeMarket, 'AddCollateral')
+        .withArgs(bob.address, alice.address, amount)
+        .to.emit(cakeVault, 'Deposit')
+        .withArgs(bob.address, alice.address, amount)
+        .to.emit(cake, 'Transfer')
+        .withArgs(bob.address, cakeVault.address, amount)
+        .to.emit(cakeMarket, 'Accrue')
+        .to.emit(dinero, 'Transfer')
+        .withArgs(ethers.constants.AddressZero, bob.address, parseEther('30'))
+        .to.emit(cakeMarket, 'Borrow');
+
+      const [
+        totalCollateral3,
+        aliceCollateral3,
+        bobCollateral,
+        cakeMarketCakeBalance,
+        totalLoan3,
+        aliceLoan3,
+        aliceDineroBalance3,
+        recipientDineroBalance3,
+        bobDineroBalance3,
+        bobLoan3,
+      ] = await Promise.all([
+        cakeMarket.totalCollateral(),
+        cakeMarket.userCollateral(alice.address),
+        cakeMarket.userCollateral(bob.address),
+        cake.balanceOf(cakeMarket.address),
+        cakeMarket.totalLoan(),
+        cakeMarket.userLoan(alice.address),
+        dinero.balanceOf(alice.address),
+        dinero.balanceOf(recipient.address),
+        dinero.balanceOf(bob.address),
+        cakeMarket.userLoan(bob.address),
+      ]);
+
+      expect(totalCollateral3).to.be.equal(amount.add(amount));
+
+      expect(aliceCollateral3).to.be.equal(amount.add(amount));
+      expect(bobCollateral).to.be.equal(0);
+      expect(cakeMarketCakeBalance).to.be.equal(0); // Cake is in the masterChef
+      expect(aliceLoan3).to.be.equal(totalLoan3.base);
+      expect(bobLoan3).to.be.equal(0);
+      expect(recipientDineroBalance3).to.be.equal(parseEther('50'));
+      expect(aliceDineroBalance3).to.be.equal(0);
+      expect(bobDineroBalance3).to.be.equal(parseEther('30'));
+      expect(totalLoan3.base.gt(parseEther('78'))).to.be.equal(true); // Due to fees this value is not easy to estimate
+      expect(totalLoan3.base.lt(parseEther('80'))).to.be.equal(true); // Due to fees this value is not easy to estimate
+      expect(totalLoan3.elastic.gt(parseEther('80'))).to.be.equal(true); // includes fees
+    });
+  });
+  describe('function: repayAndWithdrawCollateral', () => {
+    it('reverts if you pass invalid arguments', async () => {
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .repayAndWithdrawCollateral(
+            ethers.constants.AddressZero,
+            1,
+            alice.address,
+            1
+          )
+      ).to.revertedWith('DM: no zero address');
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .repayAndWithdrawCollateral(
+            alice.address,
+            1,
+            ethers.constants.AddressZero,
+            1
+          )
+      ).to.revertedWith('DM: no zero address');
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .repayAndWithdrawCollateral(alice.address, 0, alice.address, 1)
+      ).to.revertedWith('DM: no zero amount');
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .repayAndWithdrawCollateral(alice.address, 1, alice.address, 0)
+      ).to.revertedWith('DM: no zero amount');
+    });
+    it('reverts if the user is insolvent', async () => {
+      await cakeMarket
+        .connect(alice)
+        .addCollateralAndBorrow(
+          alice.address,
+          parseEther('50'),
+          alice.address,
+          parseEther('400')
+        );
+
+      await expect(
+        cakeMarket
+          .connect(alice)
+          .repayAndWithdrawCollateral(
+            alice.address,
+            parseEther('100'),
+            alice.address,
+            parseEther('31')
+          )
+      ).to.revertedWith('MKT: sender is insolvent');
+    });
+    it('allows withdrawals of a market without a vault', async () => {
+      const aliceAmount = parseEther('12');
+      const bobAmount = parseEther('14');
+
+      const cakeMarket2: InterestMarketV1 = await deployUUPS(
+        'InterestMarketV1',
+        [
+          router.address,
+          dinero.address,
+          treasury.address,
+          oracle.address,
+          cake.address,
+          ethers.constants.AddressZero,
+          ethers.BigNumber.from(12e8),
+          ethers.BigNumber.from('500000000000000000'),
+          ethers.BigNumber.from('100000000000000000'),
+        ]
+      );
+
+      await Promise.all([
+        cake
+          .connect(alice)
+          .approve(cakeMarket2.address, ethers.constants.MaxUint256),
+        cake
+          .connect(bob)
+          .approve(cakeMarket2.address, ethers.constants.MaxUint256),
+        cakeMarket2.updateExchangeRate(),
+        dinero.connect(owner).grantRole(MINTER_ROLE, cakeMarket2.address),
+        dinero.connect(owner).grantRole(BURNER_ROLE, cakeMarket2.address),
+      ]);
+
+      await Promise.all([
+        cakeMarket2.connect(alice).addCollateral(alice.address, aliceAmount),
+        cakeMarket2.connect(bob).addCollateral(bob.address, bobAmount),
+      ]);
+
+      // We need to borrow to test the Accrue event
+      await cakeMarket2.connect(bob).borrow(bob.address, parseEther('10'));
+
+      const [
+        totalCollateral,
+        aliceCollateral,
+        bobCollateral,
+        totalLoan,
+        aliceLoan,
+        bobLoan,
+        aliceDineroBalance,
+        aliceCakeBalance,
+      ] = await Promise.all([
+        cakeMarket2.totalCollateral(),
+        cakeMarket2.userCollateral(alice.address),
+        cakeMarket2.userCollateral(bob.address),
+        cakeMarket2.totalLoan(),
+        cakeMarket2.userLoan(alice.address),
+        cakeMarket2.userLoan(bob.address),
+        dinero.balanceOf(alice.address),
+        cake.balanceOf(alice.address),
+      ]);
+
+      expect(totalCollateral).to.be.equal(aliceAmount.add(bobAmount));
+      expect(aliceCollateral).to.be.equal(aliceAmount);
+      expect(bobCollateral).to.be.equal(bobAmount);
+      expect(totalLoan.base).to.be.equal(parseEther('10'));
+      expect(aliceLoan).to.be.equal(0);
+      expect(bobLoan).to.be.equal(parseEther('10'));
+
+      await expect(
+        cakeMarket2
+          .connect(bob)
+          .repayAndWithdrawCollateral(
+            bob.address,
+            parseEther('5'),
+            alice.address,
+            bobAmount.div(2)
+          )
+      )
+        .to.emit(cakeMarket2, 'WithdrawCollateral')
+        .withArgs(bob.address, alice.address, bobAmount.div(2))
+        .to.emit(cakeMarket2, 'Accrue')
+        .to.emit(cake, 'Transfer')
+        .withArgs(cakeMarket2.address, alice.address, bobAmount.div(2))
+        .to.emit(cakeMarket, 'Repay')
+        .to.emit(dinero, 'Transfer')
+        .to.not.emit(cakeVault, 'Withdraw');
+
+      const [
+        totalCollateral2,
+        aliceCollateral2,
+        bobCollateral2,
+        totalLoan2,
+        aliceLoan2,
+        bobLoan2,
+        aliceDineroBalance2,
+        aliceCakeBalance2,
+      ] = await Promise.all([
+        cakeMarket2.totalCollateral(),
+        cakeMarket2.userCollateral(alice.address),
+        cakeMarket2.userCollateral(bob.address),
+        cakeMarket2.totalLoan(),
+        cakeMarket2.userLoan(alice.address),
+        cakeMarket2.userLoan(bob.address),
+        dinero.balanceOf(alice.address),
+        cake.balanceOf(alice.address),
+      ]);
+
+      expect(totalCollateral2).to.be.equal(aliceAmount.add(bobAmount.div(2)));
+      expect(aliceCollateral2).to.be.equal(aliceCollateral);
+      expect(bobCollateral2).to.be.equal(bobAmount.div(2));
+      expect(totalLoan2.base).to.be.equal(parseEther('5'));
+      expect(aliceLoan2).to.be.equal(0);
+      expect(bobLoan2).to.be.equal(totalLoan2.base);
+      expect(aliceCakeBalance2).to.be.equal(
+        aliceCakeBalance.add(bobAmount.div(2))
+      );
+      expect(aliceDineroBalance2).to.be.equal(aliceDineroBalance);
+    });
+    it('allows withdrawals from a market with a vault', async () => {
+      const aliceAmount = parseEther('12');
+      const bobAmount = parseEther('7');
+      await Promise.all([
+        cakeMarket.connect(alice).addCollateral(alice.address, aliceAmount),
+        cakeMarket.connect(bob).addCollateral(bob.address, bobAmount),
+      ]);
+
+      // We need to borrow to test the Accrue event
+      await cakeMarket.connect(bob).borrow(bob.address, parseEther('10'));
+
+      const [
+        totalCollateral,
+        aliceCollateral,
+        bobCollateral,
+        totalLoan,
+        aliceLoan,
+        bobLoan,
+        bobCakeBalance,
+      ] = await Promise.all([
+        cakeMarket.totalCollateral(),
+        cakeMarket.userCollateral(alice.address),
+        cakeMarket.userCollateral(bob.address),
+        cakeMarket.totalLoan(),
+        cakeMarket.userLoan(alice.address),
+        cakeMarket.userLoan(bob.address),
+        cake.balanceOf(bob.address),
+      ]);
+
+      expect(totalCollateral).to.be.equal(aliceAmount.add(bobAmount));
+      expect(aliceCollateral).to.be.equal(aliceAmount);
+      expect(bobCollateral).to.be.equal(bobAmount);
+      expect(totalLoan.base).to.be.equal(parseEther('10'));
+      expect(aliceLoan).to.be.equal(0);
+      expect(bobLoan).to.be.equal(parseEther('10'));
+
+      await expect(
+        cakeMarket
+          .connect(bob)
+          .repayAndWithdrawCollateral(
+            bob.address,
+            parseEther('5'),
+            bob.address,
+            bobAmount.div(3)
+          )
+      )
+        .to.emit(cakeMarket, 'WithdrawCollateral')
+        .withArgs(bob.address, bob.address, bobAmount.div(3))
+        .to.emit(cakeMarket, 'Accrue')
+        .to.emit(cake, 'Transfer')
+        .to.emit(cakeVault, 'Withdraw')
+        .to.emit(cakeMarket, 'Repay')
+        .to.emit(dinero, 'Transfer')
+        .to.emit(cakeMarket, ' Accrue');
+
+      const [
+        totalCollateral2,
+        aliceCollateral2,
+        bobCollateral2,
+        totalLoan2,
+        aliceLoan2,
+        bobLoan2,
+        bobCakeBalance2,
+      ] = await Promise.all([
+        cakeMarket.totalCollateral(),
+        cakeMarket.userCollateral(alice.address),
+        cakeMarket.userCollateral(bob.address),
+        cakeMarket.totalLoan(),
+        cakeMarket.userLoan(alice.address),
+        cakeMarket.userLoan(bob.address),
+        cake.balanceOf(bob.address),
+      ]);
+
+      expect(totalCollateral2).to.be.equal(
+        aliceAmount.add(bobAmount.sub(bobAmount.div(3)))
+      );
+      expect(aliceCollateral2).to.be.equal(aliceCollateral);
+      expect(bobCollateral2).to.be.equal(bobAmount.sub(bobAmount.div(3)));
+      expect(totalLoan2.base).to.be.equal(parseEther('5'));
+      expect(aliceLoan2).to.be.equal(aliceLoan);
+      expect(bobLoan2).to.be.equal(parseEther('5'));
+      // farmed rewards
+      expect(
+        bobCakeBalance2.gt(bobCakeBalance.add(bobAmount.div(3)))
+      ).to.be.equal(true);
     });
   });
 }).timeout(7000);

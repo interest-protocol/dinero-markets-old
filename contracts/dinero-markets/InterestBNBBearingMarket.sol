@@ -241,6 +241,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
     ) external isSolvent {
         require(account != address(0), "DM: no zero address");
         require(principal > 0, "DM: principal cannot be 0");
+        require(amount > 0, "DM: amount cannot be 0");
 
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();

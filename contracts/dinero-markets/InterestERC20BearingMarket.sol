@@ -240,6 +240,9 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         address to,
         uint256 borrowAmount
     ) external isSolvent {
+        require(amount > 0, "DM: no zero collateral amount");
+        require(to != address(0), "DM: no zero address");
+        require(borrowAmount > 0, "DM: no zero borrowAmount");
         accrue();
         addCollateral(amount);
         _borrowFresh(to, borrowAmount);
@@ -259,6 +262,9 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         uint256 amount,
         bool inUnderlying
     ) external isSolvent {
+        require(account != address(0), "DM: no zero account");
+        require(principal > 0, "DM: no zero principal");
+        require(amount > 0, "DM: no zero withdrawl amount");
         accrue();
         _repayFresh(account, principal);
         _withdrawCollateralFresh(amount, inUnderlying);

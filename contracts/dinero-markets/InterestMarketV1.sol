@@ -213,8 +213,12 @@ contract InterestMarketV1 is Initializable, DineroMarket {
         address borrowTo,
         uint256 borrowAmount
     ) external isSolvent {
+        require(
+            to != address(0) && borrowTo != address(0),
+            "DM: no zero address"
+        );
+        require(amount != 0 && borrowAmount != 0, "DM: no zero amount");
         accrue();
-
         addCollateral(to, amount);
         _borrowFresh(borrowTo, borrowAmount);
     }
@@ -233,8 +237,12 @@ contract InterestMarketV1 is Initializable, DineroMarket {
         address to,
         uint256 amount
     ) external isSolvent {
+        require(
+            account != address(0) && to != address(0),
+            "DM: no zero address"
+        );
+        require(principal > 0 && amount > 0, "DM: no zero amount");
         accrue();
-
         _repayFresh(account, principal);
         _withdrawCollateralFresh(to, amount);
     }
@@ -269,6 +277,7 @@ contract InterestMarketV1 is Initializable, DineroMarket {
      * - `msg.sender` must remain solvent after removing the collateral.
      */
     function withdrawCollateral(address to, uint256 amount) external isSolvent {
+        require(to != address(0), "DM: no zero address");
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
 
