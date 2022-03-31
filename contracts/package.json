@@ -1,5 +1,5 @@
 {
-  "name": "@interest-protocol/contracts",
+  "name": "@interest-protocol/dinero-markets",
   "description": "Core contracts for Interest Protocol",
   "version": "1.0.4-alpha",
   "publishConfig": {
