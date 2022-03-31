@@ -9,7 +9,7 @@ Copyright (c) 2021 Jose Cerqueira - All rights reserved
 */
 
 //SPDX-License-Identifier: MIT
-pragma solidity 0.8.12;
+pragma solidity 0.8.13;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -295,17 +295,7 @@ abstract contract DineroMarket is
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
 
-        // What is the principal in proportion to the `amount` of Dinero based on the {loan}.
-        uint256 principal;
-
-        // Update global state
-        (totalLoan, principal) = totalLoan.add(amount, true);
-        userLoan[_msgSender()] += principal;
-
-        // Note the `msg.sender` can use his collateral to lend to someone else.
-        DINERO.mint(to, amount);
-
-        emit Borrow(_msgSender(), to, principal, amount);
+        _borrowFresh(to, amount);
     }
 
     /**
@@ -328,6 +318,40 @@ abstract contract DineroMarket is
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
 
+        _repayFresh(account, principal);
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                            INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev The core logic of borrow. Careful it does not accrue or check for solvency.
+     *
+     * @param to The address which will receive the borrowed `DINERO`
+     * @param amount The number of `DINERO` to borrow
+     */
+    function _borrowFresh(address to, uint256 amount) internal {
+        // What is the principal in proportion to the `amount` of Dinero based on the {loan}.
+        uint256 principal;
+
+        // Update global state
+        (totalLoan, principal) = totalLoan.add(amount, true);
+        userLoan[_msgSender()] += principal;
+
+        // Note the `msg.sender` can use his collateral to lend to someone else.
+        DINERO.mint(to, amount);
+
+        emit Borrow(_msgSender(), to, principal, amount);
+    }
+
+    /**
+     * @dev The core logic to repay a loan without accrueing or require checks.
+     *
+     * @param account The address which will have some of its principal paid back.
+     * @param principal How many `DINERO` tokens (princicpal) to be paid back for the `account`
+     */
+    function _repayFresh(address account, uint256 principal) internal {
         // Debt includes principal + accrued interest owed
         uint256 debt;
 
@@ -340,10 +364,6 @@ abstract contract DineroMarket is
 
         emit Repay(_msgSender(), account, principal, debt);
     }
-
-    /*///////////////////////////////////////////////////////////////
-                            PRIVATE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
 
     /**
      * @dev Checks if an `account` has enough collateral to back his loan based on the {maxLTVRatio}.

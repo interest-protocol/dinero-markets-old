@@ -539,8 +539,6 @@ describe('Interest ERC20 Bearing Market', () => {
         market.totalRewardsPerVToken(),
         market.totalVCollateral(),
         market.rewardsOf(alice.address),
-        BTC.connect(alice).approve(market.address, ethers.constants.MaxUint256),
-        BTC.connect(bob).approve(market.address, ethers.constants.MaxUint256),
       ]);
 
       expect(aliceCollateral).to.be.equal(0);
@@ -2244,6 +2242,488 @@ describe('Interest ERC20 Bearing Market', () => {
       expect(aliceVBTCBalance).to.be.closeTo(
         parseEther('5').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE),
         ethers.BigNumber.from(10).pow(3)
+      );
+    });
+  });
+  describe('function: addCollateralAndBorrow', () => {
+    it('reverts if you pass invalid arguments', async () => {
+      await expect(
+        market.addCollateralAndBorrow(0, ethers.constants.AddressZero, 0)
+      ).to.revertedWith('DM: no zero collateral amount');
+      await expect(
+        market.addCollateralAndBorrow(1, ethers.constants.AddressZero, 0)
+      ).to.revertedWith('DM: no zero address');
+      await expect(
+        market.addCollateralAndBorrow(1, alice.address, 0)
+      ).to.revertedWith('DM: no zero borrowAmount');
+    });
+    it('reverts if the borrower is insolvent', async () => {
+      await expect(
+        market
+          .connect(alice)
+          .addCollateralAndBorrow(
+            parseEther('1'),
+            alice.address,
+            parseEther('20000.1')
+          )
+      ).to.revertedWith('MKT: sender is insolvent');
+    });
+    it('allows a caller to add collateral and borrow in one call', async () => {
+      const [
+        totalLoan,
+        aliceLoan,
+        aliceDineroBalance,
+        aliceCollateral,
+        totalRewardsPerVToken,
+        totalVCollateral,
+        aliceRewards,
+      ] = await Promise.all([
+        market.totalLoan(),
+        market.userLoan(alice.address),
+        dinero.balanceOf(alice.address),
+        market.userCollateral(alice.address),
+        market.totalRewardsPerVToken(),
+        market.totalVCollateral(),
+        market.rewardsOf(alice.address),
+      ]);
+
+      expect(totalLoan.base).to.be.equal(0);
+      expect(totalLoan.elastic).to.be.equal(0);
+      expect(aliceLoan).to.be.equal(0);
+      expect(aliceCollateral).to.be.equal(0);
+      expect(totalRewardsPerVToken).to.be.equal(0);
+      expect(totalVCollateral).to.be.equal(0);
+      expect(aliceRewards).to.be.equal(0);
+
+      await expect(
+        market
+          .connect(alice)
+          .addCollateralAndBorrow(
+            parseEther('2'),
+            bob.address,
+            parseEther('10000')
+          )
+      )
+        .to.emit(dinero, 'Transfer')
+        .withArgs(
+          ethers.constants.AddressZero,
+          bob.address,
+          parseEther('10000')
+        )
+        .to.emit(market, 'AddCollateral')
+        .withArgs(
+          alice.address,
+          parseEther('2'),
+          parseEther('2').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE)
+        )
+        .to.emit(market, 'Borrow')
+        .to.not.emit(market, 'Accrue')
+        .to.not.emit(venusController, 'Claim')
+        .to.not.emit(XVS, 'Transfer');
+
+      await market.connect(bob).addCollateral(parseEther('1'));
+
+      const [
+        totalLoan2,
+        aliceLoan2,
+        aliceDineroBalance2,
+        bobDineroBalance,
+        aliceCollateral2,
+        totalRewardsPerVToken2,
+        totalVCollateral2,
+        aliceRewards2,
+        bobRewards2,
+        bobCollateral2,
+      ] = await Promise.all([
+        market.totalLoan(),
+        market.userLoan(alice.address),
+        dinero.balanceOf(alice.address),
+        dinero.balanceOf(bob.address),
+        market.userCollateral(alice.address),
+        market.totalRewardsPerVToken(),
+        market.totalVCollateral(),
+        market.rewardsOf(alice.address),
+        market.rewardsOf(bob.address),
+        market.userCollateral(bob.address),
+        venusController.__setClaimVenusValue(parseEther('100')),
+      ]);
+
+      expect(totalLoan2.base).to.be.equal(parseEther('10000'));
+      expect(totalLoan2.elastic).to.be.equal(parseEther('10000'));
+      expect(aliceLoan2).to.be.equal(parseEther('10000'));
+      expect(aliceDineroBalance2).to.be.equal(aliceDineroBalance);
+      expect(bobDineroBalance).to.be.equal(parseEther('10000'));
+      expect(aliceCollateral2).to.be.equal(
+        parseEther('2').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE)
+      );
+      expect(bobCollateral2).to.be.equal(
+        parseEther('1').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE)
+      );
+      expect(totalRewardsPerVToken2).to.be.equal(0);
+      expect(totalVCollateral2).to.be.closeTo(
+        parseEther('3').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE),
+        1
+      );
+      expect(aliceRewards2).to.be.equal(0);
+      expect(bobRewards2).to.be.equal(0);
+
+      await advanceTime(10_000, ethers); // advance 10_000 seconds
+
+      await expect(
+        market
+          .connect(alice)
+          .addCollateralAndBorrow(
+            parseEther('1'),
+            alice.address,
+            parseEther('9000')
+          )
+      )
+        .to.emit(market, 'Accrue')
+        .to.emit(dinero, 'Transfer')
+        .withArgs(
+          ethers.constants.AddressZero,
+          alice.address,
+          parseEther('9000')
+        )
+        .to.emit(market, 'Borrow')
+        .to.emit(market, 'AddCollateral')
+        .withArgs(
+          alice.address,
+          parseEther('1'),
+          parseEther('1').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE)
+        )
+        .to.emit(venusController, 'Claim')
+        .to.emit(XVS, 'Transfer')
+        .withArgs(
+          market.address,
+          alice.address,
+          parseEther('100')
+            .mul(oneVToken)
+            .div(totalVCollateral2)
+            .mul(aliceCollateral2)
+            .div(oneVToken)
+        );
+
+      const [
+        totalLoan3,
+        aliceLoan3,
+        bobLoan,
+        aliceDineroBalance3,
+        bobDineroBalance2,
+        aliceCollateral3,
+        totalRewardsPerVToken3,
+        totalVCollateral3,
+        aliceRewards3,
+        bobRewards3,
+        bobCollateral3,
+      ] = await Promise.all([
+        market.totalLoan(),
+        market.userLoan(alice.address),
+        market.userLoan(bob.address),
+        dinero.balanceOf(alice.address),
+        dinero.balanceOf(bob.address),
+        market.userCollateral(alice.address),
+        market.totalRewardsPerVToken(),
+        market.totalVCollateral(),
+        market.rewardsOf(alice.address),
+        market.rewardsOf(bob.address),
+        market.userCollateral(bob.address),
+      ]);
+      expect(totalLoan3.base).to.be.closeTo(
+        totalLoan2.base.add(parseEther('9000')),
+        parseEther('50') // 50 DNR for approximation
+      );
+      expect(totalLoan3.elastic).to.be.closeTo(
+        totalLoan2.elastic.add(parseEther('9000')),
+        parseEther('10')
+      );
+      expect(aliceLoan3).to.be.closeTo(
+        totalLoan2.base.add(parseEther('9000')),
+        parseEther('50') // 50 DNR for approximation
+      ); // Interest rate makes it hard to calculate the exact value
+
+      expect(aliceDineroBalance3).to.be.equal(
+        aliceDineroBalance2.add(parseEther('9000'))
+      );
+      expect(bobDineroBalance2).to.be.equal(parseEther('10000'));
+      expect(bobLoan).to.be.equal(0);
+      expect(aliceCollateral3).to.be.closeTo(
+        parseEther('3').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE),
+        1
+      );
+      expect(bobCollateral3).to.be.equal(
+        parseEther('1').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE)
+      );
+      expect(totalRewardsPerVToken3).to.be.equal(
+        parseEther('100').mul(oneVToken).div(totalVCollateral2)
+      );
+      expect(totalVCollateral3).to.be.closeTo(
+        parseEther('4').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE),
+        10
+      );
+      expect(aliceRewards3).to.be.equal(
+        aliceCollateral3.mul(totalRewardsPerVToken3).div(oneVToken)
+      );
+      expect(bobRewards3).to.be.equal(0);
+    });
+  });
+  describe('function: repayAndWithdrawCollateral', () => {
+    it('reverts if the caller passes invalid arguments', async () => {
+      await expect(
+        market
+          .connect(alice)
+          .repayAndWithdrawCollateral(ethers.constants.AddressZero, 0, 0, true)
+      ).to.revertedWith('DM: no zero account');
+      await expect(
+        market
+          .connect(alice)
+          .repayAndWithdrawCollateral(alice.address, 0, 0, true)
+      ).to.revertedWith('DM: no zero principal');
+      await expect(
+        market
+          .connect(alice)
+          .repayAndWithdrawCollateral(alice.address, 1, 0, true)
+      ).to.revertedWith('DM: no zero withdrawl amount');
+    });
+    it('reverts if the user is insolvent', async () => {
+      await market
+        .connect(alice)
+        .addCollateralAndBorrow(
+          parseEther('2'),
+          alice.address,
+          parseEther('35000')
+        );
+
+      await expect(
+        market
+          .connect(alice)
+          .repayAndWithdrawCollateral(
+            alice.address,
+            parseEther('1000'),
+            parseEther('0.3')
+              .mul(parseEther('1'))
+              .div(VTOKEN_BTC_EXCHANGE_RATE),
+            false
+          )
+      ).to.revertedWith('MKT: sender is insolvent');
+    });
+    it('reverts if the there is no liquidity on Venus', async () => {
+      await Promise.all([
+        vBTC.__setRedeemReturn(1),
+        market
+          .connect(alice)
+          .addCollateralAndBorrow(
+            parseEther('2'),
+            alice.address,
+            parseEther('35000')
+          ),
+      ]);
+
+      await expect(
+        market
+          .connect(alice)
+          .repayAndWithdrawCollateral(
+            alice.address,
+            parseEther('1'),
+            parseEther('1').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE),
+            true
+          )
+      ).to.revertedWith('DV: failed to redeem');
+    });
+    it('allows a user to repay and withdraw collateral in vBTC on the same call', async () => {
+      await market
+        .connect(alice)
+        .addCollateralAndBorrow(
+          parseEther('5'),
+          alice.address,
+          parseEther('20000')
+        );
+
+      const [aliceDineroBalance, aliceLoan, totalLoan, aliceVBTCBalance] =
+        await Promise.all([
+          dinero.balanceOf(alice.address),
+          market.userLoan(alice.address),
+          market.totalLoan(),
+          vBTC.balanceOf(alice.address),
+          advanceTime(1000, ethers),
+        ]);
+
+      // Make sure accrue gets called
+      await advanceTime(100, ethers); // advance 100 seconds
+
+      await expect(
+        market
+          .connect(alice)
+          .repayAndWithdrawCollateral(
+            alice.address,
+            parseEther('15000'),
+            parseEther('2').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE),
+            false
+          )
+      )
+        .to.emit(dinero, 'Transfer')
+        .to.emit(market, 'Repay')
+        .to.emit(market, 'Accrue')
+        .to.emit(vBTC, 'Transfer')
+        .withArgs(
+          market.address,
+          alice.address,
+          0,
+          parseEther('2').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE)
+        )
+        .to.emit(market, 'WithdrawCollateral')
+        .withArgs(
+          alice.address,
+          0,
+          parseEther('2').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE)
+        )
+        .to.not.emit(venusController, 'Claim')
+        .to.not.emit(XVS, 'Transfer')
+        .to.not.emit(vBTC, 'Redeem');
+
+      const [
+        aliceDineroBalance2,
+        aliceLoan2,
+        totalLoan2,
+        aliceCollateral,
+        totalRewardsPerVToken,
+        totalVCollateral,
+        aliceRewards,
+        aliceVBTCBalance2,
+      ] = await Promise.all([
+        dinero.balanceOf(alice.address),
+        market.userLoan(alice.address),
+        market.totalLoan(),
+        market.userCollateral(alice.address),
+        market.totalRewardsPerVToken(),
+        market.totalVCollateral(),
+        market.rewardsOf(alice.address),
+        vBTC.balanceOf(alice.address),
+      ]);
+
+      expect(aliceCollateral).to.be.closeTo(
+        parseEther('3').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE),
+        1
+      );
+      expect(totalRewardsPerVToken).to.be.equal(0);
+      expect(totalVCollateral).to.be.closeTo(
+        parseEther('3').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE),
+        1
+      );
+      expect(aliceRewards).to.be.equal(0);
+
+      expect(aliceDineroBalance2).to.be.closeTo(
+        aliceDineroBalance.sub(parseEther('15000')),
+        parseEther('2')
+      );
+      expect(aliceLoan).to.be.equal(parseEther('20000'));
+      expect(aliceLoan2).to.be.closeTo(parseEther('5000'), parseEther('3'));
+      expect(totalLoan.elastic).to.be.equal(parseEther('20000'));
+      expect(totalLoan.base).to.be.equal(parseEther('20000'));
+      expect(totalLoan2.base).to.be.equal(parseEther('5000'));
+      expect(totalLoan2.elastic).closeTo(
+        totalLoan.elastic.sub(parseEther('15000')),
+        parseEther('2')
+      );
+      expect(aliceVBTCBalance).to.be.equal(0);
+      expect(aliceVBTCBalance2).to.be.equal(
+        parseEther('2').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE)
+      );
+    });
+    it('allows a user to repay and withdraw as BTC', async () => {
+      await market
+        .connect(alice)
+        .addCollateralAndBorrow(
+          parseEther('5'),
+          alice.address,
+          parseEther('20000')
+        );
+
+      const [aliceDineroBalance, aliceLoan, totalLoan, aliceBTCBalance] =
+        await Promise.all([
+          dinero.balanceOf(alice.address),
+          market.userLoan(alice.address),
+          market.totalLoan(),
+          BTC.balanceOf(alice.address),
+          advanceTime(1000, ethers),
+        ]);
+
+      // Make sure accrue gets called
+      await advanceTime(100, ethers); // advance 100 seconds
+
+      await expect(
+        market
+          .connect(alice)
+          .repayAndWithdrawCollateral(
+            alice.address,
+            parseEther('15000'),
+            parseEther('2').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE),
+            true
+          )
+      )
+        .to.emit(dinero, 'Transfer')
+        .to.emit(market, 'Repay')
+        .to.emit(market, 'Accrue')
+        .to.emit(vBTC, 'Transfer')
+        .to.emit(BTC, 'Transfer')
+        .withArgs(market.address, alice.address, parseEther('2'))
+        .to.emit(market, 'WithdrawCollateral')
+        .withArgs(
+          alice.address,
+          parseEther('2'),
+          parseEther('2').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE)
+        )
+        .to.emit(vBTC, 'Redeem')
+        .to.not.emit(venusController, 'Claim')
+        .to.not.emit(XVS, 'Transfer');
+
+      const [
+        aliceDineroBalance2,
+        aliceLoan2,
+        totalLoan2,
+        aliceCollateral,
+        totalRewardsPerVToken,
+        totalVCollateral,
+        aliceRewards,
+        aliceBTCBalance2,
+      ] = await Promise.all([
+        dinero.balanceOf(alice.address),
+        market.userLoan(alice.address),
+        market.totalLoan(),
+        market.userCollateral(alice.address),
+        market.totalRewardsPerVToken(),
+        market.totalVCollateral(),
+        market.rewardsOf(alice.address),
+        BTC.balanceOf(alice.address),
+      ]);
+
+      expect(aliceCollateral).to.be.closeTo(
+        parseEther('3').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE),
+        1
+      );
+      expect(totalRewardsPerVToken).to.be.equal(0);
+      expect(totalVCollateral).to.be.closeTo(
+        parseEther('3').mul(parseEther('1')).div(VTOKEN_BTC_EXCHANGE_RATE),
+        1
+      );
+      expect(aliceRewards).to.be.equal(0);
+
+      expect(aliceDineroBalance2).to.be.closeTo(
+        aliceDineroBalance.sub(parseEther('15000')),
+        parseEther('2')
+      );
+      expect(aliceLoan).to.be.equal(parseEther('20000'));
+      expect(aliceLoan2).to.be.closeTo(parseEther('5000'), parseEther('3'));
+      expect(totalLoan.elastic).to.be.equal(parseEther('20000'));
+      expect(totalLoan.base).to.be.equal(parseEther('20000'));
+      expect(totalLoan2.base).to.be.equal(parseEther('5000'));
+      expect(totalLoan2.elastic).closeTo(
+        totalLoan.elastic.sub(parseEther('15000')),
+        parseEther('2')
+      );
+      expect(aliceBTCBalance2).to.be.closeTo(
+        aliceBTCBalance.add(parseEther('2')),
+        parseEther('0.0001')
       );
     });
   });
