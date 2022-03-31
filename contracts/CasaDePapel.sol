@@ -10,7 +10,7 @@
 
 */
 //SPDX-License-Identifier: MIT
-pragma solidity 0.8.12;
+pragma solidity 0.8.13;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
@@ -24,7 +24,7 @@ import "./tokens/InterestToken.sol";
 import "./tokens/StakedInterestToken.sol";
 
 /**
- * @dev This is a 0.8.12 implementation of the master chef pioneered by the Sushi Team. It is a staking contact that allows multiple tokens to get rewarded in {InterestToken}.
+ * @dev This is a 0.8.13 implementation of the master chef pioneered by the Sushi Team. It is a staking contact that allows multiple tokens to get rewarded in {InterestToken}.
  *
  * @notice This implementation of the master chef gives a receipt token {StakedInterestToken} that is required when unstaking {InterestToken}.
  * @notice We allow for another user to unstake tokens from another user if he has given full approval to the first user.

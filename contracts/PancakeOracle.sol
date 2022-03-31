@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: Unlicense
-pragma solidity 0.8.12;
+pragma solidity 0.8.13;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -310,7 +310,7 @@ contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function _authorizeUpgrade(address)
         internal
-                view
+        view
         override
         onlyOwner
     //solhint-disable-next-line no-empty-blocks
