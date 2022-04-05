@@ -62,8 +62,6 @@ contract LPVault is
     /**
      * @dev We need to approve the {CAKE_MASTER_CHEF} to have full access to the {CAKE} and {STAKING_TOKEN} (PancakePair) tokens.
      *
-     * @param cakeMasterChef The address of the PancakeSwap master chef.
-     * @param cake The address of the {CAKE} token.
      * @param stakingToken The address of the {PancakePair} token.
      * @param poolId The id of the {PancakePair} token in the {CAKE_MASTER_CHEF}.
      *
@@ -71,21 +69,17 @@ contract LPVault is
      *
      * - Can only be called at once and should be called during creation to prevent front running.
      */
-    function initialize(
-        IMasterChef cakeMasterChef,
-        IERC20Upgradeable cake,
-        IERC20Upgradeable stakingToken,
-        uint256 poolId
-    ) external initializer {
+    function initialize(IERC20Upgradeable stakingToken, uint256 poolId)
+        external
+        initializer
+    {
         require(poolId != 0, "LPVault: this is a LP vault");
         __Ownable_init();
 
-        CAKE_MASTER_CHEF = cakeMasterChef;
-        CAKE = cake;
         STAKING_TOKEN = stakingToken;
         POOL_ID = poolId;
-        stakingToken.safeApprove(address(cakeMasterChef), type(uint256).max);
-        cake.safeApprove(address(cakeMasterChef), type(uint256).max);
+        stakingToken.safeApprove(address(CAKE_MASTER_CHEF), type(uint256).max);
+        CAKE.safeApprove(address(CAKE_MASTER_CHEF), type(uint256).max);
     }
 
     /*///////////////////////////////////////////////////////////////

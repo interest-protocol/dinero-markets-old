@@ -63,16 +63,17 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line var-name-mixedcase
+    AggregatorV3Interface internal constant BNB_USD =
+        AggregatorV3Interface(0x0567f2323251f0aab15c8dfb1967e4e8a7d42aee);
+
+    // solhint-disable-next-line var-name-mixedcase
+    address internal constant WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c; // 18 decimals
+
+    // solhint-disable-next-line var-name-mixedcase
+    address internal constant BUSD = 0x4Fabb145d64652a948d72533023f6E7A623C7C53;
+
+    // solhint-disable-next-line var-name-mixedcase
     PancakeOracle public TWAP;
-
-    // solhint-disable-next-line var-name-mixedcase
-    AggregatorV3Interface public BNB_USD;
-
-    // solhint-disable-next-line var-name-mixedcase
-    address public WBNB;
-
-    // solhint-disable-next-line var-name-mixedcase
-    address public BUSD;
 
     // Token Address -> Chainlink feed with USD base.
     mapping(address => AggregatorV3Interface) public getUSDFeeds;
@@ -85,27 +86,15 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     /**
      * @param twap The address of our internal PCS TWAP
-     * @param bnb_usd The chainlink feed for bnb/usd.
-     * @param wbnb The address for WBNB.
-     * @param busd The address for ERC20 Binance pegged USD
      *
      * Requirements:
      *
      * - Can only be called at once and should be called during creation to prevent front running.
      */
-    function initialize(
-        PancakeOracle twap,
-        // solhint-disable-next-line var-name-mixedcase
-        AggregatorV3Interface bnb_usd,
-        address wbnb,
-        address busd
-    ) external initializer {
+    function initialize(PancakeOracle twap) external initializer {
         __Ownable_init();
 
         TWAP = twap;
-        BNB_USD = bnb_usd;
-        WBNB = wbnb;
-        BUSD = busd;
     }
 
     /*///////////////////////////////////////////////////////////////

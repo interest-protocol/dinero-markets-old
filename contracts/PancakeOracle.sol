@@ -9,8 +9,8 @@ import "./interfaces/IPancakeFactory.sol";
 import "./interfaces/IPancakePair.sol";
 
 import "./lib/FixedPoint.sol";
-
-import "./LibraryWrapper.sol";
+import "./lib/PancakeLibrary.sol";
+import "./lib/UniswapV2OracleLibrary.sol";
 
 /**
  * @notice This is a copy of the https://github.com/Uniswap/v2-periphery/blob/master/contracts/examples/ExampleSlidingWindowOracle.sol#L5
@@ -50,11 +50,8 @@ contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     // Pancake Swap Factory
     // solhint-disable-next-line var-name-mixedcase
-    address public FACTORY;
-
-    // Pancake Swap Library
-    // solhint-disable-next-line var-name-mixedcase
-    LibraryWrapper public LIBRARY_WRAPPER;
+    address internal constant FACTORY =
+        0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73;
 
     // Time that will be used to compute the window of the moving average. 24 hours is enough to make an attack impractical.
     // solhint-disable-next-line var-name-mixedcase
@@ -80,21 +77,17 @@ contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @param factory The address of the Pancake Swap Factory 0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73
      * @param windowSize The time used to calculate the moving average.
      * @param granularity How many data points to record during the `windowSize`.
-     * @param libraryWrapper The address of a contract that stores core library functions
      *
      * Requirements:
      *
      * - Can only be called at once and should be called during creation to prevent front running.
      */
-    function initialize(
-        address factory,
-        uint256 windowSize,
-        uint8 granularity,
-        LibraryWrapper libraryWrapper
-    ) external initializer {
+    function initialize(uint256 windowSize, uint8 granularity)
+        external
+        initializer
+    {
         // `_granularity` lower than makes no sense in the context of moxing average: [windowSize - (windowSize / granularity) * 2, windowSize]
         require(granularity > 1, "PO: granularity > 1");
         // Make sure to use numbers that do not require rounding.
@@ -104,10 +97,8 @@ contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         __Ownable_init();
 
-        FACTORY = factory;
         WINDOW_SIZE = windowSize;
         GRANULARITY = granularity;
-        LIBRARY_WRAPPER = libraryWrapper;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -150,9 +141,8 @@ contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     function update(address tokenA, address tokenB) external {
         address factory = FACTORY;
         uint256 granularity = GRANULARITY;
-        LibraryWrapper libraryWrapper = LIBRARY_WRAPPER;
 
-        address pair = libraryWrapper.pairFor(factory, tokenA, tokenB);
+        address pair = PancakeLibrary.pairFor(factory, tokenA, tokenB);
         require(
             IPancakeFactory(factory).getPair(tokenA, tokenB) != address(0),
             "PO: pair does not exist"
@@ -178,7 +168,7 @@ contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                 uint256 price0Cumulative,
                 uint256 price1Cumulative,
 
-            ) = libraryWrapper.currentCumulativePrices(pair);
+            ) = UniswapV2OracleLibrary.currentCumulativePrices(pair);
             //solhint-disable-next-line not-rely-on-time
             observation.timestamp = block.timestamp;
             observation.price0Cumulative = price0Cumulative;
@@ -213,10 +203,9 @@ contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         address tokenOut
     ) external view returns (uint256 amountOut) {
         uint256 windowSize = WINDOW_SIZE;
-        LibraryWrapper libraryWrapper = LIBRARY_WRAPPER;
 
         // Get pair based on the tokens
-        address pair = libraryWrapper.pairFor(FACTORY, tokenIn, tokenOut);
+        address pair = PancakeLibrary.pairFor(FACTORY, tokenIn, tokenOut);
 
         // Get the first observation in the {WINDOW_SIZE}
         // If the window size is 24 hours. Get the observation made 24 hours ago.
@@ -234,10 +223,13 @@ contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         assert(timeElapsed >= windowSize - PERIOD_SIZE * 2);
 
         // Get current cumulative prices
-        (uint256 price0Cumulative, uint256 price1Cumulative, ) = libraryWrapper
-            .currentCumulativePrices(pair);
+        (
+            uint256 price0Cumulative,
+            uint256 price1Cumulative,
+
+        ) = UniswapV2OracleLibrary.currentCumulativePrices(pair);
         // Need to sort tokens to know the correct price cumulative
-        (address token0, ) = libraryWrapper.sortTokens(tokenIn, tokenOut);
+        (address token0, ) = PancakeLibrary.sortTokens(tokenIn, tokenOut);
 
         return
             token0 == tokenIn

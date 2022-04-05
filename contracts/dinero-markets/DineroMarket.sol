@@ -113,7 +113,8 @@ abstract contract DineroMarket is
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line var-name-mixedcase
-    IPancakeRouter02 public ROUTER; // PCS router
+    IPancakeRouter02 internal constant ROUTER =
+        IPancakeRouter02(0x10ED43C718714eb63d5aA57B78B54704E256024E); // PCS router
 
     // solhint-disable-next-line var-name-mixedcase
     Dinero public DINERO; // Dinero stable coin

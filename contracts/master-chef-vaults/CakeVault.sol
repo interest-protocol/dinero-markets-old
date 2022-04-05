@@ -49,24 +49,14 @@ contract CakeVault is
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @param cakeMasterChef the address of the cake {MasterChef}
-     * @param cake the address of the {CakeToken}
-     *
-     * Requirements:
      *
      * - Can only be called at once and should be called during creation to prevent front running.
      */
-    function initialize(IMasterChef cakeMasterChef, IERC20Upgradeable cake)
-        external
-        initializer
-    {
+    function initialize() external initializer {
         __Ownable_init();
 
-        CAKE_MASTER_CHEF = cakeMasterChef;
-        CAKE = cake;
-
         // Master chef needs full approval for us to deposit tokens on it.
-        cake.safeApprove(address(cakeMasterChef), type(uint256).max);
+        CAKE.safeApprove(address(CAKE_MASTER_CHEF), type(uint256).max);
     }
 
     /*///////////////////////////////////////////////////////////////

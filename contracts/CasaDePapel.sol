@@ -21,7 +21,6 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "./lib/IntMath.sol";
 
 import "./tokens/InterestToken.sol";
-import "./tokens/StakedInterestToken.sol";
 
 /**
  * @dev This is a 0.8.13 implementation of the master chef pioneered by the Sushi Team. It is a staking contact that allows multiple tokens to get rewarded in {InterestToken}.
@@ -104,10 +103,6 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     // solhint-disable-next-line var-name-mixedcase
     InterestToken public INTEREST_TOKEN;
 
-    // Receipt token to represent how many INT tokens the user has staked. Only distributed when staking INT directly
-    // solhint-disable-next-line var-name-mixedcase
-    StakedInterestToken public STAKED_INTEREST_TOKEN;
-
     // How many {InterestToken} to be minted per block.
     uint256 public interestTokenPerBlock;
 
@@ -134,7 +129,6 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     /**
      * @param interestToken Address of the {InterestToken}.
-     * @param stakedInterestToken Address of the {StakedInterestToken}.
      * @param _devAccount The address of the account that will get 10% of all new minted tokens.
      * @param _interestTokenPerBlock The amount of {InterestToken} to be minted per block.
      * @param _startBlock The block number that this contract will start minting {InterestToken}.
@@ -145,7 +139,6 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function initialize(
         InterestToken interestToken,
-        StakedInterestToken stakedInterestToken,
         address _devAccount,
         uint256 _interestTokenPerBlock,
         uint256 _startBlock
@@ -154,7 +147,6 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // Setup initial state
         INTEREST_TOKEN = interestToken;
-        STAKED_INTEREST_TOKEN = stakedInterestToken;
         devAccount = _devAccount;
         interestTokenPerBlock = _interestTokenPerBlock;
         startBlock = _startBlock;
@@ -405,12 +397,6 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         pools[0] = pool;
         userInfo[0][_msgSender()] = user;
 
-        if (amount > 0) {
-            // Give the user the receipt token.
-            // Note the user needs this token to get his {INTEREST_TOKEN} back.
-            STAKED_INTEREST_TOKEN.mint(_msgSender(), amount);
-        }
-
         // If the user has any pending rewards. We send it to him.
         if (_pendingRewards > 0) {
             InterestToken(address(pool.stakingToken)).mint(
@@ -435,23 +421,12 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @notice A different user with maxed allowance and enough {STAKED_INTEREST_TOKEN} can withdraw in behalf of the `account`.
      * @notice We use Open Zeppelin version 4.5.0-rc.0 that has a {transferFrom} function that does not decrease the allowance if is the maximum uint256.
      *
-     * @param account The address that deposited, "owns" the tokens in the contract.
      * @param recipient The address that will receive the tokens and rewards.
      * @param amount The number of {INTEREST_TOKEN} to withdraw to the `msg.sender`
      */
-    function unstake(
-        address account,
-        address recipient,
-        uint256 amount
-    ) external {
-        require(
-            account == _msgSender() ||
-                INTEREST_TOKEN.allowance(account, _msgSender()) ==
-                type(uint256).max,
-            "CP: no max allowance"
-        );
-        _unstake(account, recipient, amount);
-        emit Withdraw(account, recipient, 0, amount);
+    function unstake(address recipient, uint256 amount) external {
+        _unstake(_msgSender(), recipient, amount);
+        emit Withdraw(_msgSender(), recipient, 0, amount);
     }
 
     /**
@@ -476,10 +451,6 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // Update the pool total supply
         pool.totalSupply -= amount;
-
-        if (poolId == 0) {
-            STAKED_INTEREST_TOKEN.burn(_msgSender(), amount);
-        }
 
         pool.stakingToken.safeTransfer(_msgSender(), amount);
 
@@ -649,7 +620,6 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         userInfo[0][account] = user;
 
         if (amount > 0) {
-            STAKED_INTEREST_TOKEN.burn(recipient, amount);
             pool.stakingToken.safeTransfer(recipient, amount);
         }
 

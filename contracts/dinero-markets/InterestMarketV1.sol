@@ -106,7 +106,6 @@ contract InterestMarketV1 is Initializable, DineroMarket {
     /**
      * @dev This is only callable once to set the initial data.
      *
-     * @param router The address of the PCS router.
      * @param dinero The address of Dinero.
      * @param feeTo Treasury address.
      * @param oracle The address of the oracle.
@@ -121,7 +120,6 @@ contract InterestMarketV1 is Initializable, DineroMarket {
      * - Can only be called at once and should be called during creation to prevent front running.
      */
     function initialize(
-        IPancakeRouter02 router,
         Dinero dinero,
         address feeTo,
         OracleV1 oracle,
@@ -141,7 +139,6 @@ contract InterestMarketV1 is Initializable, DineroMarket {
 
         __DineroMarket_init();
 
-        ROUTER = router;
         DINERO = dinero;
         FEE_TO = feeTo;
         ORACLE = oracle;
@@ -153,7 +150,7 @@ contract InterestMarketV1 is Initializable, DineroMarket {
 
         // Also make sure that {COLLATERAL} is a deployed ERC20.
         // Approve the router to trade the collateral.
-        COLLATERAL.safeApprove(address(router), type(uint256).max);
+        COLLATERAL.safeApprove(address(ROUTER), type(uint256).max);
     }
 
     /*///////////////////////////////////////////////////////////////

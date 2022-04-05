@@ -104,19 +104,21 @@ contract DineroVenusVault is
     //////////////////////////////////////////////////////////////*/
 
     // Compound and by extension Venus return 0 on successful calls.
-    uint256 private constant NO_ERROR = 0;
+    uint256 internal constant NO_ERROR = 0;
 
     // solhint-disable-next-line var-name-mixedcase
-    address public XVS; // 0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63 18 decimals
+    address internal constant XVS = 0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63;
 
     // solhint-disable-next-line var-name-mixedcase
-    address public WBNB; // 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c 18 decimals
+    address internal constant WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c; // 18 decimals
 
     // solhint-disable-next-line var-name-mixedcase
-    IPancakeRouter02 public ROUTER; // PCS router 0x10ED43C718714eb63d5aA57B78B54704E256024E
+    IPancakeRouter02 internal constant ROUTER =
+        IPancakeRouter02(0x10ED43C718714eb63d5aA57B78B54704E256024E); // PCS router
 
     // solhint-disable-next-line var-name-mixedcase
-    IVenusController public VENUS_CONTROLLER; // 0xfD36E2c2a6789Db23113685031d7F16329158384
+    IVenusController internal constant VENUS_CONTROLLER =
+        IVenusController(0xfD36E2c2a6789Db23113685031d7F16329158384); //
 
     //solhint-disable-next-line var-name-mixedcase
     Dinero public DINERO; // 18 decimals
@@ -162,10 +164,6 @@ contract DineroVenusVault is
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @param xvs The contract of th Venus Token
-     * @param wbnb The contract for Wrapped BNB token
-     * @param router The contract of PCS router v2
-     * @param venusController The contract of the Venus Controller
      * @param dinero The contract of the dinero stable coin
      * @param safeVenus The helper contract address to interact with Venus
      * @param feeTo The address that will collect the fee
@@ -175,10 +173,6 @@ contract DineroVenusVault is
      * - Can only be called at once and should be called during creation to prevent front running.
      */
     function initialize(
-        address xvs,
-        address wbnb,
-        IPancakeRouter02 router,
-        IVenusController venusController,
         Dinero dinero,
         SafeVenus safeVenus,
         address feeTo
@@ -186,16 +180,12 @@ contract DineroVenusVault is
         __Ownable_init();
         __Pausable_init();
 
-        XVS = xvs;
-        WBNB = wbnb;
-        ROUTER = router;
-        VENUS_CONTROLLER = venusController;
         DINERO = dinero;
         SAFE_VENUS = safeVenus;
         FEE_TO = feeTo;
 
         // We trust `router` so we can fully approve because we need to sell it.
-        IERC20Upgradeable(XVS).safeApprove(address(router), type(uint256).max);
+        IERC20Upgradeable(XVS).safeApprove(address(ROUTER), type(uint256).max);
     }
 
     /*///////////////////////////////////////////////////////////////

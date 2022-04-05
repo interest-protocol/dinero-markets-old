@@ -82,7 +82,6 @@ contract InterestBNBMarketV1 is
     /**
      * @notice `interestRate` has a base unit of 1e18.
      *
-     * @param router The address of the PCS router.
      * @param dinero The address of Dinero.
      * @param feeTo Treasury address.
      * @param oracle The address of the oracle.
@@ -95,7 +94,6 @@ contract InterestBNBMarketV1 is
      * - Can only be called at once and should be called during creation to prevent front running.
      */
     function initialize(
-        IPancakeRouter02 router,
         Dinero dinero,
         address feeTo,
         OracleV1 oracle,
@@ -106,7 +104,6 @@ contract InterestBNBMarketV1 is
         __DineroMarket_init();
         __ReentrancyGuard_init();
 
-        ROUTER = router;
         DINERO = dinero;
         FEE_TO = feeTo;
         ORACLE = oracle;

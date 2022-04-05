@@ -89,14 +89,13 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     // Compound and by extension Venus return 0 on successful calls.
     uint256 private constant NO_ERROR = 0;
 
-    /**
-     * @dev This is the Venus controller 0xfD36E2c2a6789Db23113685031d7F16329158384
-     */
     // solhint-disable-next-line var-name-mixedcase
-    IVenusController public VENUS_CONTROLLER;
+    IVenusController internal constant VENUS_CONTROLLER =
+        IVenusController(0xfD36E2c2a6789Db23113685031d7F16329158384);
 
     // solhint-disable-next-line var-name-mixedcase
-    IERC20Upgradeable public XVS; // Venus Token.
+    IERC20Upgradeable internal constant XVS =
+        IERC20Upgradeable(0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63); // Venus Token.
 
     // solhint-disable-next-line var-name-mixedcase
     IERC20Upgradeable public COLLATERAL; // Token to be used to cover the loan. In case of BNB, it will be address(0)
@@ -122,12 +121,9 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
      *
      * @notice A `Collateral` of address(0) represents BNB.
      *
-     * @param router The address of the PCS router.
      * @param dinero The address of Dinero.
      * @param feeTo Treasury address.
      * @param oracle The address of the oracle.
-     * @param venusController The address of Venus Controller
-     * @param xvs the address of the Venus token.
      * @param collateral The address of the collateral of this market, an ERC20 or BNB
      * @param vToken The address of the `collateral` vToken
      * @param interestRate the interest rate charged every second
@@ -139,12 +135,9 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
      * - Can only be called at once and should be called during creation to prevent front running.
      */
     function initialize(
-        IPancakeRouter02 router,
         Dinero dinero,
         address feeTo,
         OracleV1 oracle,
-        IVenusController venusController,
-        IERC20Upgradeable xvs,
         IERC20Upgradeable collateral,
         IVToken vToken,
         uint64 interestRate,
@@ -159,12 +152,9 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
 
         __DineroMarket_init();
 
-        ROUTER = router;
         DINERO = dinero;
         FEE_TO = feeTo;
         ORACLE = oracle;
-        VENUS_CONTROLLER = venusController;
-        XVS = xvs;
         COLLATERAL = collateral;
         VTOKEN = vToken;
         loan.INTEREST_RATE = interestRate;
@@ -172,7 +162,7 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         liquidationFee = _liquidationFee;
 
         // Approve the router to trade the collateral in case of liquidations.
-        COLLATERAL.safeApprove(address(router), type(uint256).max);
+        COLLATERAL.safeApprove(address(ROUTER), type(uint256).max);
         // Approve the `vToken` to be able to mint to it.
         COLLATERAL.safeApprove(address(vToken), type(uint256).max);
     }

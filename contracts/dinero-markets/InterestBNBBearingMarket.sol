@@ -85,19 +85,19 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
     //////////////////////////////////////////////////////////////*/
 
     // Compound and by extension Venus return 0 on successful calls.
-    uint256 private constant NO_ERROR = 0;
-
-    /**
-     * @dev This is the Venus controller 0xfD36E2c2a6789Db23113685031d7F16329158384
-     */
-    // solhint-disable-next-line var-name-mixedcase
-    IVenusController public VENUS_CONTROLLER;
+    uint256 internal constant NO_ERROR = 0;
 
     // solhint-disable-next-line var-name-mixedcase
-    IERC20Upgradeable public XVS; // Venus Token.
+    IVenusController internal constant VENUS_CONTROLLER =
+        IVenusController(0xfD36E2c2a6789Db23113685031d7F16329158384);
 
     // solhint-disable-next-line var-name-mixedcase
-    IVToken public VTOKEN; // A Venus Market.
+    IERC20Upgradeable internal constant XVS =
+        IERC20Upgradeable(0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63); // Venus Token.
+
+    // solhint-disable-next-line var-name-mixedcase
+    IVToken internal constant VTOKEN =
+        IVToken(0xA07c5b74C9B40447a954e1466938b865b6BBea36); // vBNB.
 
     // Total amount of deposited underlying converted into vToken.
     uint256 public totalVCollateral;
@@ -117,13 +117,9 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
      *
      * @notice A `Collateral` of address(0) represents BNB.
      *
-     * @param router The address of the PCS router.
      * @param dinero The address of Dinero.
      * @param feeTo Treasury address.
      * @param oracle The address of the oracle.
-     * @param venusController The address of Venus Controller
-     * @param xvs the address of the Venus token.
-     * @param vToken The address of the `collateral` vToken
      * @param interestRate the interest rate charged every second
      * @param _maxLTVRatio The maximum ltv ratio before liquidation
      * @param _liquidationFee The fee charged when positions under water are liquidated
@@ -133,13 +129,9 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
      * - Can only be called at once and should be called during creation to prevent front running.
      */
     function initialize(
-        IPancakeRouter02 router,
         Dinero dinero,
         address feeTo,
         OracleV1 oracle,
-        IVenusController venusController,
-        IERC20Upgradeable xvs,
-        IVToken vToken,
         uint64 interestRate,
         uint256 _maxLTVRatio,
         uint256 _liquidationFee
@@ -152,13 +144,9 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
 
         __DineroMarket_init();
 
-        ROUTER = router;
         DINERO = dinero;
         FEE_TO = feeTo;
         ORACLE = oracle;
-        VENUS_CONTROLLER = venusController;
-        XVS = xvs;
-        VTOKEN = vToken;
         loan.INTEREST_RATE = interestRate;
         maxLTVRatio = _maxLTVRatio;
         liquidationFee = _liquidationFee;
