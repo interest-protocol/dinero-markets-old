@@ -21,3 +21,13 @@ export const BURNER_ROLE = ethers.utils.solidityKeccak256(
 );
 
 export const DEFAULT_ADMIN_ROLE = ethers.constants.HashZero;
+
+export const CAKE_WHALE_ONE = '0xf8ba3ec49212ca45325a2335a8ab1279770df6c0';
+
+export const CAKE_WHALE_TWO = '0xda07f1603a1c514b2f4362f3eae7224a9cdefaf9';
+
+export const CAKE_WHALE_THREE = '0xf89d7b9c864f589bbf53a82105107622b35eaa40';
+
+export const CAKE = '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82';
+
+export const CAKE_MASTER_CHEF = '0x73feaa1eE314F8c655E354234017bE2193C9E24E';

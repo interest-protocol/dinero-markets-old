@@ -6,91 +6,74 @@ import {
   CakeToken,
   CakeVault,
   MasterChef,
-  SyrupBar,
   TestCakeVaultV2,
 } from '../typechain';
-import { advanceBlock, deploy, deployUUPS, upgrade } from './lib/test-utils';
+import {
+  CAKE,
+  CAKE_MASTER_CHEF,
+  CAKE_WHALE_ONE,
+  CAKE_WHALE_TWO,
+} from './lib/constants';
+import {
+  advanceBlock,
+  deployUUPS,
+  impersonate,
+  upgrade,
+} from './lib/test-utils';
 
 const { parseEther } = ethers.utils;
 
-const CAKE_PER_BLOCK = parseEther('40');
-
-const START_BLOCK = 1;
-
 describe('Master Chef CakeVault', () => {
   let cake: CakeToken;
-  let syrup: SyrupBar;
-  let masterChef: MasterChef;
   let cakeVault: CakeVault;
+  let masterChef: MasterChef;
 
   let owner: SignerWithAddress;
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
-  let developer: SignerWithAddress;
+
   // @notice Market does not need to be a contract for testing purposes
   let market: SignerWithAddress;
   let recipient: SignerWithAddress;
 
   beforeEach(async () => {
-    [[owner, alice, bob, developer, market, recipient], cake] =
-      await Promise.all([ethers.getSigners(), deploy('CakeToken')]);
-    syrup = await deploy('SyrupBar', [cake.address]);
-    masterChef = await deploy('MasterChef', [
-      cake.address,
-      syrup.address,
-      developer.address,
-      CAKE_PER_BLOCK,
-      START_BLOCK,
-    ]);
+    [owner, market, recipient] = await ethers.getSigners();
 
-    cakeVault = await deployUUPS('CakeVault', [
-      masterChef.address,
-      cake.address,
+    cake = await (await ethers.getContractFactory('CakeToken')).attach(CAKE);
+    masterChef = await (
+      await ethers.getContractFactory('MasterChef')
+    ).attach(CAKE_MASTER_CHEF);
+
+    [cakeVault, alice, bob] = await Promise.all([
+      deployUUPS('CakeVault', []),
+      impersonate(CAKE_WHALE_ONE),
+      impersonate(CAKE_WHALE_TWO),
     ]);
 
     await Promise.all([
+      cakeVault.connect(owner).setMarket(market.address),
       cake
         .connect(alice)
         .approve(cakeVault.address, ethers.constants.MaxUint256),
       cake.connect(bob).approve(cakeVault.address, ethers.constants.MaxUint256),
-
-      cake
-        .connect(owner)
-        ['mint(address,uint256)'](alice.address, parseEther('100')),
-      cake
-        .connect(owner)
-        ['mint(address,uint256)'](bob.address, parseEther('100')),
-      syrup.connect(owner).transferOwnership(masterChef.address),
-      cake.connect(owner).transferOwnership(masterChef.address),
-      cakeVault.connect(owner).setMarket(market.address),
     ]);
   });
 
   describe('function: initialize', () => {
     it('reverts if you initialize after deployment', async () => {
-      await expect(
-        cakeVault.initialize(masterChef.address, cake.address)
-      ).to.revertedWith('Initializable: contract is already initialized');
+      await expect(cakeVault.initialize()).to.revertedWith(
+        'Initializable: contract is already initialized'
+      );
     });
 
     it('gives maximum approval to the master chef', async () => {
       expect(
-        await cake.allowance(cakeVault.address, masterChef.address)
+        await cake.allowance(cakeVault.address, CAKE_MASTER_CHEF)
       ).to.be.equal(ethers.constants.MaxUint256);
     });
 
     it('sets an owner', async () => {
       expect(await cakeVault.owner()).to.be.equal(owner.address);
-    });
-
-    it('sets the initial state correctly', async () => {
-      const [_cake, _masterChef] = await Promise.all([
-        cakeVault.CAKE(),
-        cakeVault.CAKE_MASTER_CHEF(),
-      ]);
-
-      expect(_cake).to.be.equal(cake.address);
-      expect(_masterChef).to.be.equal(masterChef.address);
     });
   });
 
@@ -792,4 +775,4 @@ describe('Master Chef CakeVault', () => {
       );
     });
   });
-});
+}).timeout(4000);
