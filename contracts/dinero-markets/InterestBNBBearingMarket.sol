@@ -628,18 +628,17 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         private
         returns (uint256 mintedAmount)
     {
-        address vToken = address(VTOKEN);
         // Find how many VTokens we currently have.
-        uint256 balanceBefore = _contractBalanceOf(vToken);
+        uint256 balanceBefore = _contractBalanceOf(address(VTOKEN));
 
         // Supply ALL underlyings present in the contract even lost tokens to mint VTokens. It will revert if it fails.
         _invariant(
-            IVBNB(vToken).mint{value: amount}(amount),
+            IVBNB(address(VTOKEN)).mint{value: amount}(amount),
             "DM: failed to mint"
         );
 
         // Subtract the new balance from the previous one, to find out how many VTokens we minted.
-        mintedAmount = _contractBalanceOf(vToken) - balanceBefore;
+        mintedAmount = _contractBalanceOf(address(VTOKEN)) - balanceBefore;
     }
 
     /**
@@ -691,9 +690,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
 
         address[] memory vTokenArray = new address[](1);
 
-        address vToken = address(VTOKEN);
-
-        vTokenArray[0] = address(vToken);
+        vTokenArray[0] = address(address(VTOKEN));
 
         // Save balance of XVS before claiming.
         uint256 xvsBalanceBefore = _contractBalanceOf(address(XVS));
@@ -707,7 +704,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
 
         // Update state
         totalRewardsPerVToken += claimedVToken.mulDiv(
-            10**address(vToken).safeDecimals(),
+            10**address(address(VTOKEN)).safeDecimals(),
             _totalCollateral
         );
     }
@@ -721,16 +718,14 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
     function _transferXVS(address to, uint256 amount) private {
         if (amount == 0) return;
 
-        IERC20Upgradeable xvs = XVS;
-
         //solhint-disable-next-line var-name-mixedcase
-        uint256 XVSBalance = _contractBalanceOf(address(xvs));
+        uint256 XVSBalance = _contractBalanceOf(address(XVS));
 
         // In this contract our math should never cause a deviation bigger than this one.
         assert(XVSBalance + 0.001 ether >= amount);
 
         // Send the rewards
-        xvs.safeTransfer(to, amount > XVSBalance ? XVSBalance : amount);
+        XVS.safeTransfer(to, amount > XVSBalance ? XVSBalance : amount);
     }
 
     /**

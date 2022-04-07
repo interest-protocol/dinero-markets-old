@@ -38,10 +38,9 @@ describe('Case de Papel', () => {
   let developer: SignerWithAddress;
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
-  let jose: SignerWithAddress;
 
   beforeEach(async () => {
-    [[owner, developer, alice, bob, jose], [lpToken, lpToken2], interestToken] =
+    [[owner, developer, alice, bob], [lpToken, lpToken2], interestToken] =
       await Promise.all([
         ethers.getSigners(),
         multiDeploy(

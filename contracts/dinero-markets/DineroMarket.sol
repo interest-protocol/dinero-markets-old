@@ -24,7 +24,6 @@ import "../lib/IntMath.sol";
 import "../tokens/Dinero.sol";
 
 import "../OracleV1.sol";
-import "hardhat/console.sol";
 
 /**
  * @dev It is an overcollaterized isolated lending market that accepts BNB as coollateral to back a loan in a synthetic stable coin called Dinero.

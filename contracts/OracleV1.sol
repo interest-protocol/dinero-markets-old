@@ -185,24 +185,20 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                 amount
             );
         } catch Error(string memory) {
-            address wbnb = WBNB;
-
             // Get the token price in BNB as token/BUSD pairs are rare
             uint256 bnbPrice = _scaleDecimals(
-                TWAP.consult(token, amount, wbnb),
-                wbnb.safeDecimals()
+                TWAP.consult(token, amount, WBNB),
+                WBNB.safeDecimals()
             );
 
             // Then get BNB price in
             // We just need price for 1BNB because we already computed the amount above
             price = bnbPrice.bmul(getBNBUSDPrice(1 ether));
         } catch (bytes memory) {
-            address wbnb = WBNB;
-
             // Get the token price in BNB as token/BUSD pairs are rare
             uint256 bnbPrice = _scaleDecimals(
-                TWAP.consult(token, amount, wbnb),
-                wbnb.safeDecimals()
+                TWAP.consult(token, amount, WBNB),
+                WBNB.safeDecimals()
             );
 
             // Then get BNB price in
@@ -299,16 +295,14 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                 amount
             );
         } catch Error(string memory) {
-            address wbnb = WBNB;
             price = _scaleDecimals(
-                TWAP.consult(token, amount, wbnb),
-                wbnb.safeDecimals()
+                TWAP.consult(token, amount, WBNB),
+                WBNB.safeDecimals()
             );
         } catch (bytes memory) {
-            address wbnb = WBNB;
             price = _scaleDecimals(
-                TWAP.consult(token, amount, wbnb),
-                wbnb.safeDecimals()
+                TWAP.consult(token, amount, WBNB),
+                WBNB.safeDecimals()
             );
         }
     }
@@ -320,10 +314,7 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @return uint256 A pair that has the value price and the decimal houses in the right
      */
     function getBNBUSDPrice(uint256 amount) public view returns (uint256) {
-        // solhint-disable-next-line var-name-mixedcase
-        AggregatorV3Interface bnb_usd = BNB_USD;
-
-        try bnb_usd.latestRoundData() returns (
+        try BNB_USD.latestRoundData() returns (
             uint80,
             int256 answer,
             uint256,
@@ -331,22 +322,20 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             uint80
         ) {
             return
-                (_scaleDecimals(answer.toUint256(), bnb_usd.decimals())).bmul(
+                (_scaleDecimals(answer.toUint256(), BNB_USD.decimals())).bmul(
                     amount
                 );
         } catch Error(string memory) {
-            address busd = BUSD;
             return
                 _scaleDecimals(
-                    TWAP.consult(WBNB, amount, busd),
-                    busd.safeDecimals()
+                    TWAP.consult(WBNB, amount, BUSD),
+                    BUSD.safeDecimals()
                 );
         } catch (bytes memory) {
-            address busd = BUSD;
             return
                 _scaleDecimals(
-                    TWAP.consult(WBNB, amount, busd),
-                    busd.safeDecimals()
+                    TWAP.consult(WBNB, amount, BUSD),
+                    BUSD.safeDecimals()
                 );
         }
     }

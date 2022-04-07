@@ -139,12 +139,11 @@ contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * - We require that the pair actually exists; otherwise, there is no point to update it.
      */
     function update(address tokenA, address tokenB) external {
-        address factory = FACTORY;
         uint256 granularity = GRANULARITY;
 
-        address pair = PancakeLibrary.pairFor(factory, tokenA, tokenB);
+        address pair = PancakeLibrary.pairFor(FACTORY, tokenA, tokenB);
         require(
-            IPancakeFactory(factory).getPair(tokenA, tokenB) != address(0),
+            IPancakeFactory(FACTORY).getPair(tokenA, tokenB) != address(0),
             "PO: pair does not exist"
         );
 

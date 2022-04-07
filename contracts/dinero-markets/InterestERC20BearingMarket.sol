@@ -717,15 +717,13 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     function _transferXVS(address to, uint256 amount) private {
         if (amount == 0) return;
 
-        IERC20Upgradeable xvs = XVS;
-
         //solhint-disable-next-line var-name-mixedcase
-        uint256 XVSBalance = _contractBalanceOf(address(xvs));
+        uint256 XVSBalance = _contractBalanceOf(address(XVS));
 
         // In this contract our math should never cause a deviation bigger than this one.
         assert(XVSBalance + 0.001 ether >= amount);
 
         // Send the rewards
-        xvs.safeTransfer(to, amount > XVSBalance ? XVSBalance : amount);
+        XVS.safeTransfer(to, amount > XVSBalance ? XVSBalance : amount);
     }
 }

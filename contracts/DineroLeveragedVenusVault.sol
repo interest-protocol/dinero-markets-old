@@ -20,6 +20,7 @@ import "./lib/IntERC20.sol";
 
 import "./tokens/Dinero.sol";
 import "./SafeVenus.sol";
+import "hardhat/console.sol";
 
 /**
  * @dev This is a Vault to mint Dinero. The idea is to always keep the vault assets 1:1 to Dinero minted.
@@ -35,7 +36,7 @@ import "./SafeVenus.sol";
  * If Venus's markets get compromised the 1:1 Dinero peg will suffer. So we need to monitor Venus activity to use {emergencyRecovery} in case we feel a new feature is not properly audited. The contract then can be upgraded to properly give the underlying to depositors.
  */
 //solhint-disable-next-line max-states-count
-contract DineroVenusVault is
+contract DineroLeveragedVenusVault is
     Initializable,
     PausableUpgradeable,
     OwnableUpgradeable,
@@ -185,6 +186,7 @@ contract DineroVenusVault is
         FEE_TO = feeTo;
 
         // We trust `router` so we can fully approve because we need to sell it.
+        // Venus has infinite allowance if given max uint256
         IERC20Upgradeable(XVS).safeApprove(address(ROUTER), type(uint256).max);
     }
 
@@ -258,17 +260,6 @@ contract DineroVenusVault is
     /*///////////////////////////////////////////////////////////////
                             MUTATIVE FUNCTION
     //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @dev Increases the {ROUTER} allowance to the maximum uint256 value
-     */
-    function approveXVS() external {
-        IERC20Upgradeable(XVS).safeIncreaseAllowance(
-            address(ROUTER),
-            type(uint256).max -
-                IERC20Upgradeable(XVS).allowance(address(this), address(ROUTER))
-        );
-    }
 
     /**
      * @dev It accepts an `amount` of `underlyinng` from a depositor and mints an equivalent amount of `DINERO` to `msg.sender`.
@@ -740,9 +731,6 @@ contract DineroVenusVault is
      * @param vToken The VToken market, which we wish to claim the XVS and swap to the underlying.
      */
     function _investXVS(IVToken vToken) private {
-        // Save Gas
-        address xvs = XVS;
-
         address[] memory vTokenArray = new address[](1);
 
         vTokenArray[0] = address(vToken);
@@ -750,7 +738,7 @@ contract DineroVenusVault is
         // Claim XVS in the `vToken`.
         VENUS_CONTROLLER.claimVenus(address(this), vTokenArray);
 
-        uint256 xvsBalance = _contractBalanceOf(xvs);
+        uint256 xvsBalance = _contractBalanceOf(XVS);
 
         // There is no point to continue if there are no XVS rewards.
         if (xvsBalance == 0) return;
@@ -765,7 +753,7 @@ contract DineroVenusVault is
         // WBNB/DAI Pair - 0xc7c3cCCE4FA25700fD5574DA7E200ae28BBd36A3 ~ 130k USDC liquidity - 19/02/2022
         // DAI support will be done only if community agrees.
         address[] memory path = new address[](3);
-        path[0] = xvs;
+        path[0] = XVS;
         path[1] = WBNB; // WBNB is the bridge token in BSC
         path[2] = underlying;
 
@@ -1009,7 +997,6 @@ contract DineroVenusVault is
         while (redeemAmount > 0 && borrowAmount > 0 && maxTries <= 15) {
             // redeem and repay
             _redeemAndRepay(vToken, redeemAmount);
-
             emit RepayAndRedeem(vToken, redeemAmount);
 
             // Update the redeem and borrow amount to see if we can get to net iteration
@@ -1018,6 +1005,8 @@ contract DineroVenusVault is
             // Update the maximum numbers we can iterate
             maxTries += 1;
         }
+
+        _mintVToken(vToken);
     }
 
     /**

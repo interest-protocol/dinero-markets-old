@@ -7,12 +7,12 @@ import "../../interfaces/IPancakeRouter02.sol";
 
 import "../../tokens/Dinero.sol";
 
-import "../../DineroVenusVault.sol";
+import "../../DineroLeveragedVenusVault.sol";
 import "../../SafeVenus.sol";
 
 //solhint-disable
 
-contract TestDineroVenusVault is DineroVenusVault {
+contract TestDineroVenusVault is DineroLeveragedVenusVault {
     // Testing
     function borrow(IVToken vToken, uint256 amount) external {
         vToken.borrow(amount);
