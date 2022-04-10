@@ -432,7 +432,10 @@ contract InterestMarketV1 is Initializable, DineroMarket {
         } else {
             // Liquidator will be paid in `COLLATERAL`
             // Send collateral to the `recipient` (includes liquidator fee + protocol fee)
-            COLLATERAL.safeTransfer(recipient, liquidationInfo.allCollateral);
+            address(COLLATERAL).safeERC20Transfer(
+                recipient,
+                liquidationInfo.allCollateral
+            );
             // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
             // Liquidator keeps the rest as profit.
             // Liquidator has dinero in this scenario
@@ -600,7 +603,7 @@ contract InterestMarketV1 is Initializable, DineroMarket {
         uint256 amount
     ) private {
         if (MasterChefVault(address(0)) == VAULT) {
-            COLLATERAL.safeTransfer(recipient, amount);
+            address(COLLATERAL).safeERC20Transfer(recipient, amount);
         } else {
             VAULT.withdraw(account, recipient, amount);
         }

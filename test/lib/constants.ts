@@ -1,3 +1,4 @@
+import { BigNumber } from 'ethers';
 import { ethers } from 'hardhat';
 
 const { getAddress } = ethers.utils;
@@ -54,6 +55,10 @@ export const VENUS_CONTROLLER = getAddress(
   '0xfD36E2c2a6789Db23113685031d7F16329158384'
 );
 
+export const PCS_FACTORY = getAddress(
+  '0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73'
+);
+
 export const USDC = getAddress('0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d');
 
 export const DAI = getAddress('0x1af3f329e8be154074d8769d1ffa4ee058b1dbc3');
@@ -78,6 +83,10 @@ export const USDC_WHALE_ONE = getAddress(
   '0xf977814e90da44bfa03b6295a0616a897441acec'
 );
 
+export const USDC_WHALE_TWO = getAddress(
+  '0x5a52e96bacdabb82fd05763e25335261b270efcb'
+);
+
 export const BTC_WHALE_ONE = getAddress(
   '0xF977814e90dA44bFA03b6295A0616a897441aceC'
 );
@@ -89,3 +98,11 @@ export const DAI_WHALE_ONE = getAddress(
 export const XVS_WHALE = getAddress(
   '0xf977814e90da44bfa03b6295a0616a897441acec'
 );
+
+export const VENUS_ADMIN = getAddress(
+  '0x939bd8d64c0a9583a7dcea9933f7b21697ab6396'
+);
+
+export const ONE_V_TOKEN = BigNumber.from(10).pow(8);
+
+export const PRECISION = BigNumber.from(10).pow(10);

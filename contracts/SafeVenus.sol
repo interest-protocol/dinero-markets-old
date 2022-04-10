@@ -231,23 +231,19 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             vault,
             vToken
         );
-
         // If we are not borrowing, we can redeem as much as the liquidity allows
         if (borrowBalance == 0) return supplyBalance.min(vToken.getCash());
-
         // borrowBalance / collateralLimitRatio will give us a safe supply value that we need to maintain to avoid liquidation.
         uint256 safeCollateral = borrowBalance.bdiv(
             // Should never be 0. As Venus uses the overcollaterized loan model. Cannot borrow without having collatera.
             // If it is 0, it should throw to alert there is an issue with Venus.
             safeCollateralRatio(vault, vToken)
         );
-
         // If our supply is larger than the safe collateral, we can redeem the difference
         // If not, we should not redeem
         uint256 redeemAmount = supplyBalance > safeCollateral
             ? supplyBalance - safeCollateral
             : 0;
-
         // We cannot redeem more than the current liquidity in the market.
         // This value can be used to safely redeem from the supply or borrow.
         // C

@@ -38,42 +38,55 @@ contract TestSafeVenus {
         return SAFE_VENUS.safeCollateralRatio(vault, vToken);
     }
 
-    function borrowAndSupply(IVenusVault vault, IVToken vToken) public {
+    function borrowAndSupply(IVenusVault vault, IVToken vToken)
+        public
+        returns (uint256, uint256)
+    {
         (uint256 borrow, uint256 supply) = SAFE_VENUS.borrowAndSupply(
             vault,
             vToken
         );
 
         emit BorrowAndSupply(borrow, supply);
+        return (borrow, supply);
     }
 
     function isProfitable(
         IVenusVault vault,
         IVToken vToken,
         uint256 amount
-    ) external {
+    ) external returns (bool) {
         bool result = SAFE_VENUS.isProfitable(vault, vToken, amount);
 
         emit IsProfitable(result);
+        return result;
     }
 
-    function safeBorrow(IVenusVault vault, IVToken vToken) external {
+    function safeBorrow(IVenusVault vault, IVToken vToken)
+        external
+        returns (uint256)
+    {
         uint256 amount = SAFE_VENUS.safeBorrow(vault, vToken);
 
         emit SafeBorrow(amount);
+        return amount;
     }
 
-    function safeRedeem(IVenusVault vault, IVToken vToken) external {
+    function safeRedeem(IVenusVault vault, IVToken vToken)
+        external
+        returns (uint256)
+    {
         uint256 amount = SAFE_VENUS.safeRedeem(vault, vToken);
 
         emit SafeRedeem(amount);
+        return amount;
     }
 
     function borrowInterestPerBlock(
         IVenusVault vault,
         IVToken vToken,
         uint256 amount
-    ) public {
+    ) public returns (uint256, uint256) {
         (uint256 cost, uint256 profit) = SAFE_VENUS.borrowInterestPerBlock(
             vault,
             vToken,
@@ -81,33 +94,47 @@ contract TestSafeVenus {
         );
 
         emit BorrowInterestPerBlock(cost, profit);
+        return (cost, profit);
     }
 
     function supplyRewardPerBlock(
         IVenusVault vault,
         IVToken vToken,
         uint256 amount
-    ) public {
+    ) public returns (uint256) {
         uint256 profit = SAFE_VENUS.supplyRewardPerBlock(vault, vToken, amount);
 
         emit SupplyRewardPerBlock(profit);
+        return profit;
     }
 
-    function predictBorrowRate(IVToken vToken, uint256 amount) public {
+    function predictBorrowRate(IVToken vToken, uint256 amount)
+        public
+        returns (uint256)
+    {
         uint256 rate = SAFE_VENUS.predictBorrowRate(vToken, amount);
 
         emit PredictBorrowRate(rate);
+        return rate;
     }
 
-    function predictSupplyRate(IVToken vToken, uint256 amount) public {
+    function predictSupplyRate(IVToken vToken, uint256 amount)
+        public
+        returns (uint256)
+    {
         uint256 rate = SAFE_VENUS.predictSupplyRate(vToken, amount);
 
         emit PredictSupplyRate(rate);
+        return rate;
     }
 
-    function deleverage(IVenusVault vault, IVToken vToken) public {
+    function deleverage(IVenusVault vault, IVToken vToken)
+        public
+        returns (uint256)
+    {
         uint256 amount = SAFE_VENUS.deleverage(vault, vToken);
 
         emit Deleverage(amount);
+        return amount;
     }
 }

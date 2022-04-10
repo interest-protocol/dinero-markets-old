@@ -4,6 +4,7 @@ import { Contract } from 'ethers';
 import { ethers, network } from 'hardhat';
 
 import ERC20ABI from '../abi/erc20.json';
+import PCSFactoryABI from '../abi/pcs-factory.json';
 import VenusControllerABI from '../abi/venus-controller.json';
 import vTokenABI from '../abi/vToken.json';
 import {
@@ -18,18 +19,26 @@ import {
   DAI_WHALE_ONE,
   MAX_UINT_96,
   MINTER_ROLE,
+  ONE_V_TOKEN,
+  PCS_FACTORY,
   PCS_ROUTER,
+  PRECISION,
   USDC,
   USDC_WHALE_ONE,
+  USDC_WHALE_TWO,
   vDAI,
+  VENUS_ADMIN,
   VENUS_CONTROLLER,
   vUSDC,
+  WBNB,
   XVS,
   XVS_WHALE,
 } from './lib/constants';
-import { deployUUPS, impersonate, multiDeploy } from './lib/test-utils';
+import { deploy, deployUUPS, impersonate, multiDeploy } from './lib/test-utils';
 
-const { parseEther } = ethers.utils;
+const { parseEther, defaultAbiCoder } = ethers.utils;
+
+const DINERO_LTV = parseEther('0.7');
 
 describe('DineroVenusVault', () => {
   let dineroVenusVault: TestDineroVenusVault;
@@ -51,11 +60,11 @@ describe('DineroVenusVault', () => {
   let usdcWhale: SignerWithAddress;
   let daiWhale: SignerWithAddress;
   let feeTo: SignerWithAddress;
-  let unlistedMarket: MockVenusToken;
+  let mockVUSDC: MockVenusToken;
 
   beforeEach(async () => {
-    [[owner, alice, feeTo], [unlistedMarket, safeVenus], dinero] =
-      await Promise.all([
+    [[owner, alice, feeTo], [mockVUSDC, safeVenus], dinero] = await Promise.all(
+      [
         ethers.getSigners(),
         multiDeploy(
           ['MockVenusToken', 'MockSafeVenus'],
@@ -64,7 +73,29 @@ describe('DineroVenusVault', () => {
         deployUUPS('Dinero', []),
         impersonate(USDC_WHALE_ONE),
         impersonate(DAI_WHALE_ONE),
-      ]);
+        impersonate(VENUS_ADMIN),
+      ]
+    );
+
+    const [venusAdmin] = await Promise.all([
+      ethers.getSigner(VENUS_ADMIN),
+      feeTo.sendTransaction({ to: VENUS_ADMIN, value: parseEther('10') }),
+      mockVUSDC.__setUnderlying(USDC),
+      mockVUSDC.__setCollateralFactor(parseEther('0.9')),
+      mockVUSDC.__setExchangeRateCurrent(
+        ethers.BigNumber.from('213429808155036526652502393')
+      ),
+      safeVenus.__setVTokenCollateralFactor(
+        mockVUSDC.address,
+        parseEther('0.9')
+      ),
+    ]);
+
+    const venusControllerAdminContract = new ethers.Contract(
+      VENUS_CONTROLLER,
+      VenusControllerABI,
+      venusAdmin
+    );
 
     vUSDCContract = new ethers.Contract(vUSDC, vTokenABI, ethers.provider);
     vDAIContract = new ethers.Contract(vDAI, vTokenABI, ethers.provider);
@@ -87,16 +118,18 @@ describe('DineroVenusVault', () => {
       ethers.getSigner(DAI_WHALE_ONE),
       dinero.connect(owner).grantRole(MINTER_ROLE, dineroVenusVault.address),
       dinero.connect(owner).grantRole(BURNER_ROLE, dineroVenusVault.address),
-      dineroVenusVault.connect(owner).setCollateralLimit(parseEther('0.5')),
-      dineroVenusVault.connect(owner).setCompoundDepth(3),
       impersonate(USDC_WHALE_ONE),
-      unlistedMarket.__setUnderlying(USDC),
+      venusControllerAdminContract._supportMarket(mockVUSDC.address),
     ]);
 
     USDC_USDC_WHALE = new ethers.Contract(USDC, ERC20ABI, usdcWhale);
     DAI_DAI_WHALE = new ethers.Contract(DAI, ERC20ABI, daiWhale);
 
     await Promise.all([
+      venusControllerAdminContract._setCollateralFactor(
+        mockVUSDC.address,
+        parseEther('0.8')
+      ),
       USDC_USDC_WHALE.approve(
         dineroVenusVault.address,
         ethers.constants.MaxUint256
@@ -107,8 +140,8 @@ describe('DineroVenusVault', () => {
       ),
       dineroVenusVault.connect(owner).addVToken(vUSDC),
       dineroVenusVault.connect(owner).addVToken(vDAI),
-      safeVenus.__setVTokenCollateralFactor(vUSDC, parseEther('0.9')),
-      safeVenus.__setVTokenCollateralFactor(vDAI, parseEther('0.8')),
+      safeVenus.__setVTokenCollateralFactor(vUSDC, parseEther('0.8')),
+      safeVenus.__setVTokenCollateralFactor(vDAI, parseEther('0.6')),
     ]);
   });
 
@@ -154,20 +187,53 @@ describe('DineroVenusVault', () => {
       ).to.be.equal(MAX_UINT_96);
     });
     it('sets the initial state correctly', async () => {
-      const [_owner, _paused, _safeVenus, _feeTo] = await Promise.all([
+      const [
+        _owner,
+        _paused,
+        _safeVenus,
+        _feeTo,
+        _collateralLimit,
+        _compoundDepth,
+        _dineroLTV,
+      ] = await Promise.all([
         dineroVenusVault.owner(),
         dineroVenusVault.paused(),
         dineroVenusVault.SAFE_VENUS(),
         dineroVenusVault.FEE_TO(),
+        dineroVenusVault.collateralLimit(),
+        dineroVenusVault.compoundDepth(),
+        dineroVenusVault.dineroLTV(),
       ]);
       expect(_owner).to.be.equal(owner.address);
       expect(_paused).to.be.equal(false);
       expect(_safeVenus).to.be.equal(safeVenus.address);
       expect(_feeTo).to.be.equal(feeTo.address);
+      expect(_collateralLimit).to.be.equal(parseEther('0.5'));
+      expect(_compoundDepth).to.be.equal(3);
+      expect(_dineroLTV).to.be.equal(DINERO_LTV);
     });
   });
 
   describe('Simple Owner functions', () => {
+    it('updates the DineroLTV', async () => {
+      await expect(
+        dineroVenusVault.connect(alice).setDineroLTV(parseEther('0.91'))
+      ).to.revertedWith('Ownable: caller is not the owner');
+
+      expect(await dineroVenusVault.dineroLTV()).to.be.equal(DINERO_LTV);
+
+      await expect(
+        dineroVenusVault.connect(owner).setDineroLTV(parseEther('0.6'))
+      )
+        .to.emit(dineroVenusVault, 'DineroLTV')
+        .withArgs(DINERO_LTV, parseEther('0.6'));
+
+      expect(await dineroVenusVault.dineroLTV()).to.be.equal(parseEther('0.6'));
+
+      await expect(
+        dineroVenusVault.connect(owner).setDineroLTV(parseEther('0.901'))
+      ).to.revertedWith('DV: must be lower than 90%');
+    });
     it('updates the compoundDepth', async () => {
       await expect(
         dineroVenusVault.connect(alice).setCompoundDepth(0)
@@ -299,11 +365,15 @@ describe('DineroVenusVault', () => {
       ).to.revertedWith('Ownable: caller is not the owner');
     });
     it('reverts if the venus controller fails to enter the market', async () => {
-      await dineroVenusVault.removeVToken(vUSDC);
-
+      const unlistedMarket = await deploy('MockVenusToken', [
+        'VU',
+        'Venus Unlisted',
+        0,
+      ]);
       const [isUSDCSupported, vTokenOfUSDC] = await Promise.all([
         dineroVenusVault.isUnderlyingSupported(unlistedMarket.address),
         dineroVenusVault.vTokenOf(unlistedMarket.address),
+        unlistedMarket.__setUnderlying(USDC),
       ]);
 
       expect(isUSDCSupported).to.be.equal(false);
@@ -356,61 +426,16 @@ describe('DineroVenusVault', () => {
       ).to.revertedWith('Pausable: not paused');
     });
     it('reverts if it fails to redeem or repay', async () => {
-      const [mockVToken, mockVenusController] = await multiDeploy(
-        ['MockVenusToken', 'MockVenusController'],
-        [['Venus USDC', 'vUSDC', 0], [XVS]]
-      );
-
-      const [mockVTokenCode, mockVenusControllerCode] = await Promise.all([
-        network.provider.send('eth_getCode', [mockVToken.address]),
-        network.provider.send('eth_getCode', [mockVenusController.address]),
-      ]);
-
+      await dineroVenusVault.connect(owner).removeVToken(vUSDC);
       await Promise.all([
-        network.provider.send('hardhat_setCode', [vUSDC, mockVTokenCode]),
-        network.provider.send('hardhat_setCode', [
-          VENUS_CONTROLLER,
-          mockVenusControllerCode,
-        ]),
-      ]);
-
-      const XVS_XVS_WHALE = new ethers.Contract(
-        XVS,
-        ERC20ABI,
-        await ethers.getSigner(XVS_WHALE)
-      );
-
-      const mockVUSDCContract = new ethers.Contract(
-        vUSDC,
-        mockVToken.interface,
-        owner
-      );
-
-      const mockVenusControllerContract = new ethers.Contract(
-        VENUS_CONTROLLER,
-        mockVenusController.interface,
-        owner
-      );
-
-      await Promise.all([
-        mockVenusControllerContract.__setClaimVenusValue(parseEther('100')),
-        mockVUSDCContract.__setUnderlying(USDC),
-        mockVUSDCContract.__setCollateralFactor(parseEther('0.9')),
-        mockVUSDCContract.__setExchangeRateCurrent(
-          ethers.BigNumber.from('213429808155036526652502393')
-        ),
-        XVS_XVS_WHALE.transfer(VENUS_CONTROLLER, parseEther('10000')),
-      ]);
-
-      await Promise.all([
-        mockVUSDCContract.__setRedeemUnderlyingReturn(1),
-        dineroVenusVault.connect(usdcWhale).deposit(USDC, parseEther('100000')),
+        mockVUSDC.__setRedeemUnderlyingReturn(1),
+        dineroVenusVault.connect(owner).addVToken(mockVUSDC.address),
       ]);
 
       await dineroVenusVault
         .connect(usdcWhale)
         .deposit(USDC, parseEther('1000000'));
-      await dineroVenusVault.leverage(vUSDC);
+      await dineroVenusVault.leverage(mockVUSDC.address);
       await dineroVenusVault.connect(owner).pause();
 
       await expect(
@@ -418,16 +443,16 @@ describe('DineroVenusVault', () => {
       ).to.revertedWith('DV: failed to redeem');
 
       await Promise.all([
-        mockVUSDCContract.__setRedeemUnderlyingReturn(0),
-        mockVUSDCContract.__setRepayReturnValue(1),
+        mockVUSDC.__setRedeemUnderlyingReturn(0),
+        mockVUSDC.__setRepayReturnValue(1),
       ]);
       await expect(
         dineroVenusVault.connect(owner).emergencyRecovery()
       ).to.revertedWith('DV: failed to repay');
 
       await Promise.all([
-        mockVUSDCContract.__setRedeemReturn(1),
-        mockVUSDCContract.__setRepayReturnValue(0),
+        mockVUSDC.__setRedeemReturn(1),
+        mockVUSDC.__setRepayReturnValue(0),
       ]);
 
       await expect(
@@ -445,7 +470,7 @@ describe('DineroVenusVault', () => {
         vDAIContract.balanceOf(dineroVenusVault.address),
       ]);
 
-      await dineroVenusVault.leverage(vUSDC);
+      await dineroVenusVault.leverageAll();
       await dineroVenusVault.connect(owner).pause();
 
       await expect(dineroVenusVault.connect(owner).emergencyRecovery())
@@ -549,10 +574,7 @@ describe('DineroVenusVault', () => {
         safeVenus.borrowBalance(),
         safeVenus.supplyBalance(),
       ]);
-      console.log(
-        await USDC_USDC_WHALE.balanceOf(dineroVenusVault.address),
-        'aaa'
-      );
+
       expect(borrowBalance).to.be.equal(0);
       // We had a small profit
       expect(supplyBalance).to.be.closeTo(
@@ -579,6 +601,12 @@ describe('DineroVenusVault', () => {
     });
   });
   describe('function: leverage', () => {
+    it('reverts if the vToken is not listed', async () => {
+      await dineroVenusVault.removeVToken(vUSDC);
+      await expect(dineroVenusVault.leverage(vUSDC)).to.revertedWith(
+        'DV: not allowed'
+      );
+    });
     it('does not borrow if the safe borrow amount is 500 USD or less', async () => {
       await dineroVenusVault
         .connect(usdcWhale)
@@ -603,820 +631,961 @@ describe('DineroVenusVault', () => {
         // Transfer is emitted when supplying an asset because it mints {vUSDC}.
         .to.not.emit(vUSDCContract, 'Transfer');
     });
-    // it('reverts if the vToken fails to borrow or supply', async () => {
-    //   await Promise.all([
-    //     vUSDC.__setBorrowReturn(2),
-    //     dineroVenusVault
-    //       .connect(usdcWhale)
-    //       // 2000 USD deposit amount gives enough room to leverage
-    //       .deposit(USDC, parseEther('2000')),
-    //   ]);
+    it('reverts if the vToken fails to borrow or supply', async () => {
+      await dineroVenusVault.connect(owner).removeVToken(vUSDC);
+      await dineroVenusVault.connect(owner).addVToken(mockVUSDC.address);
 
-    //   await expect(
-    //     dineroVenusVault.connect(bob).leverage(vUSDC.address)
-    //   ).to.revertedWith('DV: failed to borrow');
+      await Promise.all([
+        mockVUSDC.__setBorrowReturn(2),
+        dineroVenusVault
+          .connect(usdcWhale)
+          // 2000 USD deposit amount gives enough room to leverage
+          .deposit(USDC, parseEther('2000')),
+      ]);
 
-    //   await Promise.all([vUSDC.__setBorrowReturn(0), vUSDC.__setMintReturn(1)]);
+      await expect(
+        dineroVenusVault.connect(owner).leverage(mockVUSDC.address)
+      ).to.revertedWith('DV: failed to borrow');
 
-    //   await expect(
-    //     dineroVenusVault.connect(bob).leverage(vUSDC.address)
-    //   ).to.revertedWith('DV: failed to mint');
-    // });
-    //   it('borrows and supplies a maximum of compoundDepth times', async () => {
-    //     const [compoundDepth] = await Promise.all([
-    //       dineroVenusVault.compoundDepth(),
-    //       dineroVenusVault
-    //         .connect(alice)
-    //         .deposit(USDC.address, parseEther('1000000')),
-    //       dineroVenusVault
-    //         .connect(bob)
-    //         .deposit(USDC.address, parseEther('1000000')),
-    //     ]);
+      await Promise.all([
+        mockVUSDC.__setBorrowReturn(0),
+        mockVUSDC.__setMintReturn(1),
+      ]);
 
-    //     const [supply, borrow] = await Promise.all([
-    //       vUSDC.balanceOfUnderlying(dineroVenusVault.address),
-    //       vUSDC.borrowBalanceCurrent(dineroVenusVault.address),
-    //     ]);
+      await expect(
+        dineroVenusVault.connect(owner).leverage(mockVUSDC.address)
+      ).to.revertedWith('DV: failed to mint');
+    });
+    it('borrows and supplies a maximum of compoundDepth times', async () => {
+      const [compoundDepth] = await Promise.all([
+        dineroVenusVault.compoundDepth(),
+        dineroVenusVault
+          .connect(usdcWhale)
+          .deposit(USDC, parseEther('300000000')),
+      ]);
 
-    //     // 2_000_000 USD should allow the vault to leverage more than 3x if it was not limited by the {compoundDepth}
-    //     const receipt = await (
-    //       await dineroVenusVault.connect(bob).leverage(vUSDC.address)
-    //     ).wait();
+      const [supply, borrow] = await Promise.all([
+        vUSDCContract.callStatic.balanceOfUnderlying(dineroVenusVault.address),
+        vUSDCContract.callStatic.borrowBalanceCurrent(dineroVenusVault.address),
+      ]);
 
-    //     const [supply2, borrow2] = await Promise.all([
-    //       vUSDC.balanceOfUnderlying(dineroVenusVault.address),
-    //       vUSDC.borrowBalanceCurrent(dineroVenusVault.address),
-    //     ]);
+      // 2_000_000 USD should allow the vault to leverage more than 3x if it was not limited by the {compoundDepth}
+      const receipt = await (
+        await dineroVenusVault.connect(owner).leverage(vUSDC)
+      ).wait();
 
-    //     expect(supply).to.be.equal(parseEther('2000000'));
-    //     expect(borrow).to.be.equal(0);
-    //     // START: 2_000_000
-    //     // FIRST CYCLE: SUPPLY => 2_900_000 | BORROW => 900_000 | 2_000_000 * 0.45
-    //     // SECOND CYCLE: SUPPLY => 3_305_00 | BORROW => 405_000 | 2_900_000 * 0.45 - 900_000
-    //     // THIRD CYCLE: SUPPLY => 3_487_250 | BORROW => 182_250 | 3305000 * 0.45 - 900000 - 405000
-    //     expect(borrow2).to.be.equal(parseEther('1487250')); // 900_000 + 405_000 + 182_250
-    //     expect(supply2).to.be.equal(parseEther('3487250'));
+      const [supply2, borrow2] = await Promise.all([
+        vUSDCContract.callStatic.balanceOfUnderlying(dineroVenusVault.address),
+        vUSDCContract.callStatic.borrowBalanceCurrent(dineroVenusVault.address),
+      ]);
 
-    //     const borrowTopic = vUSDC.interface.getEventTopic(
-    //       vUSDC.interface.getEvent('Borrow')
-    //     );
-    //     const supplyTopic = vUSDC.interface.getEventTopic(
-    //       vUSDC.interface.getEvent('Transfer')
-    //     );
+      expect(supply).to.be.closeTo(parseEther('300000000'), parseEther('1'));
+      expect(borrow).to.be.equal(0);
 
-    //     expect(
-    //       receipt.events
-    //         ?.filter((x) => x.topics.includes(borrowTopic))
-    //         .filter(
-    //           (x) =>
-    //             x.address.toLocaleLowerCase() ===
-    //             vUSDC.address.toLocaleLowerCase()
-    //         ).length
-    //     ).to.be.equal(compoundDepth);
-    //     expect(
-    //       receipt.events
-    //         ?.filter((x) => x.topics.includes(supplyTopic))
-    //         .filter(
-    //           (x) =>
-    //             x.address.toLocaleLowerCase() ===
-    //             vUSDC.address.toLocaleLowerCase()
-    //         ).length
-    //     ).to.be.equal(compoundDepth);
-    //   });
-    // });
-    // it('calls leverage in all listed assets', async () => {
-    //   const [compoundDepth] = await Promise.all([
-    //     dineroVenusVault.compoundDepth(),
-    //     dineroVenusVault
-    //       .connect(alice)
-    //       .deposit(USDC.address, parseEther('1000000')),
-    //     dineroVenusVault
-    //       .connect(bob)
-    //       .deposit(USDC.address, parseEther('1000000')),
-    //     dineroVenusVault
-    //       .connect(alice)
-    //       .deposit(DAI.address, parseEther('1000000')),
-    //     dineroVenusVault.connect(bob).deposit(DAI.address, parseEther('1000000')),
-    //   ]);
+      expect(borrow2.gt(borrow)).to.be.equal(true);
+      expect(supply2.gt(supply)).to.be.equal(true);
 
-    //   const receipt = await (
-    //     await dineroVenusVault.connect(bob).leverageAll()
-    //   ).wait();
+      const borrowTopic = vUSDCContract.interface.getEventTopic(
+        vUSDCContract.interface.getEvent('Borrow')
+      );
+      const supplyTopic = vUSDCContract.interface.getEventTopic(
+        vUSDCContract.interface.getEvent('Transfer')
+      );
 
-    //   const USDCborrowTopic = vUSDC.interface.getEventTopic(
-    //     vUSDC.interface.getEvent('Borrow')
-    //   );
-    //   const USDCsupplyTopic = vUSDC.interface.getEventTopic(
-    //     vUSDC.interface.getEvent('Transfer')
-    //   );
-
-    //   const DAIborrowTopic = vDAI.interface.getEventTopic(
-    //     vDAI.interface.getEvent('Borrow')
-    //   );
-    //   const DAIsupplyTopic = vDAI.interface.getEventTopic(
-    //     vDAI.interface.getEvent('Transfer')
-    //   );
-
-    //   expect(
-    //     receipt.events
-    //       ?.filter((x) => x.topics.includes(USDCborrowTopic))
-    //       .filter(
-    //         (x) =>
-    //           x.address.toLocaleLowerCase() === vUSDC.address.toLocaleLowerCase()
-    //       ).length
-    //   ).to.be.equal(compoundDepth);
-    //   expect(
-    //     receipt.events
-    //       ?.filter((x) => x.topics.includes(USDCsupplyTopic))
-    //       .filter(
-    //         (x) =>
-    //           x.address.toLocaleLowerCase() === vUSDC.address.toLocaleLowerCase()
-    //       ).length
-    //   ).to.be.equal(compoundDepth);
-
-    //   expect(
-    //     receipt.events
-    //       ?.filter((x) => x.topics.includes(DAIborrowTopic))
-    //       .filter(
-    //         (x) =>
-    //           x.address.toLocaleLowerCase() === vDAI.address.toLocaleLowerCase()
-    //       ).length
-    //   ).to.be.equal(compoundDepth);
-    //   expect(
-    //     receipt.events
-    //       ?.filter((x) => x.topics.includes(DAIsupplyTopic))
-    //       .filter(
-    //         (x) =>
-    //           x.address.toLocaleLowerCase() === vDAI.address.toLocaleLowerCase()
-    //       ).length
-    //   ).to.be.equal(compoundDepth);
-    // });
-    // describe('function: deleverage', () => {
-    //   it('does nothing if the deleverage amount is 0', async () => {
-    //     await expect(
-    //       dineroVenusVault.connect(bob).deleverage(vUSDC.address)
-    //     ).to.not.emit(vUSDC, 'Redeem');
-
-    //     // Should not trigger a deleverage as it stays within the parameters
-    //     // Deleveraged is triggered if parameters change or USDC price of underlying
-    //     await dineroVenusVault.connect(bob).leverage(vUSDC.address);
-
-    //     await expect(
-    //       dineroVenusVault.connect(bob).deleverage(vUSDC.address)
-    //     ).to.not.emit(vUSDC, 'Redeem');
-    //   });
-    // it('reverts if redeemUnderlying or repayBorrow from vToken revert', async () => {
-    //   // Set collateral ratio at 80% which will trigger a deleverage since our safe collateral ratio is at 45%
-    //   await Promise.all([
-    //     vUSDC.__setBalanceOfUnderlying(
-    //       dineroVenusVault.address,
-    //       parseEther('100000')
-    //     ),
-    //     vUSDC.__setBorrowBalanceCurrent(
-    //       dineroVenusVault.address,
-    //       parseEther('80000')
-    //     ),
-    //     // will trigger the error
-    //     vUSDC.__setRedeemUnderlyingReturn(1),
-    //     safeVenus.__setVTokenCollateralFactor(vUSDC.address, parseEther('0.9')),
-    //   ]);
-
-    //   await expect(
-    //     dineroVenusVault.connect(bob).deleverage(vUSDC.address)
-    //   ).to.revertedWith('DV: failed to redeem');
-
-    //   await Promise.all([
-    //     vUSDC.__setBalanceOfUnderlying(dineroVenusVault.address, 0),
-    //     vUSDC.__setBorrowBalanceCurrent(dineroVenusVault.address, 0),
-    //     vUSDC.__setRedeemUnderlyingReturn(0),
-    //     vUSDC.__setRepayReturnValue(1),
-    //   ]);
-
-    //   await Promise.all([
-    //     dineroVenusVault
-    //       .connect(alice)
-    //       .deposit(USDC.address, parseEther('1000000')),
-    //     dineroVenusVault
-    //       .connect(bob)
-    //       .deposit(USDC.address, parseEther('1000000')),
-    //   ]);
-
-    //   // 0.9 (vToken collateral factor) * 0.9 => 0.81. So we borrow up to 0.8 => 2_000_000 * 0.8. Should trigger a deleverage
-    //   await dineroVenusVault.borrow(vUSDC.address, parseEther('1600000'));
-
-    //   await expect(
-    //     dineroVenusVault.connect(bob).deleverage(vUSDC.address)
-    //   ).to.revertedWith('DV: failed to repay');
-    // });
-    // it('deleverages the vault by redeeming and then repaying', async () => {
-    //   await Promise.all([
-    //     dineroVenusVault
-    //       .connect(alice)
-    //       .deposit(USDC.address, parseEther('1000000')),
-    //     safeVenus.__setVTokenCollateralFactor(vUSDC.address, parseEther('0.9')),
-    //   ]);
-
-    //   // safe collateral ratio will be 0.9 * 0.5 = 0.45
-    //   // Gonna leverage the vault to 0.7 collateral ratio which will trigger a deleverage
-    //   // Safe Venus will start deleveraging current supply minus (borrow / 0.81). 0.9 * 0.9 = 0.81
-    //   // We are supplying 1_000_000 and borrowing 800_000 => collateral ratio of 0.8 to trigger a deleverage
-    //   await dineroVenusVault
-    //     .connect(bob)
-    //     .borrow(vUSDC.address, parseEther('700000'));
-
-    //   await expect(dineroVenusVault.connect(bob).deleverage(vUSDC.address))
-    //     // RATIO = 0.7 > 0.45
-    //     // BORROW => 700_000
-    //     // SAFE SUPPLY => ~864_197 (700_000 / 0.81)
-    //     // CURRENT SUPPLY => 1_000_000
-    //     // AMOUNT => ~135_802
-    //     .to.emit(vUSDC, 'RedeemUnderlying')
-    //     .withArgs(parseEther('135802.469135802469135803'))
-    //     .to.emit(vUSDC, 'RepayBorrow')
-    //     .withArgs(parseEther('135802.469135802469135803'))
-    //     // RATIO = ~0.65 > 0.45
-    //     // BORROW => ~ 564_200
-    //     // SAFE SUPPLY => ~ 696_543 (564_200 / 0.81)
-    //     // CURRENT SUPPLY => ~864_198
-    //     // AMOUNT => ~ 167_655
-    //     .to.emit(vUSDC, 'RedeemUnderlying')
-    //     .withArgs(parseEther('167657.369303459838439263'))
-    //     .to.emit(vUSDC, 'RepayBorrow')
-    //     .withArgs(parseEther('167657.369303459838439263'))
-    //     // RATIO = ~0.65 > 0.45
-    //     // BORROW => ~ 396_545
-    //     // SAFE SUPPLY => ~ 489_561 (396_545 / 0.81)
-    //     // CURRENT SUPPLY => ~ 696_543
-    //     // AMOUNT => ~ 206_982
-    //     .to.emit(vUSDC, 'RedeemUnderlying')
-    //     .withArgs(parseEther('206984.406547481282023781'))
-    //     .to.emit(vUSDC, 'RepayBorrow')
-    //     .withArgs(parseEther('206984.406547481282023781'));
-    //   // RATIO = ~ 038 < 0.45. It will not deleverage anymore
-    //   // BORROW => ~ 189_561
-    //   // CURRENT SUPPLY => ~ 489_559
-    // });
-    // it('deleverages all listed assets', async () => {
-    //   await Promise.all([
-    //     dineroVenusVault
-    //       .connect(bob)
-    //       .deposit(USDC.address, parseEther('1000000')),
-    //     dineroVenusVault
-    //       .connect(alice)
-    //       .deposit(DAI.address, parseEther('1000000')),
-    //     // Need to adjust DAI collateral factor to behave like USDC
-    //     safeVenus.__setVTokenCollateralFactor(vUSDC.address, parseEther('0.9')),
-    //     safeVenus.__setVTokenCollateralFactor(vDAI.address, parseEther('0.9')),
-    //     vDAI.__setCollateralFactor(parseEther('0.9')),
-    //   ]);
-
-    //   await Promise.all([
-    //     dineroVenusVault
-    //       .connect(bob)
-    //       .borrow(vUSDC.address, parseEther('700000')),
-    //     dineroVenusVault
-    //       .connect(bob)
-    //       .borrow(vDAI.address, parseEther('700000')),
-    //   ]);
-
-    //   const receipt = await (
-    //     await dineroVenusVault.connect(bob).deleverageAll()
-    //   ).wait();
-
-    //   const USDCRedeemUnderlyingTopic = vUSDC.interface.getEventTopic(
-    //     vUSDC.interface.getEvent('RedeemUnderlying')
-    //   );
-    //   const USDCRepayBorrowTopic = vUSDC.interface.getEventTopic(
-    //     vUSDC.interface.getEvent('RepayBorrow')
-    //   );
-
-    //   const DAIRedeemUnderlyingTopic = vDAI.interface.getEventTopic(
-    //     vDAI.interface.getEvent('RedeemUnderlying')
-    //   );
-    //   const DAIRepayBorrowTopic = vDAI.interface.getEventTopic(
-    //     vDAI.interface.getEvent('RepayBorrow')
-    //   );
-
-    //   // Based on previous test calculations, it requires 3 loops of redeem and repay to deleverage a position with a  supply of 1m and 700k borrow.
-    //   expect(
-    //     receipt.events
-    //       ?.filter((x) => x.topics.includes(USDCRedeemUnderlyingTopic))
-    //       .filter(
-    //         (x) =>
-    //           x.address.toLocaleLowerCase() ===
-    //           vUSDC.address.toLocaleLowerCase()
-    //       ).length
-    //   ).to.be.equal(3);
-    //   expect(
-    //     receipt.events
-    //       ?.filter((x) => x.topics.includes(USDCRepayBorrowTopic))
-    //       .filter(
-    //         (x) =>
-    //           x.address.toLocaleLowerCase() ===
-    //           vUSDC.address.toLocaleLowerCase()
-    //       ).length
-    //   ).to.be.equal(3);
-
-    //   expect(
-    //     receipt.events
-    //       ?.filter((x) => x.topics.includes(DAIRedeemUnderlyingTopic))
-    //       .filter(
-    //         (x) =>
-    //           x.address.toLocaleLowerCase() === vDAI.address.toLocaleLowerCase()
-    //       ).length
-    //   ).to.be.equal(3);
-    //   expect(
-    //     receipt.events
-    //       ?.filter((x) => x.topics.includes(DAIRepayBorrowTopic))
-    //       .filter(
-    //         (x) =>
-    //           x.address.toLocaleLowerCase() === vDAI.address.toLocaleLowerCase()
-    //       ).length
-    //   ).to.be.equal(3);
-    // });
+      expect(
+        receipt.events
+          ?.filter((x) => x.topics.includes(borrowTopic))
+          .filter(
+            (x) =>
+              x.address.toLocaleLowerCase() ===
+              vUSDCContract.address.toLocaleLowerCase()
+          ).length
+      ).to.be.equal(compoundDepth);
+      expect(
+        receipt.events
+          ?.filter((x) => x.topics.includes(supplyTopic))
+          .filter(
+            (x) =>
+              x.address.toLocaleLowerCase() ===
+              vUSDCContract.address.toLocaleLowerCase()
+          ).length
+      ).to.be.equal(compoundDepth);
+    });
   });
-  // describe('function: deposit', () => {
-  //   it('reverts if the underlying is not whitelisted', async () => {
-  //     await expect(
-  //       dineroVenusVault.connect(bob).deposit(alice.address, 0)
-  //     ).to.revertedWith('DV: underlying not whitelisted');
-  //   });
-  //   it('reverts if the contract is paused', async () => {
-  //     await dineroVenusVault.connect(owner).pause();
-  //     await expect(
-  //       dineroVenusVault.connect(bob).deposit(USDC.address, parseEther('1000'))
-  //     ).to.revertedWith('Pausable: paused');
-  //   });
-  //   it('reverts if the user tries to deposit 0 tokens', async () => {
-  //     await expect(
-  //       dineroVenusVault.connect(alice).deposit(USDC.address, 0)
-  //     ).to.revertedWith('DV: no zero amount');
-  //   });
-  //   it('does not claim XVS not checks for rewards or losses on first deposit', async () => {
-  //     const [
-  //       aliceUSDCBalance,
-  //       vUSDCUSDBalance,
-  //       vaultVUSDCBalance,
-  //       exchangeRate,
-  //       totalFreeVTokens,
-  //       aliceAccount,
-  //       rewards,
-  //       totalFreeUnderlying,
-  //       aliceDineroBalance,
-  //     ] = await Promise.all([
-  //       USDC.balanceOf(alice.address),
-  //       USDC.balanceOf(vUSDC.address),
-  //       vUSDC.balanceOf(dineroVenusVault.address),
-  //       vUSDC.exchangeRateCurrent(),
-  //       dineroVenusVault.totalFreeVTokenOf(vUSDC.address),
-  //       dineroVenusVault.accountOf(USDC.address, alice.address),
-  //       dineroVenusVault.rewardsOf(vUSDC.address),
-  //       dineroVenusVault.totalFreeUnderlying(USDC.address),
-  //       dinero.balanceOf(alice.address),
-  //     ]);
+  it('calls leverage in all listed assets', async () => {
+    const [compoundDepth] = await Promise.all([
+      dineroVenusVault.compoundDepth(),
+      dineroVenusVault.connect(usdcWhale).deposit(USDC, parseEther('2000000')),
+      dineroVenusVault.connect(daiWhale).deposit(DAI, parseEther('2000000')),
+    ]);
 
-  //     expect(vaultVUSDCBalance).to.be.equal(0);
-  //     expect(vUSDCUSDBalance).to.be.equal(0);
-  //     expect(totalFreeVTokens).to.be.equal(0);
-  //     expect(aliceAccount.vTokens).to.be.equal(0);
-  //     expect(aliceAccount.principal).to.be.equal(0);
-  //     expect(aliceAccount.rewardsPaid).to.be.equal(0);
-  //     expect(aliceAccount.lossVTokensAccrued).to.be.equal(0);
-  //     expect(rewards).to.be.equal(0);
-  //     expect(totalFreeUnderlying).to.be.equal(0);
-  //     expect(aliceDineroBalance).to.be.equal(0);
+    const receipt = await (
+      await dineroVenusVault.connect(owner).leverageAll()
+    ).wait();
 
-  //     const vTokensMinted = parseEther('100000')
-  //       .mul(parseEther('1'))
-  //       .div(exchangeRate);
+    const USDCborrowTopic = vUSDCContract.interface.getEventTopic(
+      vUSDCContract.interface.getEvent('Borrow')
+    );
+    const USDCsupplyTopic = vUSDCContract.interface.getEventTopic(
+      vUSDCContract.interface.getEvent('Transfer')
+    );
 
-  //     await expect(
-  //       dineroVenusVault
-  //         .connect(alice)
-  //         .deposit(USDC.address, parseEther('100000'))
-  //     )
-  //       .to.emit(dineroVenusVault, 'Deposit')
-  //       .withArgs(
-  //         alice.address,
-  //         USDC.address,
-  //         parseEther('100000'),
-  //         vTokensMinted
-  //       )
-  //       .to.emit(USDC, 'Transfer')
-  //       .withArgs(alice.address, dineroVenusVault.address, parseEther('100000'))
-  //       .to.emit(USDC, 'Transfer')
-  //       .withArgs(dineroVenusVault.address, vUSDC.address, parseEther('100000'))
-  //       .to.emit(vUSDC, 'Transfer')
-  //       .withArgs(
-  //         ethers.constants.AddressZero,
-  //         dineroVenusVault.address,
-  //         vTokensMinted
-  //       )
-  //       .to.not.emit(venusController, 'Claim')
-  //       .to.not.emit(dineroVenusVault, 'Loss');
+    const DAIborrowTopic = vDAIContract.interface.getEventTopic(
+      vDAIContract.interface.getEvent('Borrow')
+    );
+    const DAIsupplyTopic = vDAIContract.interface.getEventTopic(
+      vDAIContract.interface.getEvent('Transfer')
+    );
 
-  //     const [
-  //       aliceUSDCBalance2,
-  //       vUSDCUSDBalance2,
-  //       vaultVUSDCBalance2,
-  //       totalFreeVTokens2,
-  //       aliceAccount2,
-  //       rewards2,
-  //       totalFreeUnderlying2,
-  //       aliceDineroBalance2,
-  //     ] = await Promise.all([
-  //       USDC.balanceOf(alice.address),
-  //       USDC.balanceOf(vUSDC.address),
-  //       vUSDC.balanceOf(dineroVenusVault.address),
-  //       dineroVenusVault.totalFreeVTokenOf(vUSDC.address),
-  //       dineroVenusVault.accountOf(USDC.address, alice.address),
-  //       dineroVenusVault.rewardsOf(vUSDC.address),
-  //       dineroVenusVault.totalFreeUnderlying(USDC.address),
-  //       dinero.balanceOf(alice.address),
-  //     ]);
+    expect(
+      receipt.events
+        ?.filter((x) => x.topics.includes(USDCborrowTopic))
+        .filter(
+          (x) =>
+            x.address.toLocaleLowerCase() ===
+            vUSDCContract.address.toLocaleLowerCase()
+        ).length
+    ).to.be.equal(compoundDepth);
+    expect(
+      receipt.events
+        ?.filter((x) => x.topics.includes(USDCsupplyTopic))
+        .filter(
+          (x) =>
+            x.address.toLocaleLowerCase() ===
+            vUSDCContract.address.toLocaleLowerCase()
+        ).length
+    ).to.be.equal(compoundDepth);
 
-  //     expect(
-  //       aliceUSDCBalance2.eq(aliceUSDCBalance.sub(parseEther('100000')))
-  //     ).equal(true);
+    expect(
+      receipt.events
+        ?.filter((x) => x.topics.includes(DAIborrowTopic))
+        .filter(
+          (x) =>
+            x.address.toLocaleLowerCase() ===
+            vDAIContract.address.toLocaleLowerCase()
+        ).length
+    ).to.be.equal(compoundDepth);
+    expect(
+      receipt.events
+        ?.filter((x) => x.topics.includes(DAIsupplyTopic))
+        .filter(
+          (x) =>
+            x.address.toLocaleLowerCase() ===
+            vDAIContract.address.toLocaleLowerCase()
+        ).length
+    ).to.be.equal(compoundDepth);
+  });
+  describe('function: deleverage', () => {
+    it('reverts if the vToken is not listed', async () => {
+      await dineroVenusVault.removeVToken(vUSDC);
+      await expect(dineroVenusVault.deleverage(vUSDC)).to.revertedWith(
+        'DV: not allowed'
+      );
+    });
+    it('does nothing if the deleverage amount is 0', async () => {
+      await expect(
+        dineroVenusVault.connect(owner).deleverage(vUSDC)
+      ).to.not.emit(vUSDCContract, 'Redeem');
 
-  //     expect(vUSDCUSDBalance2).to.be.equal(parseEther('100000'));
-  //     expect(vaultVUSDCBalance2).to.be.equal(vTokensMinted);
-  //     expect(totalFreeVTokens2).to.be.equal(vTokensMinted);
-  //     expect(rewards2).to.be.equal(0);
-  //     expect(totalFreeUnderlying2).to.be.equal(parseEther('100000'));
-  //     expect(aliceDineroBalance2).to.be.equal(parseEther('100000'));
-  //     expect(aliceAccount2.vTokens).to.be.equal(vTokensMinted);
-  //     expect(aliceAccount2.principal).to.be.equal(parseEther('100000'));
-  //     expect(aliceAccount2.rewardsPaid).to.be.equal(0);
-  //     expect(aliceAccount2.lossVTokensAccrued).to.be.equal(0);
+      // Should not trigger a deleverage as it stays within the parameters
+      // Deleveraged is triggered if parameters change or USDC price of underlying
+      await dineroVenusVault.connect(owner).leverage(vUSDC);
 
-  //     const wBNBXvsPairAddress = await factory.getPair(
-  //       WBNB.address,
-  //       XVS.address
-  //     );
+      await expect(
+        dineroVenusVault.connect(owner).deleverage(vUSDC)
+      ).to.not.emit(vUSDCContract, 'Redeem');
+    });
+    it('reverts if redeemUnderlying or repayBorrow from vToken revert', async () => {
+      await dineroVenusVault.removeVToken(vUSDC);
+      await dineroVenusVault.addVToken(mockVUSDC.address);
+      // Set collateral ratio at 80% which will trigger a deleverage since our safe collateral ratio is at 45%
+      await Promise.all([
+        mockVUSDC.__setBalanceOfUnderlying(
+          dineroVenusVault.address,
+          parseEther('100000')
+        ),
+        mockVUSDC.__setBorrowBalanceCurrent(
+          dineroVenusVault.address,
+          parseEther('80000')
+        ),
+        // will trigger the error
+        mockVUSDC.__setRedeemUnderlyingReturn(1),
+      ]);
 
-  //     const wBNBXvsPair = (
-  //       await ethers.getContractFactory('PancakePair')
-  //     ).attach(wBNBXvsPairAddress);
+      await expect(
+        dineroVenusVault.connect(owner).deleverage(mockVUSDC.address)
+      ).to.revertedWith('DV: failed to redeem');
 
-  //     await expect(
-  //       dineroVenusVault.connect(bob).deposit(USDC.address, parseEther('100'))
-  //     )
-  //       .to.emit(venusController, 'Claim')
-  //       .withArgs(dineroVenusVault.address, 0)
-  //       // It does not swap if there are no XVS rewards
-  //       .to.not.emit(wBNBXvsPair, 'Swap');
-  //   });
-  //   it('distributes rewards fairly', async () => {
-  //     // Set XVS rewards
-  //     const [exchangeRate, decimals] = await Promise.all([
-  //       vUSDC.exchangeRateCurrent(),
-  //       vUSDC.decimals(),
-  //       venusController.__setClaimVenusValue(parseEther('1000')),
-  //     ]);
+      await Promise.all([
+        mockVUSDC.__setBalanceOfUnderlying(dineroVenusVault.address, 0),
+        mockVUSDC.__setBorrowBalanceCurrent(dineroVenusVault.address, 0),
+        mockVUSDC.__setRedeemUnderlyingReturn(0),
+        mockVUSDC.__setRepayReturnValue(1),
+      ]);
 
-  //     await dineroVenusVault
-  //       .connect(alice)
-  //       .deposit(USDC.address, parseEther('10000'));
+      await Promise.all([
+        dineroVenusVault
+          .connect(usdcWhale)
+          .deposit(USDC, parseEther('2000000')),
+      ]);
 
-  //     const [vaultVUSDCBalance, vUSDCRewards, aliceAccount, bobAccount] =
-  //       await Promise.all([
-  //         vUSDC.balanceOf(dineroVenusVault.address),
-  //         dineroVenusVault.rewardsOf(vUSDC.address),
-  //         dineroVenusVault.accountOf(USDC.address, alice.address),
-  //         dineroVenusVault.accountOf(USDC.address, bob.address),
-  //       ]);
+      // 0.9 (vToken collateral factor) * 0.9 => 0.81. So we borrow up to 0.8 => 2_000_000 * 0.8. Should trigger a deleverage
+      await dineroVenusVault.borrow(mockVUSDC.address, parseEther('1600000'));
 
-  //     const aliceVTokensMinted = parseEther('10000')
-  //       .mul(parseEther('1'))
-  //       .div(exchangeRate);
+      await expect(
+        dineroVenusVault.connect(owner).deleverage(mockVUSDC.address)
+      ).to.revertedWith('DV: failed to repay');
+    });
+    it('deleverages the vault by redeeming and then repaying', async () => {
+      await dineroVenusVault
+        .connect(usdcWhale)
+        .deposit(USDC, parseEther('1000000'));
 
-  //     expect(vaultVUSDCBalance).to.be.equal(aliceVTokensMinted);
-  //     expect(vUSDCRewards).to.be.equal(0);
-  //     expect(aliceAccount.rewardsPaid).to.be.equal(0);
-  //     expect(aliceAccount.vTokens).to.be.equal(vaultVUSDCBalance);
-  //     expect(bobAccount.rewardsPaid).to.be.equal(0);
-  //     expect(bobAccount.vTokens).to.be.equal(0);
+      // safe collateral ratio will be 0.9 * 0.5 = 0.45
+      // Gonna leverage the vault to 0.7 collateral ratio which will trigger a deleverage
+      // We are supplying 1_000_000 and borrowing 550_000 => collateral ratio of 0.55 to trigger a deleverage
+      await dineroVenusVault.connect(owner).borrow(vUSDC, parseEther('550000'));
 
-  //     const wBNBXvsPairAddress = await factory.getPair(
-  //       WBNB.address,
-  //       XVS.address
-  //     );
+      await expect(dineroVenusVault.connect(owner).deleverage(vUSDC))
+        .to.emit(vUSDCContract, 'Redeem')
+        .to.emit(vUSDCContract, 'RepayBorrow');
+    });
+    it('deleverages all listed assets', async () => {
+      await Promise.all([
+        dineroVenusVault
+          .connect(usdcWhale)
+          .deposit(USDC, parseEther('1000000')),
+        dineroVenusVault.connect(daiWhale).deposit(DAI, parseEther('1000000')),
+      ]);
 
-  //     const wBNBXvsPair = (
-  //       await ethers.getContractFactory('PancakePair')
-  //     ).attach(wBNBXvsPairAddress);
+      await Promise.all([
+        dineroVenusVault.connect(owner).borrow(vUSDC, parseEther('700000')),
+        dineroVenusVault.connect(owner).borrow(vDAI, parseEther('550000')),
+      ]);
 
-  //     await expect(
-  //       dineroVenusVault.connect(bob).deposit(USDC.address, parseEther('20000'))
-  //     )
-  //       .to.emit(venusController, 'Claim')
-  //       .withArgs(dineroVenusVault.address, parseEther('1000'))
-  //       .to.emit(wBNBXvsPair, 'Swap');
+      const receipt = await (
+        await dineroVenusVault.connect(owner).deleverageAll()
+      ).wait();
 
-  //     const [vaultVUSDCBalance2, vUSDCRewards2, aliceAccount2, bobAccount2] =
-  //       await Promise.all([
-  //         vUSDC.balanceOf(dineroVenusVault.address),
-  //         dineroVenusVault.rewardsOf(vUSDC.address),
-  //         dineroVenusVault.accountOf(USDC.address, alice.address),
-  //         dineroVenusVault.accountOf(USDC.address, bob.address),
-  //       ]);
+      const USDCRedeemUnderlyingTopic = vUSDCContract.interface.getEventTopic(
+        vUSDCContract.interface.getEvent('Redeem')
+      );
+      const USDCRepayBorrowTopic = vUSDCContract.interface.getEventTopic(
+        vUSDCContract.interface.getEvent('RepayBorrow')
+      );
 
-  //     const bobVTokensMinted = parseEther('20000')
-  //       .mul(parseEther('1'))
-  //       .div(exchangeRate);
+      const DAIRedeemUnderlyingTopic = vDAIContract.interface.getEventTopic(
+        vDAIContract.interface.getEvent('Redeem')
+      );
+      const DAIRepayBorrowTopic = vDAIContract.interface.getEventTopic(
+        vDAIContract.interface.getEvent('RepayBorrow')
+      );
 
-  //     const oneVToken = ethers.BigNumber.from(10).pow(
-  //       ethers.BigNumber.from(decimals)
-  //     );
+      // Based on previous test calculations, it requires 3 loops of redeem and repay to deleverage a position with a  supply of 1m and 700k borrow.
+      expect(
+        receipt.events
+          ?.filter((x) => x.topics.includes(USDCRedeemUnderlyingTopic))
+          .filter(
+            (x) =>
+              x.address.toLocaleLowerCase() ===
+              vUSDCContract.address.toLocaleLowerCase()
+          ).length
+      ).to.be.equal(5);
+      expect(
+        receipt.events
+          ?.filter((x) => x.topics.includes(USDCRepayBorrowTopic))
+          .filter(
+            (x) =>
+              x.address.toLocaleLowerCase() ===
+              vUSDCContract.address.toLocaleLowerCase()
+          ).length
+      ).to.be.equal(5);
 
-  //     expect(
-  //       vaultVUSDCBalance
-  //         .add(bobVTokensMinted)
-  //         .add(vUSDCRewards2.mul(vaultVUSDCBalance).div(oneVToken))
-  //     ).to.be.closeTo(vaultVUSDCBalance2, 10 ** decimals); // 10 ** 8 represents 1 with 8 decimals
+      expect(
+        receipt.events
+          ?.filter((x) => x.topics.includes(DAIRedeemUnderlyingTopic))
+          .filter(
+            (x) =>
+              x.address.toLocaleLowerCase() ===
+              vDAIContract.address.toLocaleLowerCase()
+          ).length
+      ).to.be.equal(5);
+      expect(
+        receipt.events
+          ?.filter((x) => x.topics.includes(DAIRepayBorrowTopic))
+          .filter(
+            (x) =>
+              x.address.toLocaleLowerCase() ===
+              vDAIContract.address.toLocaleLowerCase()
+          ).length
+      ).to.be.equal(5);
+    });
+  });
+  describe('function: deposit', () => {
+    it('reverts if the underlying is not whitelisted', async () => {
+      await expect(
+        dineroVenusVault.connect(owner).deposit(alice.address, 0)
+      ).to.revertedWith('DV: underlying not whitelisted');
+    });
+    it('reverts if the contract is paused', async () => {
+      await dineroVenusVault.connect(owner).pause();
+      await expect(
+        dineroVenusVault.connect(owner).deposit(USDC, parseEther('1000'))
+      ).to.revertedWith('Pausable: paused');
+    });
+    it('reverts if the user tries to deposit 0 tokens', async () => {
+      await expect(
+        dineroVenusVault.connect(usdcWhale).deposit(USDC, 0)
+      ).to.revertedWith('DV: no zero amount');
+    });
+    it('does not claim XVS not checks for rewards or losses on first deposit', async () => {
+      const [
+        usdcWhaleUSDCBalance,
+        vUSDCUSDBalance,
+        vaultVUSDCBalance,
+        exchangeRate,
+        totalFreeVTokens,
+        usdcWhaleAccount,
+        rewards,
+        totalFreeUnderlying,
+        usdcWhalDineroBalance,
+      ] = await Promise.all([
+        USDCContract.balanceOf(usdcWhale.address),
+        USDCContract.balanceOf(vUSDC),
+        vUSDCContract.balanceOf(dineroVenusVault.address),
+        vUSDCContract.callStatic.exchangeRateCurrent(),
+        dineroVenusVault.totalFreeVTokenOf(vUSDC),
+        dineroVenusVault.accountOf(USDC, usdcWhale.address),
+        dineroVenusVault.rewardsOf(vUSDC),
+        dineroVenusVault.totalFreeUnderlying(USDC),
+        dinero.balanceOf(usdcWhale.address),
+      ]);
 
-  //     expect(vUSDCRewards2).to.be.equal(
-  //       vaultVUSDCBalance2
-  //         .sub(vaultVUSDCBalance.add(bobVTokensMinted))
-  //         .mul(oneVToken)
-  //         .div(vaultVUSDCBalance)
-  //     );
-  //     expect(aliceAccount2.rewardsPaid).to.be.equal(0);
-  //     expect(aliceAccount2.vTokens).to.be.equal(aliceVTokensMinted);
-  //     expect(aliceAccount2.principal).to.be.equal(aliceAccount.principal);
-  //     expect(bobAccount2.rewardsPaid).to.be.equal(
-  //       bobVTokensMinted.mul(vUSDCRewards2).div(oneVToken)
-  //     );
-  //     expect(bobAccount2.vTokens).to.be.equal(bobVTokensMinted);
-  //     expect(bobAccount2.principal).to.be.equal(parseEther('20000'));
+      expect(vaultVUSDCBalance).to.be.equal(0);
+      expect(totalFreeVTokens).to.be.equal(0);
+      expect(usdcWhaleAccount.vTokens).to.be.equal(0);
+      expect(usdcWhaleAccount.principal).to.be.equal(0);
+      expect(usdcWhaleAccount.rewardsPaid).to.be.equal(0);
+      expect(usdcWhaleAccount.lossVTokensAccrued).to.be.equal(0);
+      expect(rewards).to.be.equal(0);
+      expect(totalFreeUnderlying).to.be.equal(0);
+      expect(usdcWhalDineroBalance).to.be.equal(0);
 
-  //     await dineroVenusVault
-  //       .connect(alice)
-  //       .deposit(USDC.address, parseEther('15000'));
+      const vTokensMinted = parseEther('100000')
+        .mul(parseEther('1'))
+        .div(exchangeRate);
 
-  //     const [vaultVUSDCBalance3, vUSDCRewards3, aliceAccount3, bobAccount3] =
-  //       await Promise.all([
-  //         vUSDC.balanceOf(dineroVenusVault.address),
-  //         dineroVenusVault.rewardsOf(vUSDC.address),
-  //         dineroVenusVault.accountOf(USDC.address, alice.address),
-  //         dineroVenusVault.accountOf(USDC.address, bob.address),
-  //       ]);
+      const factoryContract = new ethers.Contract(
+        PCS_FACTORY,
+        PCSFactoryABI,
+        ethers.provider
+      );
 
-  //     const aliceVTokensMinted2 = parseEther('15000')
-  //       .mul(parseEther('1'))
-  //       .div(exchangeRate);
+      const wBNBXvsPairAddress = await factoryContract.getPair(WBNB, XVS);
 
-  //     expect(vaultVUSDCBalance3).to.be.closeTo(
-  //       vaultVUSDCBalance2
-  //         .add(aliceVTokensMinted2)
-  //         .add(
-  //           vUSDCRewards3
-  //             .sub(vUSDCRewards2)
-  //             .mul(aliceVTokensMinted.add(bobVTokensMinted))
-  //             .div(oneVToken)
-  //         ),
-  //       1e8
-  //     );
+      const wBNBXvsPair = (
+        await ethers.getContractFactory('PancakePair')
+      ).attach(wBNBXvsPairAddress);
 
-  //     expect(aliceAccount3.vTokens).to.be.equal(
-  //       aliceAccount2.vTokens
-  //         .add(aliceVTokensMinted2)
-  //         .add(vUSDCRewards3.mul(aliceAccount2.vTokens).div(oneVToken))
-  //     );
-  //     expect(aliceAccount3.principal).to.be.equal(
-  //       aliceAccount2.principal.add(parseEther('15000'))
-  //     );
-  //     expect(aliceAccount3.rewardsPaid).to.be.equal(
-  //       vUSDCRewards3.mul(aliceAccount3.vTokens).div(oneVToken)
-  //     );
+      await expect(
+        dineroVenusVault.connect(usdcWhale).deposit(USDC, parseEther('100000'))
+      )
+        .to.emit(dineroVenusVault, 'Deposit')
+        .withArgs(alice.address, USDC, parseEther('100000'), vTokensMinted)
+        .to.emit(USDCContract, 'Transfer')
+        .withArgs(alice.address, dineroVenusVault.address, parseEther('100000'))
+        .to.emit(USDCContract, 'Transfer')
+        .withArgs(dineroVenusVault.address, vUSDC, parseEther('100000'))
+        .to.emit(vUSDCContract, 'Transfer')
+        .withArgs(
+          ethers.constants.AddressZero,
+          dineroVenusVault.address,
+          vTokensMinted
+        )
+        .to.not.emit(venusControllerContract, 'DistributedSupplierVenus')
+        .to.not.emit(venusControllerContract, 'DistributedBorrowerVenus')
+        .to.not.emit(dineroVenusVault, 'Loss')
+        .to.not.emit(wBNBXvsPair, 'Swap'); // It does not swap if there are no XVS rewards
 
-  //     expect(bobAccount3.principal).to.be.equal(bobAccount2.principal);
-  //     expect(bobAccount3.vTokens).to.be.equal(bobAccount2.vTokens);
-  //     expect(bobAccount3.rewardsPaid).to.be.equal(bobAccount2.rewardsPaid);
+      const [
+        usdcWhaleUSDCBalance2,
+        vUSDCUSDBalance2,
+        vaultVUSDCBalance2,
+        totalFreeVTokens2,
+        usdcWhaleAccount2,
+        rewards2,
+        totalFreeUnderlying2,
+        usdcWhaleDineroBalance2,
+      ] = await Promise.all([
+        USDCContract.balanceOf(usdcWhale.address),
+        USDCContract.balanceOf(vUSDC),
+        vUSDCContract.balanceOf(dineroVenusVault.address),
+        dineroVenusVault.totalFreeVTokenOf(vUSDC),
+        dineroVenusVault.accountOf(USDC, usdcWhale.address),
+        dineroVenusVault.rewardsOf(vUSDC),
+        dineroVenusVault.totalFreeUnderlying(USDC),
+        dinero.balanceOf(usdcWhale.address),
+      ]);
 
-  //     await dineroVenusVault
-  //       .connect(bob)
-  //       .deposit(USDC.address, parseEther('35000'));
+      expect(
+        usdcWhaleUSDCBalance2.eq(usdcWhaleUSDCBalance.sub(parseEther('100000')))
+      ).equal(true);
 
-  //     const [
-  //       vaultVUSDCBalance4,
-  //       vUSDCRewards4,
-  //       aliceAccount4,
-  //       bobAccount4,
-  //       aliceDineroBalance,
-  //       bobDineroBalance,
-  //       totalFreeVTokens,
-  //       totalFreeUnderlying,
-  //     ] = await Promise.all([
-  //       vUSDC.balanceOf(dineroVenusVault.address),
-  //       dineroVenusVault.rewardsOf(vUSDC.address),
-  //       dineroVenusVault.accountOf(USDC.address, alice.address),
-  //       dineroVenusVault.accountOf(USDC.address, bob.address),
-  //       dinero.balanceOf(alice.address),
-  //       dinero.balanceOf(bob.address),
-  //       dineroVenusVault.totalFreeVTokenOf(vUSDC.address),
-  //       dineroVenusVault.totalFreeUnderlying(USDC.address),
-  //     ]);
+      expect(vUSDCUSDBalance2).to.be.equal(
+        vUSDCUSDBalance.add(parseEther('100000'))
+      );
+      expect(vaultVUSDCBalance2).to.be.closeTo(vTokensMinted, ONE_V_TOKEN);
+      expect(totalFreeVTokens2).to.be.closeTo(vTokensMinted, ONE_V_TOKEN);
+      expect(rewards2).to.be.equal(0);
+      expect(totalFreeUnderlying2).to.be.closeTo(
+        parseEther('100000'),
+        parseEther('1')
+      );
+      expect(usdcWhaleDineroBalance2).to.be.equal(
+        parseEther('100000').mul(DINERO_LTV).div(parseEther('1'))
+      );
+      expect(usdcWhaleAccount2.vTokens).to.be.closeTo(
+        vTokensMinted,
+        ONE_V_TOKEN
+      );
+      expect(usdcWhaleAccount2.principal).to.be.equal(
+        parseEther('100000').mul(DINERO_LTV).div(parseEther('1'))
+      );
+      expect(usdcWhaleAccount2.rewardsPaid).to.be.equal(0);
+      expect(usdcWhaleAccount2.lossVTokensAccrued).to.be.equal(0);
 
-  //     const bobVTokensMinted2 = parseEther('35000')
-  //       .mul(parseEther('1'))
-  //       .div(exchangeRate);
+      await expect(
+        dineroVenusVault.connect(usdcWhale).deposit(USDC, parseEther('100'))
+      )
+        .to.emit(venusControllerContract, 'DistributedSupplierVenus')
+        .to.not.emit(venusControllerContract, 'DistributedBorrowerVenus');
+    });
+    it('distributes rewards fairly', async () => {
+      await impersonate(USDC_WHALE_TWO);
+      const usdcWhale2 = await ethers.getSigner(USDC_WHALE_TWO);
 
-  //     expect(vaultVUSDCBalance4).to.be.closeTo(
-  //       vaultVUSDCBalance3
-  //         .add(bobVTokensMinted2)
-  //         .add(
-  //           vUSDCRewards4
-  //             .sub(vUSDCRewards3)
-  //             .mul(bobAccount3.vTokens.add(aliceAccount3.vTokens))
-  //             .div(oneVToken)
-  //         ),
-  //       1e8
-  //     );
+      await dineroVenusVault
+        .connect(usdcWhale)
+        .deposit(USDC, parseEther('1000000'));
 
-  //     expect(bobAccount4.vTokens).to.be.equal(
-  //       bobAccount3.vTokens
-  //         .add(
-  //           vUSDCRewards4
-  //             .mul(bobAccount3.vTokens)
-  //             .div(oneVToken)
-  //             .sub(bobAccount3.rewardsPaid)
-  //         )
-  //         .add(bobVTokensMinted2)
-  //     );
-  //     expect(bobAccount4.principal).to.be.equal(
-  //       bobAccount3.principal.add(parseEther('35000'))
-  //     );
-  //     expect(bobAccount4.rewardsPaid).to.be.equal(
-  //       vUSDCRewards4.mul(bobAccount4.vTokens).div(oneVToken)
-  //     );
+      const USDC_USDC_WHALE_TWO = new ethers.Contract(
+        USDC,
+        ERC20ABI,
+        usdcWhale2
+      );
 
-  //     expect(aliceAccount4.principal).to.be.equal(aliceAccount3.principal);
-  //     expect(aliceAccount4.vTokens).to.be.equal(aliceAccount3.vTokens);
-  //     expect(aliceAccount4.rewardsPaid).to.be.equal(aliceAccount3.rewardsPaid);
+      const [
+        vaultVUSDCBalance,
+        vUSDCRewards,
+        usdcWhaleAccount,
+        usdcWhale2Account,
+      ] = await Promise.all([
+        vUSDCContract.balanceOf(dineroVenusVault.address),
+        dineroVenusVault.rewardsOf(vUSDC),
+        dineroVenusVault.accountOf(USDC, usdcWhale.address),
+        dineroVenusVault.accountOf(USDC, usdcWhale2.address),
+        USDC_USDC_WHALE_TWO.approve(
+          dineroVenusVault.address,
+          ethers.constants.MaxUint256
+        ),
+      ]);
 
-  //     expect(aliceDineroBalance).to.be.equal(aliceAccount4.principal);
-  //     expect(bobDineroBalance).to.be.equal(bobAccount4.principal);
+      const exchangeRate = await vUSDCContract.callStatic.exchangeRateCurrent();
 
-  //     expect(totalFreeVTokens).to.be.equal(
-  //       bobAccount4.vTokens.add(aliceAccount4.vTokens)
-  //     );
+      const usdcWhaleVTokensMinted = parseEther('1000000')
+        .mul(parseEther('1'))
+        .div(exchangeRate);
 
-  //     // The vault has no leverage
-  //     expect(totalFreeUnderlying).to.be.within(
-  //       // TS does not know that Chai supports big number in this matcher with waffle
-  //       // @ts-expect-error Type files for within assertions are incorrect
-  //       vaultVUSDCBalance4.mul(exchangeRate).div(parseEther('1')),
-  //       vaultVUSDCBalance4
-  //         .mul(exchangeRate)
-  //         .div(parseEther('1'))
-  //         .add(parseEther('1'))
-  //     );
-  //   });
-  //   it('calculates losses proportionally', async () => {
-  //     // Need initial deposit to incur a loss
-  //     await dineroVenusVault
-  //       .connect(bob)
-  //       .deposit(USDC.address, parseEther('100000'));
+      expect(vaultVUSDCBalance).to.be.closeTo(
+        usdcWhaleVTokensMinted,
+        ONE_V_TOKEN
+      );
+      expect(vUSDCRewards).to.be.equal(0);
+      expect(usdcWhaleAccount.rewardsPaid).to.be.equal(0);
+      expect(usdcWhaleAccount.vTokens).to.be.closeTo(
+        vaultVUSDCBalance,
+        ONE_V_TOKEN
+      );
+      expect(usdcWhaleAccount.principal).to.be.equal(
+        parseEther('1000000').mul(DINERO_LTV).div(parseEther('1'))
+      );
+      expect(usdcWhale2Account.rewardsPaid).to.be.equal(0);
+      expect(usdcWhale2Account.vTokens).to.be.equal(0);
+      expect(usdcWhale2Account.principal).to.be.equal(0);
 
-  //     // To emulate a real life scenario, losses only happen when we leverage the vault position.
-  //     await dineroVenusVault.connect(bob).leverage(vUSDC.address);
+      const factoryContract = new ethers.Contract(
+        PCS_FACTORY,
+        PCSFactoryABI,
+        ethers.provider
+      );
 
-  //     const [
-  //       vaultBalanceOfUnderlying,
-  //       totalFreeUnderlying,
-  //       vUSDCTotalLoss,
-  //       totalFreeVTokens,
-  //       exchangeRate,
-  //       decimals,
-  //     ] = await Promise.all([
-  //       vUSDC.balanceOfUnderlying(dineroVenusVault.address),
-  //       dineroVenusVault.totalFreeUnderlying(USDC.address),
-  //       dineroVenusVault.totalLossOf(vUSDC.address),
-  //       dineroVenusVault.totalFreeVTokenOf(vUSDC.address),
-  //       vUSDC.exchangeRateCurrent(),
-  //       vUSDC.decimals(),
-  //     ]);
+      const wBNBXvsPairAddress = await factoryContract.getPair(WBNB, XVS);
 
-  //     // Artificially cause a 10% loss on the vault from 100_000 USDC -> 90_000 USDC
-  //     await vUSDC.__setBalanceOfUnderlying(
-  //       dineroVenusVault.address,
-  //       vaultBalanceOfUnderlying.sub(parseEther('10000'))
-  //     );
+      const wBNBXvsPair = (
+        await ethers.getContractFactory('PancakePair')
+      ).attach(wBNBXvsPairAddress);
 
-  //     expect(vUSDCTotalLoss).to.be.equal(0);
-  //     expect(totalFreeUnderlying).to.be.equal(parseEther('100000'));
+      await expect(
+        dineroVenusVault
+          .connect(usdcWhale2)
+          .deposit(USDC, parseEther('2000000'))
+      )
+        .to.emit(venusControllerContract, 'DistributedSupplierVenus')
+        .to.emit(wBNBXvsPair, 'Swap');
 
-  //     const oneVToken = ethers.BigNumber.from(10).pow(
-  //       ethers.BigNumber.from(decimals)
-  //     );
+      const [
+        vaultVUSDCBalance2,
+        vUSDCRewards2,
+        usdcWhaleAccount2,
+        usdcWhale2Account2,
+        exchangeRate2,
+      ] = await Promise.all([
+        vUSDCContract.balanceOf(dineroVenusVault.address),
+        dineroVenusVault.rewardsOf(vUSDC),
+        dineroVenusVault.accountOf(USDC, usdcWhale.address),
+        dineroVenusVault.accountOf(USDC, usdcWhale2.address),
+        vUSDCContract.callStatic.exchangeRateCurrent(),
+      ]);
 
-  //     const lossPerVToken = parseEther('10000')
-  //       .mul(parseEther('1'))
-  //       .div(exchangeRate)
-  //       .mul(oneVToken)
-  //       .div(totalFreeVTokens);
+      const usdcWhale2VTokensMinted = parseEther('2000000')
+        .mul(parseEther('1'))
+        .div(exchangeRate2);
 
-  //     // Alice should NOT incur a loss
-  //     // Loss should be calculated
-  //     await expect(
-  //       dineroVenusVault
-  //         .connect(alice)
-  //         .deposit(USDC.address, parseEther('50000'))
-  //     )
-  //       .to.emit(dineroVenusVault, 'Loss')
-  //       .withArgs(parseEther('100000'), parseEther('90000'), lossPerVToken);
+      expect(
+        vaultVUSDCBalance
+          .add(usdcWhale2VTokensMinted)
+          .add(
+            vUSDCRewards2.mul(vaultVUSDCBalance).div(ONE_V_TOKEN).div(PRECISION)
+          )
+      ).to.be.closeTo(vaultVUSDCBalance2, ONE_V_TOKEN);
 
-  //     const [
-  //       vaultBalanceOfUnderlying2,
-  //       totalFreeUnderlying2,
-  //       vUSDCTotalLoss2,
-  //       totalFreeVTokens2,
-  //       aliceAccount,
-  //     ] = await Promise.all([
-  //       vUSDC.balanceOfUnderlying(dineroVenusVault.address),
-  //       dineroVenusVault.totalFreeUnderlying(USDC.address),
-  //       dineroVenusVault.totalLossOf(vUSDC.address),
-  //       dineroVenusVault.totalFreeVTokenOf(vUSDC.address),
-  //       dineroVenusVault.accountOf(USDC.address, alice.address),
-  //     ]);
+      expect(vUSDCRewards2).to.be.equal(
+        vaultVUSDCBalance2
+          .sub(vaultVUSDCBalance.add(usdcWhale2VTokensMinted))
+          .mul(ONE_V_TOKEN)
+          .mul(PRECISION)
+          .div(vaultVUSDCBalance)
+      );
+      expect(usdcWhale2Account2.rewardsPaid).to.be.equal(
+        usdcWhale2Account2.vTokens.mul(vUSDCRewards2).div(ONE_V_TOKEN)
+      );
+      expect(usdcWhale2Account2.vTokens).to.be.closeTo(
+        usdcWhale2VTokensMinted,
+        ONE_V_TOKEN
+      );
+      expect(usdcWhaleAccount2.principal).to.be.equal(
+        usdcWhaleAccount2.principal
+      );
+      expect(usdcWhale2Account2.rewardsPaid).to.be.closeTo(
+        usdcWhale2VTokensMinted.mul(vUSDCRewards2).div(ONE_V_TOKEN),
+        ONE_V_TOKEN
+      );
+      expect(usdcWhale2Account2.vTokens).to.be.closeTo(
+        usdcWhale2VTokensMinted,
+        ONE_V_TOKEN
+      );
+      expect(usdcWhale2Account2.principal).to.be.equal(
+        parseEther('2000000').mul(DINERO_LTV).div(parseEther('1'))
+      );
 
-  //     expect(vaultBalanceOfUnderlying2).to.be.equal(
-  //       vaultBalanceOfUnderlying
-  //         .sub(parseEther('10000'))
-  //         .add(parseEther('50000'))
-  //     );
-  //     expect(totalFreeUnderlying2).to.be.equal(parseEther('140000'));
-  //     expect(vUSDCTotalLoss2).to.be.equal(lossPerVToken);
-  //     // Loss essentially happens after minting the vTokens.
-  //     // Will look a bit different than real world because the exchange rate should change but should not change our calculations
-  //     expect(totalFreeVTokens2).to.be.closeTo(
-  //       totalFreeUnderlying2
-  //         .add(parseEther('10000'))
-  //         .mul(parseEther('1'))
-  //         .div(exchangeRate),
-  //       2
-  //     );
-  //     expect(aliceAccount.principal).to.be.equal(parseEther('50000'));
-  //     // Alice should not incur any loss
-  //     expect(aliceAccount.vTokens).to.be.equal(
-  //       parseEther('50000').mul(parseEther('1')).div(exchangeRate)
-  //     );
-  //     expect(aliceAccount.rewardsPaid).to.be.equal(0);
-  //     expect(aliceAccount.lossVTokensAccrued).to.be.equal(
-  //       vUSDCTotalLoss2.mul(aliceAccount.vTokens).div(oneVToken)
-  //     );
+      await dineroVenusVault
+        .connect(usdcWhale)
+        .deposit(USDC, parseEther('150000'));
 
-  //     // Bob should incur a loss
-  //     // There should not record a second loss
-  //     await expect(
-  //       dineroVenusVault.connect(bob).deposit(USDC.address, parseEther('45000'))
-  //     ).to.not.emit(dineroVenusVault, 'Loss');
+      const [
+        vaultVUSDCBalance3,
+        vUSDCRewards3,
+        usdcWhaleAccount3,
+        usdcWhale2Account3,
+        exchangeRate3,
+      ] = await Promise.all([
+        vUSDCContract.balanceOf(dineroVenusVault.address),
+        dineroVenusVault.rewardsOf(vUSDC),
+        dineroVenusVault.accountOf(USDC, usdcWhale.address),
+        dineroVenusVault.accountOf(USDC, usdcWhale2.address),
+        vUSDCContract.callStatic.exchangeRateCurrent(),
+      ]);
 
-  //     const [
-  //       vaultBalanceOfUnderlying3,
-  //       totalFreeUnderlying3,
-  //       vUSDCTotalLoss3,
-  //       totalFreeVTokens3,
-  //       bobAccount,
-  //     ] = await Promise.all([
-  //       vUSDC.balanceOfUnderlying(dineroVenusVault.address),
-  //       dineroVenusVault.totalFreeUnderlying(USDC.address),
-  //       dineroVenusVault.totalLossOf(vUSDC.address),
-  //       dineroVenusVault.totalFreeVTokenOf(vUSDC.address),
-  //       dineroVenusVault.accountOf(USDC.address, bob.address),
-  //     ]);
+      const usdcWhaleVTokensMinted2 = parseEther('150000')
+        .mul(parseEther('1'))
+        .div(exchangeRate3);
 
-  //     const loss = vUSDCTotalLoss3
-  //       .mul(parseEther('100000').mul(parseEther('1')).div(exchangeRate))
-  //       .div(oneVToken);
+      expect(vaultVUSDCBalance3).to.be.closeTo(
+        vaultVUSDCBalance2
+          .add(usdcWhaleVTokensMinted2)
+          .add(
+            vUSDCRewards3
+              .sub(vUSDCRewards2)
+              .mul(usdcWhaleVTokensMinted.add(usdcWhale2VTokensMinted))
+              .div(ONE_V_TOKEN)
+              .div(PRECISION)
+          ),
+        ONE_V_TOKEN
+      );
 
-  //     expect(vaultBalanceOfUnderlying3).to.be.equal(
-  //       vaultBalanceOfUnderlying2.add(parseEther('45000'))
-  //     );
-  //     expect(totalFreeUnderlying3).to.be.equal(
-  //       totalFreeUnderlying2.add(parseEther('45000'))
-  //     );
-  //     expect(vUSDCTotalLoss3).to.be.equal(vUSDCTotalLoss2);
-  //     expect(totalFreeVTokens3).to.be.equal(
-  //       totalFreeVTokens2
-  //         .add(parseEther('45000').mul(parseEther('1')).div(exchangeRate))
-  //         .sub(loss)
-  //     );
+      expect(usdcWhaleAccount3.vTokens).to.be.closeTo(
+        usdcWhaleAccount2.vTokens
+          .add(usdcWhaleVTokensMinted2)
+          .add(
+            vUSDCRewards3
+              .mul(usdcWhaleAccount2.vTokens)
+              .div(ONE_V_TOKEN)
+              .div(PRECISION)
+          ),
+        ONE_V_TOKEN
+      );
+      expect(usdcWhaleAccount3.principal).to.be.equal(
+        usdcWhaleAccount2.principal.add(
+          parseEther('150000').mul(DINERO_LTV).div(parseEther('1'))
+        )
+      );
+      expect(usdcWhaleAccount3.rewardsPaid).to.be.closeTo(
+        vUSDCRewards3.mul(usdcWhaleAccount3.vTokens).div(ONE_V_TOKEN),
+        ONE_V_TOKEN
+      );
 
-  //     expect(bobAccount.principal).to.be.equal(parseEther('145000'));
-  //     // Bob should incur a loss
-  //     expect(bobAccount.vTokens).to.be.closeTo(
-  //       bobAccount.principal.mul(parseEther('1')).div(exchangeRate).sub(loss),
-  //       1
-  //     );
-  //     expect(bobAccount.rewardsPaid).to.be.equal(0);
-  //     expect(bobAccount.lossVTokensAccrued).to.be.equal(
-  //       bobAccount.vTokens.mul(vUSDCTotalLoss3).div(oneVToken)
-  //     );
-  //   });
-  // });
+      expect(usdcWhale2Account3.principal).to.be.equal(
+        usdcWhale2Account2.principal
+      );
+      expect(usdcWhale2Account3.vTokens).to.be.equal(
+        usdcWhale2Account2.vTokens
+      );
+      expect(usdcWhale2Account3.rewardsPaid).to.be.equal(
+        usdcWhale2Account2.rewardsPaid
+      );
+
+      await dineroVenusVault
+        .connect(usdcWhale2)
+        .deposit(USDC, parseEther('350000'));
+
+      const [
+        vaultVUSDCBalance4,
+        vUSDCRewards4,
+        usdcWhaleAccount4,
+        usdcWhale2Account4,
+        usdcWhaleDineroBalance,
+        usdcWhale2DineroBalance,
+        totalFreeVTokens,
+        totalFreeUnderlying,
+        exchangeRate4,
+      ] = await Promise.all([
+        vUSDCContract.balanceOf(dineroVenusVault.address),
+        dineroVenusVault.rewardsOf(vUSDC),
+        dineroVenusVault.accountOf(USDC, usdcWhale.address),
+        dineroVenusVault.accountOf(USDC, usdcWhale2.address),
+        dinero.balanceOf(usdcWhale.address),
+        dinero.balanceOf(usdcWhale2.address),
+        dineroVenusVault.totalFreeVTokenOf(vUSDC),
+        dineroVenusVault.totalFreeUnderlying(USDC),
+        vUSDCContract.callStatic.exchangeRateCurrent(),
+      ]);
+
+      const usdcWhale2VTokensMinted2 = parseEther('350000')
+        .mul(parseEther('1'))
+        .div(exchangeRate4);
+
+      expect(vaultVUSDCBalance4).to.be.closeTo(
+        vaultVUSDCBalance3
+          .add(usdcWhale2VTokensMinted2)
+          .add(
+            vUSDCRewards4
+              .sub(vUSDCRewards3)
+              .mul(usdcWhale2Account3.vTokens.add(usdcWhaleAccount3.vTokens))
+              .div(ONE_V_TOKEN)
+              .div(PRECISION)
+          ),
+        ONE_V_TOKEN
+      );
+
+      expect(usdcWhale2Account4.vTokens).to.be.closeTo(
+        usdcWhale2Account3.vTokens
+          .add(
+            vUSDCRewards4
+              .mul(usdcWhale2Account3.vTokens)
+              .div(ONE_V_TOKEN)
+              .sub(usdcWhale2Account3.rewardsPaid)
+              .div(PRECISION)
+          )
+          .add(usdcWhale2VTokensMinted2),
+        ONE_V_TOKEN
+      );
+      expect(usdcWhale2Account4.principal).to.be.closeTo(
+        usdcWhale2Account3.principal.add(
+          parseEther('350000').mul(DINERO_LTV).div(parseEther('1'))
+        ),
+        ONE_V_TOKEN
+      );
+      expect(usdcWhale2Account4.rewardsPaid).to.be.closeTo(
+        vUSDCRewards4.mul(usdcWhale2Account4.vTokens).div(ONE_V_TOKEN),
+        ONE_V_TOKEN
+      );
+
+      expect(usdcWhaleAccount4.principal).to.be.equal(
+        usdcWhaleAccount3.principal
+      );
+      expect(usdcWhaleAccount4.vTokens).to.be.equal(usdcWhaleAccount3.vTokens);
+      expect(usdcWhaleAccount4.rewardsPaid).to.be.equal(
+        usdcWhaleAccount3.rewardsPaid
+      );
+
+      expect(usdcWhaleDineroBalance).to.be.equal(usdcWhaleAccount4.principal);
+      expect(usdcWhale2DineroBalance).to.be.equal(usdcWhale2Account4.principal);
+
+      expect(totalFreeVTokens).to.be.closeTo(
+        usdcWhale2Account4.vTokens.add(usdcWhaleAccount4.vTokens),
+        ONE_V_TOKEN
+      );
+
+      // The vault has no leverage
+      expect(totalFreeUnderlying).to.be.closeTo(
+        // TS does not know that Chai supports big number in this matcher with waffle
+        vaultVUSDCBalance4.mul(exchangeRate4).div(parseEther('1')),
+        ONE_V_TOKEN
+      );
+    });
+    it('calculates losses proportionally', async () => {
+      await Promise.all([
+        impersonate(VENUS_ADMIN),
+        impersonate(USDC_WHALE_TWO),
+      ]);
+      const [alice, venusAdmin] = await Promise.all([
+        ethers.getSigner(USDC_WHALE_TWO),
+        ethers.getSigner(VENUS_ADMIN),
+      ]);
+
+      const usdcContractAlice = new ethers.Contract(USDC, ERC20ABI, alice);
+
+      await usdcContractAlice.approve(
+        dineroVenusVault.address,
+        ethers.constants.MaxUint256
+      );
+
+      const venusControllerContract = new ethers.Contract(
+        VENUS_CONTROLLER,
+        VenusControllerABI,
+        venusAdmin
+      );
+
+      await venusControllerContract._setVenusSpeed(vUSDC, 0); // removes the XVS rewards, which  makes this market unprofitable,
+
+      // Need initial deposit to incur a loss
+      await dineroVenusVault
+        .connect(alice)
+        .deposit(USDC, parseEther('1000000'));
+
+      // To emulate a real life scenario, losses only happen when we leverage the vault position.
+      await dineroVenusVault.connect(owner).borrow(vUSDC, parseEther('790000'));
+
+      const [venusSpeed] = await Promise.all([
+        venusControllerContract.venusSpeeds(vUSDC),
+        dineroVenusVault.burnERC20(USDC, parseEther('790000')),
+      ]);
+
+      const [
+        aliceAccount,
+        totalFreeUnderlying,
+        vUSDCTotalLoss,
+        exchangeRate,
+        totalFreeVTokens,
+      ] = await Promise.all([
+        dineroVenusVault.accountOf(USDC, alice.address),
+        dineroVenusVault.totalFreeUnderlying(USDC),
+        dineroVenusVault.totalLossOf(vUSDC),
+        vUSDCContract.callStatic.exchangeRateCurrent(),
+        dineroVenusVault.totalFreeVTokenOf(vUSDC),
+      ]);
+
+      // LOSS IS NOT REGISTERED YET
+      const aliceDeposit1 = parseEther('1000000')
+        .mul(parseEther('1'))
+        .div(exchangeRate);
+
+      expect(vUSDCTotalLoss).to.be.equal(0);
+      expect(totalFreeUnderlying).to.be.closeTo(
+        parseEther('1000000'),
+        parseEther('0.1')
+      );
+
+      expect(aliceAccount.vTokens).to.be.closeTo(aliceDeposit1, ONE_V_TOKEN);
+      expect(aliceAccount.principal).to.be.equal(
+        parseEther('1000000').mul(DINERO_LTV).div(parseEther('1'))
+      );
+      expect(aliceAccount.rewardsPaid).to.be.equal(0);
+      expect(aliceAccount.lossVTokensAccrued).to.be.equal(0);
+      expect(totalFreeVTokens).to.be.closeTo(aliceDeposit1, ONE_V_TOKEN);
+
+      await network.provider.send('hardhat_mine', [
+        `0x${Number(100).toString(16)}`,
+      ]);
+
+      // Alice should incur a loss, as the state will be updated
+      // usdcWhale should not incur a loss
+      await expect(
+        dineroVenusVault.connect(usdcWhale).deposit(USDC, parseEther('50000'))
+      ).to.emit(dineroVenusVault, 'Loss');
+
+      const [
+        totalFreeUnderlying2,
+        vUSDCTotalLoss2,
+        totalFreeVTokens2,
+        usdcWhaleAccount2,
+        exchangeRate2,
+      ] = await Promise.all([
+        dineroVenusVault.totalFreeUnderlying(USDC),
+        dineroVenusVault.totalLossOf(vUSDC),
+        dineroVenusVault.totalFreeVTokenOf(vUSDC),
+        dineroVenusVault.accountOf(USDC, usdcWhale.address),
+        vUSDCContract.callStatic.exchangeRateCurrent(),
+        venusControllerContract._setVenusSpeed(vUSDC, venusSpeed.mul(2)), // make it profitable again
+      ]);
+
+      const usdcWhaleDeposit2 = parseEther('50000')
+        .mul(parseEther('1'))
+        .div(exchangeRate2);
+
+      expect(totalFreeUnderlying2).to.be.closeTo(
+        totalFreeUnderlying
+          .add(parseEther('50000'))
+          .sub(
+            vUSDCTotalLoss2
+              .mul(aliceAccount.vTokens)
+              .div(ONE_V_TOKEN)
+              .mul(exchangeRate2)
+              .div(parseEther('1'))
+              .div(PRECISION)
+          ),
+        parseEther('1')
+      );
+      // Borrow Rate costs
+      expect(
+        vUSDCTotalLoss2.gt(
+          parseEther('790000').mul(parseEther('1')).div(exchangeRate2)
+        )
+      ).to.be.equal(true);
+
+      expect(
+        totalFreeVTokens2.gt(
+          parseEther('1000000')
+            .sub(parseEther('790000'))
+            .mul(parseEther('1'))
+            .div(exchangeRate)
+            .add(parseEther('50000').mul(parseEther('1')).div(exchangeRate2))
+        )
+      ).to.be.equal(true);
+
+      expect(usdcWhaleAccount2.principal).to.be.equal(
+        parseEther('50000').mul(DINERO_LTV).div(parseEther('1'))
+      );
+      // USDC WHALE should not incur any loss
+      expect(usdcWhaleAccount2.vTokens).to.be.closeTo(
+        usdcWhaleDeposit2,
+        ONE_V_TOKEN
+      );
+      expect(usdcWhaleAccount2.rewardsPaid).to.be.equal(0);
+      expect(usdcWhaleAccount2.lossVTokensAccrued).to.be.closeTo(
+        vUSDCTotalLoss2.mul(usdcWhaleAccount2.vTokens).div(ONE_V_TOKEN),
+        ONE_V_TOKEN
+      );
+
+      // Alice should incur a loss
+      await expect(
+        dineroVenusVault.connect(alice).deposit(USDC, parseEther('450000'))
+      ).to.emit(dineroVenusVault, 'Loss');
+
+      const [
+        totalFreeUnderlying3,
+        vUSDCTotalLoss3,
+        totalFreeVTokens3,
+        aliceAccount3,
+        exchangeRate3,
+        totalVUSDCRewards3,
+      ] = await Promise.all([
+        dineroVenusVault.totalFreeUnderlying(USDC),
+        dineroVenusVault.totalLossOf(vUSDC),
+        dineroVenusVault.totalFreeVTokenOf(vUSDC),
+        dineroVenusVault.accountOf(USDC, alice.address),
+        vUSDCContract.callStatic.exchangeRateCurrent(),
+        dineroVenusVault.rewardsOf(vUSDC),
+      ]);
+
+      const aliceDeposit2 = parseEther('450000')
+        .mul(parseEther('1'))
+        .div(exchangeRate3);
+
+      expect(vUSDCTotalLoss3.gt(vUSDCTotalLoss2)).to.be.equal(true);
+
+      expect(totalFreeUnderlying3).to.closeTo(
+        parseEther('450000')
+          .add(totalFreeUnderlying2)
+          .sub(
+            vUSDCTotalLoss3
+              .sub(vUSDCTotalLoss2)
+              .mul(totalFreeVTokens2)
+              .div(ONE_V_TOKEN)
+              .mul(exchangeRate3)
+              .div(parseEther('1'))
+              .div(PRECISION)
+          )
+          .add(
+            totalVUSDCRewards3
+              .mul(totalFreeVTokens2)
+              .div(ONE_V_TOKEN)
+              .mul(exchangeRate3)
+              .div(parseEther('1'))
+              .div(PRECISION)
+          ),
+        parseEther('1')
+      );
+
+      // V Tokens loss is only calculated per user
+      expect(totalFreeVTokens3).to.be.closeTo(
+        totalFreeVTokens2
+          .add(aliceDeposit2)
+          .sub(
+            vUSDCTotalLoss3
+              .mul(aliceAccount.vTokens)
+              .div(ONE_V_TOKEN)
+              .div(PRECISION)
+              .sub(aliceAccount.lossVTokensAccrued)
+          )
+          .add(totalVUSDCRewards3.mul(aliceAccount.vTokens).div(ONE_V_TOKEN)),
+        ONE_V_TOKEN
+      );
+
+      // She still owes this much DNR
+      expect(aliceAccount3.principal).to.be.equal(
+        parseEther('1450000').mul(DINERO_LTV).div(parseEther('1'))
+      );
+
+      expect(aliceAccount3.vTokens).to.be.closeTo(
+        aliceDeposit2
+          .add(aliceAccount.vTokens)
+          .sub(
+            vUSDCTotalLoss3
+              .mul(aliceDeposit1)
+              .div(ONE_V_TOKEN)
+              .div(PRECISION)
+              .sub(aliceAccount.lossVTokensAccrued)
+          )
+          .add(
+            totalVUSDCRewards3
+              .mul(aliceAccount.vTokens)
+              .div(ONE_V_TOKEN)
+              .sub(aliceAccount.rewardsPaid)
+          ),
+        ONE_V_TOKEN
+      );
+      expect(aliceAccount3.rewardsPaid).to.be.closeTo(
+        totalVUSDCRewards3.mul(aliceAccount3.vTokens).div(ONE_V_TOKEN),
+        ONE_V_TOKEN.div(10)
+      );
+      expect(aliceAccount3.lossVTokensAccrued).to.be.closeTo(
+        vUSDCTotalLoss3.mul(aliceAccount3.vTokens).div(ONE_V_TOKEN),
+        ONE_V_TOKEN
+      );
+    });
+  });
+
   // describe('function: withdraw', () => {
   //   it('reverts if the contract is paused, the underlying is not supported, the amount is 0 or user does not have enough vTokens', async () => {
   //     await dineroVenusVault.connect(owner).pause();

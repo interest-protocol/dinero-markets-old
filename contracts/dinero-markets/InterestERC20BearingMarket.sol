@@ -534,10 +534,13 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
             // Liquidator will be paid in `COLLATERAL`
             if (inUnderlying) {
                 // Send collateral in Underlying to the `recipient` (includes liquidator fee + protocol fee)
-                COLLATERAL.safeTransfer(recipient, totalUnderlyingAmount);
+                address(COLLATERAL).safeERC20Transfer(
+                    recipient,
+                    totalUnderlyingAmount
+                );
             } else {
                 // Send as a VToken
-                IERC20Upgradeable(address(VTOKEN)).safeTransfer(
+                address(VTOKEN).safeERC20Transfer(
                     recipient,
                     liquidationInfo.allCollateral
                 );
@@ -585,10 +588,7 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         // If the person withdrawing wants the vTokens, we do not need to redeem the underlying.
         if (!inUnderlying) {
             // Send the collateral
-            IERC20Upgradeable(address(VTOKEN)).safeTransfer(
-                _msgSender(),
-                amount
-            );
+            address(VTOKEN).safeERC20Transfer(_msgSender(), amount);
 
             // Send the rewards.
             _transferXVS(_msgSender(), rewards);
@@ -602,23 +602,12 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         uint256 underlyingAmount;
 
         underlyingAmount = _redeemERC20VToken(amount);
-        COLLATERAL.safeTransfer(_msgSender(), underlyingAmount);
+        address(COLLATERAL).safeERC20Transfer(_msgSender(), underlyingAmount);
 
         // Send the rewards.
         _transferXVS(_msgSender(), rewards);
 
         emit WithdrawCollateral(_msgSender(), underlyingAmount, amount);
-    }
-
-    /**
-     * @dev Helper function to check the balance of a `token` this contract has.
-     *
-     * @param token An ERC20 token.
-     * @return uint256 The number of `token` in this contract.
-     */
-    function _contractBalanceOf(address token) private view returns (uint256) {
-        // Find how many ERC20 tokens this contract has.
-        return IERC20Upgradeable(token).balanceOf(address(this));
     }
 
     /**
@@ -647,13 +636,13 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     {
         IVToken vToken = VTOKEN;
         // Find how many VTokens we currently have.
-        uint256 balanceBefore = _contractBalanceOf(address(vToken));
+        uint256 balanceBefore = address(vToken).contractBalanceOf();
 
         // Supply ALL underlyings present in the contract even lost tokens to mint VTokens. It will revert if it fails.
         _invariant(vToken.mint(amount), "DV: failed to mint");
 
         // Subtract the new balance from the previous one, to find out how many VTokens we minted.
-        mintedAmount = _contractBalanceOf(address(vToken)) - balanceBefore;
+        mintedAmount = address(vToken).contractBalanceOf() - balanceBefore;
     }
 
     /**
@@ -667,13 +656,13 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     {
         address collateral = address(COLLATERAL);
         // Find how many VTokens we currently have.
-        uint256 balanceBefore = _contractBalanceOf(collateral);
+        uint256 balanceBefore = collateral.contractBalanceOf();
 
         // Supply ALL underlyings present in the contract even lost tokens to mint VTokens. It will revert if it fails.
         _invariant(VTOKEN.redeem(amount), "DV: failed to redeem");
 
         // Subtract the new balance from the previous one, to find out how many VTokens we minted.
-        mintedAmount = _contractBalanceOf(collateral) - balanceBefore;
+        mintedAmount = collateral.contractBalanceOf() - balanceBefore;
     }
 
     /**
@@ -692,17 +681,17 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         vTokenArray[0] = address(vToken);
 
         // Save balance of XVS before claiming.
-        uint256 xvsBalanceBefore = _contractBalanceOf(address(XVS));
+        uint256 xvsBalanceBefore = address(XVS).contractBalanceOf();
 
         // Claim XVS in the `vToken`.
         VENUS_CONTROLLER.claimVenus(address(this), vTokenArray);
 
         // Calculate how much XVS we claimed.
-        uint256 claimedVToken = _contractBalanceOf(address(XVS)) -
+        uint256 claimedVenus = address(XVS).contractBalanceOf() -
             xvsBalanceBefore;
 
         // Update state
-        totalRewardsPerVToken += claimedVToken.mulDiv(
+        totalRewardsPerVToken += claimedVenus.mulDiv(
             10**address(vToken).safeDecimals(),
             _totalCollateral
         );
@@ -717,13 +706,6 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     function _transferXVS(address to, uint256 amount) private {
         if (amount == 0) return;
 
-        //solhint-disable-next-line var-name-mixedcase
-        uint256 XVSBalance = _contractBalanceOf(address(XVS));
-
-        // In this contract our math should never cause a deviation bigger than this one.
-        assert(XVSBalance + 0.001 ether >= amount);
-
-        // Send the rewards
-        XVS.safeTransfer(to, amount > XVSBalance ? XVSBalance : amount);
+        address(XVS).safeERC20Transfer(to, amount);
     }
 }

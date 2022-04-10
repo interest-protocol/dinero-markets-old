@@ -26,6 +26,8 @@ contract MockVenusToken is ERC20 {
         uint256 exchangeRateMantissa;
     }
 
+    bool public isVToken = true;
+
     address public interestRateModel;
 
     uint256 public totalReserves;

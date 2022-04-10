@@ -519,7 +519,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
                 _sendBNB(payable(recipient), totalUnderlyingAmount);
             } else {
                 // Send as a VToken
-                IERC20Upgradeable(address(VTOKEN)).safeTransfer(
+                address(VTOKEN).safeERC20Transfer(
                     recipient,
                     liquidationInfo.allCollateral
                 );
@@ -567,10 +567,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         // If the person withdrawing wants the vTokens, we do not need to redeem the underlying.
         if (!inUnderlying) {
             // Send the collateral
-            IERC20Upgradeable(address(VTOKEN)).safeTransfer(
-                _msgSender(),
-                amount
-            );
+            address(VTOKEN).safeERC20Transfer(_msgSender(), amount);
 
             // Send the rewards.
             _transferXVS(_msgSender(), rewards);
@@ -591,17 +588,6 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         _transferXVS(_msgSender(), rewards);
 
         emit WithdrawCollateral(_msgSender(), underlyingAmount, amount);
-    }
-
-    /**
-     * @dev Helper function to check the balance of a `token` this contract has.
-     *
-     * @param token An ERC20 token.
-     * @return uint256 The number of `token` in this contract.
-     */
-    function _contractBalanceOf(address token) private view returns (uint256) {
-        // Find how many ERC20 tokens this contract has.
-        return IERC20Upgradeable(token).balanceOf(address(this));
     }
 
     /**
@@ -629,7 +615,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         returns (uint256 mintedAmount)
     {
         // Find how many VTokens we currently have.
-        uint256 balanceBefore = _contractBalanceOf(address(VTOKEN));
+        uint256 balanceBefore = address(VTOKEN).contractBalanceOf();
 
         // Supply ALL underlyings present in the contract even lost tokens to mint VTokens. It will revert if it fails.
         _invariant(
@@ -638,7 +624,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         );
 
         // Subtract the new balance from the previous one, to find out how many VTokens we minted.
-        mintedAmount = _contractBalanceOf(address(VTOKEN)) - balanceBefore;
+        mintedAmount = address(VTOKEN).contractBalanceOf() - balanceBefore;
     }
 
     /**
@@ -693,17 +679,17 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         vTokenArray[0] = address(address(VTOKEN));
 
         // Save balance of XVS before claiming.
-        uint256 xvsBalanceBefore = _contractBalanceOf(address(XVS));
+        uint256 xvsBalanceBefore = address(XVS).contractBalanceOf();
 
         // Claim XVS in the `vToken`.
         VENUS_CONTROLLER.claimVenus(address(this), vTokenArray);
 
         // Calculate how much XVS we claimed.
-        uint256 claimedVToken = _contractBalanceOf(address(XVS)) -
+        uint256 claimedVenus = address(XVS).contractBalanceOf() -
             xvsBalanceBefore;
 
         // Update state
-        totalRewardsPerVToken += claimedVToken.mulDiv(
+        totalRewardsPerVToken += claimedVenus.mulDiv(
             10**address(address(VTOKEN)).safeDecimals(),
             _totalCollateral
         );
@@ -718,14 +704,8 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
     function _transferXVS(address to, uint256 amount) private {
         if (amount == 0) return;
 
-        //solhint-disable-next-line var-name-mixedcase
-        uint256 XVSBalance = _contractBalanceOf(address(XVS));
-
-        // In this contract our math should never cause a deviation bigger than this one.
-        assert(XVSBalance + 0.001 ether >= amount);
-
         // Send the rewards
-        XVS.safeTransfer(to, amount > XVSBalance ? XVSBalance : amount);
+        address(XVS).safeERC20Transfer(to, amount);
     }
 
     /**
@@ -740,9 +720,6 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         returns (uint256)
     {
         uint256 maximum = address(this).balance;
-
-        // In this contract our math should never cause a deviation bigger than this one.
-        assert(maximum + 0.001 ether >= amount);
 
         return amount > maximum ? maximum : amount;
     }
