@@ -106,3 +106,7 @@ export const VENUS_ADMIN = getAddress(
 export const ONE_V_TOKEN = BigNumber.from(10).pow(8);
 
 export const PRECISION = BigNumber.from(10).pow(10);
+
+export const WBNB_XVS_PAIR = getAddress(
+  '0x7EB5D86FD78f3852a3e0e064f2842d45a3dB6EA2'
+);

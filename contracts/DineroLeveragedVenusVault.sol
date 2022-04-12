@@ -20,7 +20,6 @@ import "./lib/IntERC20.sol";
 
 import "./tokens/Dinero.sol";
 import "./SafeVenus.sol";
-import "hardhat/console.sol";
 
 /**
  * @dev This is a Vault to mint Dinero. The idea is to always keep the vault assets 1:1 to Dinero minted.
@@ -519,6 +518,7 @@ contract DineroLeveragedVenusVault is
         accountOf[underlying][_msgSender()] = userAccount;
         totalFreeVTokenOf[vToken] = totalFreeVTokens;
 
+        // Remove DUST
         uint256 amountOfUnderlyingToRedeem = (rewards + vTokenAmount).bmul(
             vToken.exchangeRateCurrent()
         );
@@ -530,36 +530,48 @@ contract DineroLeveragedVenusVault is
 
             // Get a safe redeemable amount to prevent liquidation.
             uint256 safeAmount = safeVenus.safeRedeem(this, vToken);
-
+            uint256 balance = underlying.contractBalanceOf();
             // Upper bound to prevent infinite loops.
             uint256 maxTries;
 
             // If we cannot redeem enough to cover the `amountOfUnderlyingToRedeem`. We will start to deleverage; up to 10x.
             // The less we are borrowing, the more we can redeem because the loans are overcollaterized.
-            // Vault needs good liquidity and moderate leverage to avoid this lofic.
-            while (amountOfUnderlyingToRedeem > safeAmount && maxTries <= 10) {
+            // Vault needs good liquidity and moderate leverage to avoid this logic.
+            while (
+                amountOfUnderlyingToRedeem > safeAmount &&
+                amountOfUnderlyingToRedeem > balance &&
+                maxTries <= 10
+            ) {
+                if (1 ether > safeAmount) break;
+
                 _redeemAndRepay(vToken, safeAmount);
                 // update the safeAmout for the next iteration.
                 safeAmount = safeVenus.safeRedeem(this, vToken);
+                // Add some room to compensate for DUST. SafeVenus has a large enough room to accomodate for one dollar.
+                balance = underlying.contractBalanceOf() + 1 ether;
                 maxTries += 1;
             }
 
             // Make sure we can safely withdraw the `amountOfUnderlyingToRedeem`.
             require(
-                safeAmount >= amountOfUnderlyingToRedeem,
+                safeAmount >= amountOfUnderlyingToRedeem ||
+                    balance >= amountOfUnderlyingToRedeem,
                 "DV: failed to withdraw"
             );
 
-            // Redeem the underlying. It will revert if we are unable to withdraw.
-            // For dust we need to withdraw the min amount.
-            _invariant(
-                vToken.redeemUnderlying(
-                    amountOfUnderlyingToRedeem.min(
-                        vToken.balanceOfUnderlying(address(this))
-                    )
-                ),
-                "DV: failed to redeem"
-            );
+            // If the balance cannot cover, we need to redeem
+            if (amountOfUnderlyingToRedeem > balance) {
+                // Redeem the underlying. It will revert if we are unable to withdraw.
+                // For dust we need to withdraw the min amount.
+                _invariant(
+                    vToken.redeemUnderlying(
+                        amountOfUnderlyingToRedeem.min(
+                            vToken.balanceOfUnderlying(address(this))
+                        )
+                    ),
+                    "DV: failed to redeem"
+                );
+            }
         }
 
         // Uniswap style ,block scoping, to prevent stack too deep local variable errors.
@@ -571,11 +583,11 @@ contract DineroLeveragedVenusVault is
             uint256 fee = amountOfUnderlyingToRedeem.bmul(0.005e18);
             uint256 amountToSend = amountOfUnderlyingToRedeem - fee;
 
-            // Send underlying to user.
-            underlying.safeERC20Transfer(_msgSender(), amountToSend);
-
             // Send fee to the protocol treasury.
             underlying.safeERC20Transfer(FEE_TO, fee);
+
+            // Send underlying to user.
+            underlying.safeERC20Transfer(_msgSender(), amountToSend);
 
             emit Withdraw(_msgSender(), underlying, amountToSend, vTokenAmount);
         }
@@ -673,6 +685,8 @@ contract DineroLeveragedVenusVault is
         // Stop either when deleverage returns 0 or if we are not above the max tries threshold.
         // Deleverage function from safeVenus returns 0 when we are within a safe limit.
         while (amount > 0 && maxTries < 5) {
+            if (1 ether > amount) break;
+
             _redeemAndRepay(vToken, amount);
             // Update the amount for the next iteration.
             amount = safeVenus.deleverage(this, vToken);
@@ -730,6 +744,7 @@ contract DineroLeveragedVenusVault is
         if (prevFreeUnderlying > currentFreeUnderlying) {
             // Need to find the difference, then convert to vTokens by multiplying by the {vToken.exchangeRateCurrent}. Lastly, we need to devide by the total free vTokens.
             // Important to note the mantissa of exchangeRateCurrent is 18 while vTokens usually have a mantissa of 8.
+
             uint256 loss = ((prevFreeUnderlying - currentFreeUnderlying).bdiv(
                 vToken.exchangeRateCurrent()
             ) * PRECISION).mulDiv(
@@ -774,7 +789,6 @@ contract DineroLeveragedVenusVault is
         VENUS_CONTROLLER.claimVenus(address(this), vTokenArray);
 
         uint256 xvsBalance = XVS.contractBalanceOf();
-
         // There is no point to continue if there are no XVS rewards.
         if (xvsBalance == 0) return;
 
@@ -836,7 +850,7 @@ contract DineroLeveragedVenusVault is
         uint256 safeBorrowAmount = SAFE_VENUS.safeBorrow(this, vToken);
 
         // We will not compound if we can only borrow 500 USD or less. This vault only supports USD stable coins with 18 decimal.
-        if (safeBorrowAmount <= 500 ether) return;
+        if (500 ether >= safeBorrowAmount) return;
 
         // Borrow from the vToken. We will throw if it fails.
         _invariant(vToken.borrow(safeBorrowAmount), "DV: failed to borrow");
@@ -854,6 +868,7 @@ contract DineroLeveragedVenusVault is
      */
     function _redeemAndRepay(IVToken vToken, uint256 amount) private {
         uint256 underlyingBalance = vToken.balanceOfUnderlying(address(this));
+
         // Redeem `amount` from `vToken`. It will revert on failure.
         // To avoid errors due to dust. Cannot withdraw more than what we have
         _invariant(
@@ -925,6 +940,8 @@ contract DineroLeveragedVenusVault is
         // We intend to only have a compound depth of 3. So an upperbound of 10 is more than enough.
 
         while (redeemAmount > 0 && borrowAmount > 0 && maxTries <= 15) {
+            if (1 ether > redeemAmount) break;
+
             // redeem and repay
             _redeemAndRepay(vToken, redeemAmount);
 

@@ -81,6 +81,7 @@ contract MockSafeVenus {
         returns (uint256)
     {
         if (_safeReddem != DEFAULT) return _safeReddem;
+
         (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
         uint256 collateralRatio = safeCollateralRatio(vault, vToken);
         uint256 result = supply - borrow.bdiv(collateralRatio);

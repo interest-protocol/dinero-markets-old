@@ -60,6 +60,8 @@ contract MockVenusToken is ERC20 {
 
     uint256 public totalBorrowsCurrent;
 
+    uint256 public totalBorrows = 70171150351097307235014135;
+
     // Because we do not want to add complexity by mocking the Venus Controller
     uint256 public _collateralFactor;
 
@@ -72,6 +74,10 @@ contract MockVenusToken is ERC20 {
     }
 
     ReturnValue public returnValues;
+
+    uint256 public accrualBlockNumber = 16_677_000;
+
+    uint256 public borrowIndex = 1104168746983935733;
 
     constructor(
         string memory name,
