@@ -75,6 +75,8 @@ export const vDAI = getAddress('0x334b3eCB4DCa3593BCCC3c7EBD1A1C1d1780FBF1');
 
 export const vBTC = getAddress('0x882C173bC7Ff3b7786CA16dfeD3DFFfb9Ee7847B');
 
+export const vBNB = getAddress('0xA07c5b74C9B40447a954e1466938b865b6BBea36');
+
 export const MAX_UINT_96 = ethers.BigNumber.from(
   '79228162514264337593543950335'
 );
@@ -99,6 +101,10 @@ export const XVS_WHALE = getAddress(
   '0xf977814e90da44bfa03b6295a0616a897441acec'
 );
 
+export const WBNB_WHALE = getAddress(
+  '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'
+);
+
 export const VENUS_ADMIN = getAddress(
   '0x939bd8d64c0a9583a7dcea9933f7b21697ab6396'
 );
@@ -109,4 +115,10 @@ export const PRECISION = BigNumber.from(10).pow(10);
 
 export const WBNB_XVS_PAIR = getAddress(
   '0x7EB5D86FD78f3852a3e0e064f2842d45a3dB6EA2'
+);
+
+// FEEDS
+
+export const BNB_USD_PRICE_FEED = getAddress(
+  '0x0567f2323251f0aab15c8dfb1967e4e8a7d42aee'
 );

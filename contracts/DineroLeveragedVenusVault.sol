@@ -19,7 +19,9 @@ import "./lib/IntMath.sol";
 import "./lib/IntERC20.sol";
 
 import "./tokens/Dinero.sol";
+
 import "./SafeVenus.sol";
+import "hardhat/console.sol";
 
 /**
  * @dev This is a Vault to mint Dinero. The idea is to always keep the vault assets 1:1 to Dinero minted.
@@ -368,6 +370,11 @@ contract DineroLeveragedVenusVault is
         // It returns the new VTokens minted.
         uint256 vTokensMinted = _mintVToken(vToken, amount);
 
+        // Charge a 0.5% fee on deposit
+        uint256 fee = vTokensMinted.bmul(0.005e18);
+        vTokensMinted -= fee;
+        accountOf[underlying][FEE_TO].vTokens += fee.toUint128();
+
         // Update the data
         totalFreeVTokens += vTokensMinted;
         userAccount.principal += amount.bmul(dineroLTV).toUint128();
@@ -431,7 +438,6 @@ contract DineroLeveragedVenusVault is
 
         // Find the vToken of the underlying.
         IVToken vToken = vTokenOf[underlying];
-
         // Update the rewards before any state mutation, to fairly distribute them.
         _investXVS(vToken);
 
@@ -457,7 +463,6 @@ contract DineroLeveragedVenusVault is
             lossPerVToken = _updateLoss(underlying, vToken);
 
             // If there was a loss, we need to charge the user.
-
             // Fairly calculate how much to charge the user, based on his balance and deposit length.
             uint256 lossInVTokens = uint256(userAccount.vTokens).mulDiv(
                 lossPerVToken,
@@ -471,7 +476,6 @@ contract DineroLeveragedVenusVault is
                 // They are no longer free because they need were used to cover the loss.
                 totalFreeVTokens -= _lossInVTokens;
             }
-
             // Calculate the rewards the user is entitled to based on the current VTokens he holds and rewards per VTokens.
             // We do not need to update the {totalFreeVTokens} because we will give these rewards to the user.
             rewards =
@@ -490,7 +494,6 @@ contract DineroLeveragedVenusVault is
                 userAccount.principal,
                 userAccount.vTokens
             );
-
             // We do effects before checks/updates here to save memory and we can trust this token.
             // Recover the Dinero lent to keep the ratio 1:1
             DINERO.burn(_msgSender(), dineroToBurn);
@@ -503,7 +506,6 @@ contract DineroLeveragedVenusVault is
             // We need to update the userAccount.vTokens before updating the {lossVTokensAccrued and rewardsPaid}
             // Otherwise, the calculations for rewards and losses will be off in the next call for this user.
             userAccount.vTokens -= vTokenAmount.toUint128();
-
             // Consider all rewards fairly paid.
             userAccount.rewardsPaid = uint256(userAccount.vTokens).mulDiv(
                 rewardPerVToken,
@@ -579,17 +581,18 @@ contract DineroLeveragedVenusVault is
             // Update current free underlying after all mutations in underlying.
             totalFreeUnderlying[underlying] = _getTotalFreeUnderlying(vToken);
 
-            // Protocol charges a 0.5% fee on withdrawls.
-            uint256 fee = amountOfUnderlyingToRedeem.bmul(0.005e18);
-            uint256 amountToSend = amountOfUnderlyingToRedeem - fee;
-
-            // Send fee to the protocol treasury.
-            underlying.safeERC20Transfer(FEE_TO, fee);
-
             // Send underlying to user.
-            underlying.safeERC20Transfer(_msgSender(), amountToSend);
+            underlying.safeERC20Transfer(
+                _msgSender(),
+                amountOfUnderlyingToRedeem
+            );
 
-            emit Withdraw(_msgSender(), underlying, amountToSend, vTokenAmount);
+            emit Withdraw(
+                _msgSender(),
+                underlying,
+                amountOfUnderlyingToRedeem,
+                vTokenAmount
+            );
         }
     }
 
@@ -1167,6 +1170,117 @@ contract DineroLeveragedVenusVault is
         dineroLTV = newDineroLTV;
 
         emit DineroLTV(previousValue, newDineroLTV);
+    }
+
+    /**
+     * @dev It allows he owner to withdraw the reserves tokens to the treasury
+     *
+     * @notice The reserves do not incur losses nor rewards.
+     *
+     * @param underlying The underlying market, which vTokens will be removed
+     * @param vTokenAmount The number of vTokens to withdraw
+     *
+     * Requirements:
+     *
+     * - Only the owner can call this function
+     * - Market must be unpaused
+     * - The underlying must be supported by this market
+     * - The reserves must have enough `vTokenAmount`
+     * - The `vTokenAmount` must be greater than 0
+     */
+    function withdrawReserves(address underlying, uint256 vTokenAmount)
+        external
+        onlyOwner
+        whenNotPaused
+        isWhitelisted(underlying)
+    {
+        // We do not support the concept of harvesting the rewards as they are "auto compounded".
+        // `msg.sender` must always withdraw some VTokens.
+        // Rewards will be given on top of every withdrawl.
+        require(vTokenAmount > 0, "DV: no zero amount");
+
+        // Get User Account data
+        UserAccount memory userAccount = accountOf[underlying][FEE_TO];
+
+        require(userAccount.vTokens >= vTokenAmount, "DV: not enough balance");
+
+        // Find the vToken of the underlying.
+        IVToken vToken = vTokenOf[underlying];
+
+        // Update State
+        userAccount.vTokens -= vTokenAmount.toUint128();
+
+        // Update Global State
+        accountOf[underlying][_msgSender()] = userAccount;
+
+        // Remove DUST
+        uint256 amountOfUnderlyingToRedeem = vTokenAmount.bmul(
+            vToken.exchangeRateCurrent()
+        );
+
+        // Uniswap style, block scoping, to prevent stack too deep local variable errors.
+        {
+            // Save gas
+            SafeVenus safeVenus = SAFE_VENUS;
+
+            // Get a safe redeemable amount to prevent liquidation.
+            uint256 safeAmount = safeVenus.safeRedeem(this, vToken);
+            uint256 balance = underlying.contractBalanceOf();
+            // Upper bound to prevent infinite loops.
+            uint256 maxTries;
+
+            // If we cannot redeem enough to cover the `amountOfUnderlyingToRedeem`. We will start to deleverage; up to 10x.
+            // The less we are borrowing, the more we can redeem because the loans are overcollaterized.
+            // Vault needs good liquidity and moderate leverage to avoid this logic.
+            while (
+                amountOfUnderlyingToRedeem > safeAmount &&
+                amountOfUnderlyingToRedeem > balance &&
+                maxTries <= 10
+            ) {
+                if (1 ether > safeAmount) break;
+
+                _redeemAndRepay(vToken, safeAmount);
+                // update the safeAmout for the next iteration.
+                safeAmount = safeVenus.safeRedeem(this, vToken);
+                // Add some room to compensate for DUST. SafeVenus has a large enough room to accomodate for one dollar.
+                balance = underlying.contractBalanceOf() + 1 ether;
+                maxTries += 1;
+            }
+
+            // Make sure we can safely withdraw the `amountOfUnderlyingToRedeem`.
+            require(
+                safeAmount >= amountOfUnderlyingToRedeem ||
+                    balance >= amountOfUnderlyingToRedeem,
+                "DV: failed to withdraw"
+            );
+
+            // If the balance cannot cover, we need to redeem
+            if (amountOfUnderlyingToRedeem > balance) {
+                // Redeem the underlying. It will revert if we are unable to withdraw.
+                // For dust we need to withdraw the min amount.
+                _invariant(
+                    vToken.redeemUnderlying(
+                        amountOfUnderlyingToRedeem.min(
+                            vToken.balanceOfUnderlying(address(this))
+                        )
+                    ),
+                    "DV: failed to redeem"
+                );
+            }
+        }
+
+        // Update current free underlying after all mutations in underlying.
+        totalFreeUnderlying[underlying] = _getTotalFreeUnderlying(vToken);
+
+        // Send underlying to user.
+        underlying.safeERC20Transfer(FEE_TO, amountOfUnderlyingToRedeem);
+
+        emit Withdraw(
+            FEE_TO,
+            underlying,
+            amountOfUnderlyingToRedeem,
+            vTokenAmount
+        );
     }
 
     /**

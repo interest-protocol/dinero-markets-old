@@ -1,6 +1,6 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
-import { Contract } from 'ethers';
+import { BigNumber, Contract } from 'ethers';
 import { ethers, network } from 'hardhat';
 
 import ERC20ABI from '../abi/erc20.json';
@@ -47,7 +47,10 @@ const { parseEther } = ethers.utils;
 
 const DINERO_LTV = parseEther('0.7');
 
-describe('DineroLeverageVenusVault', () => {
+const calculateFee = (x: BigNumber) =>
+  x.mul(parseEther('0.005')).div(parseEther('1'));
+
+describe('Dinero Leverage Venus Vault', () => {
   let dineroVenusVault: TestDineroVenusVault;
   let dinero: Dinero;
   let safeVenus: MockSafeVenus;
@@ -946,6 +949,36 @@ describe('DineroLeverageVenusVault', () => {
         dineroVenusVault.connect(usdcWhale).deposit(USDC, 0)
       ).to.revertedWith('DV: no zero amount');
     });
+    it('it charges a fee to the reserves', async () => {
+      const [feeToAccount, exchangeRate] = await Promise.all([
+        dineroVenusVault.accountOf(USDC, feeTo.address),
+        vUSDCContract.callStatic.exchangeRateCurrent(),
+      ]);
+
+      expect(feeToAccount.rewardsPaid).to.be.equal(0);
+      expect(feeToAccount.lossVTokensAccrued).to.be.equal(0);
+      expect(feeToAccount.vTokens).to.be.equal(0);
+      expect(feeToAccount.principal).to.be.equal(0);
+
+      await expect(
+        dineroVenusVault.connect(usdcWhale).deposit(USDC, parseEther('100000'))
+      ).to.emit(dineroVenusVault, 'Deposit');
+
+      const feeToAccount2 = await dineroVenusVault.accountOf(
+        USDC,
+        feeTo.address
+      );
+
+      expect(feeToAccount2.rewardsPaid).to.be.equal(0);
+      expect(feeToAccount2.lossVTokensAccrued).to.be.equal(0);
+      expect(feeToAccount2.vTokens).to.be.closeTo(
+        calculateFee(
+          parseEther('100000').mul(parseEther('1')).div(exchangeRate)
+        ),
+        1e7 // 1/10 of a vToken
+      );
+      expect(feeToAccount2.principal).to.be.equal(0);
+    });
     it('does not claim XVS not checks for rewards or losses on first deposit', async () => {
       const [
         usdcWhaleUSDCBalance,
@@ -983,6 +1016,8 @@ describe('DineroLeverageVenusVault', () => {
         .mul(parseEther('1'))
         .div(exchangeRate);
 
+      const fee = calculateFee(vTokensMinted);
+
       const factoryContract = new ethers.Contract(
         PCS_FACTORY,
         PCSFactoryABI,
@@ -1008,7 +1043,7 @@ describe('DineroLeverageVenusVault', () => {
         .withArgs(
           ethers.constants.AddressZero,
           dineroVenusVault.address,
-          vTokensMinted
+          vTokensMinted.sub(fee)
         )
         .to.not.emit(venusControllerContract, 'DistributedSupplierVenus')
         .to.not.emit(venusControllerContract, 'DistributedBorrowerVenus')
@@ -1043,7 +1078,10 @@ describe('DineroLeverageVenusVault', () => {
         vUSDCUSDBalance.add(parseEther('100000'))
       );
       expect(vaultVUSDCBalance2).to.be.closeTo(vTokensMinted, ONE_V_TOKEN);
-      expect(totalFreeVTokens2).to.be.closeTo(vTokensMinted, ONE_V_TOKEN);
+      expect(totalFreeVTokens2).to.be.closeTo(
+        vTokensMinted.sub(fee),
+        ONE_V_TOKEN
+      );
       expect(rewards2).to.be.equal(0);
       expect(totalFreeUnderlying2).to.be.closeTo(
         parseEther('100000'),
@@ -1053,7 +1091,7 @@ describe('DineroLeverageVenusVault', () => {
         parseEther('100000').mul(DINERO_LTV).div(parseEther('1'))
       );
       expect(usdcWhaleAccount2.vTokens).to.be.closeTo(
-        vTokensMinted,
+        vTokensMinted.sub(fee),
         ONE_V_TOKEN
       );
       expect(usdcWhaleAccount2.principal).to.be.equal(
@@ -1087,11 +1125,13 @@ describe('DineroLeverageVenusVault', () => {
         vUSDCRewards,
         usdcWhaleAccount,
         usdcWhale2Account,
+        totalFreeVUSDC,
       ] = await Promise.all([
         vUSDCContract.balanceOf(dineroVenusVault.address),
         dineroVenusVault.rewardsOf(vUSDC),
         dineroVenusVault.accountOf(USDC, usdcWhale.address),
         dineroVenusVault.accountOf(USDC, usdcWhale2.address),
+        dineroVenusVault.totalFreeVTokenOf(vUSDC),
         USDC_USDC_WHALE_TWO.approve(
           dineroVenusVault.address,
           ethers.constants.MaxUint256
@@ -1104,6 +1144,8 @@ describe('DineroLeverageVenusVault', () => {
         .mul(parseEther('1'))
         .div(exchangeRate);
 
+      const fee = calculateFee(usdcWhaleVTokensMinted);
+
       expect(vaultVUSDCBalance).to.be.closeTo(
         usdcWhaleVTokensMinted,
         ONE_V_TOKEN
@@ -1111,7 +1153,7 @@ describe('DineroLeverageVenusVault', () => {
       expect(vUSDCRewards).to.be.equal(0);
       expect(usdcWhaleAccount.rewardsPaid).to.be.equal(0);
       expect(usdcWhaleAccount.vTokens).to.be.closeTo(
-        vaultVUSDCBalance,
+        vaultVUSDCBalance.sub(fee),
         ONE_V_TOKEN
       );
       expect(usdcWhaleAccount.principal).to.be.equal(
@@ -1159,6 +1201,8 @@ describe('DineroLeverageVenusVault', () => {
         .mul(parseEther('1'))
         .div(exchangeRate2);
 
+      const fee2 = calculateFee(usdcWhale2VTokensMinted);
+
       expect(
         vaultVUSDCBalance
           .add(usdcWhale2VTokensMinted)
@@ -1172,26 +1216,23 @@ describe('DineroLeverageVenusVault', () => {
           .sub(vaultVUSDCBalance.add(usdcWhale2VTokensMinted))
           .mul(ONE_V_TOKEN)
           .mul(PRECISION)
-          .div(vaultVUSDCBalance)
+          .div(totalFreeVUSDC)
       );
       expect(usdcWhale2Account2.rewardsPaid).to.be.equal(
         usdcWhale2Account2.vTokens.mul(vUSDCRewards2).div(ONE_V_TOKEN)
       );
       expect(usdcWhale2Account2.vTokens).to.be.closeTo(
-        usdcWhale2VTokensMinted,
+        usdcWhale2VTokensMinted.sub(fee2),
         ONE_V_TOKEN
       );
       expect(usdcWhaleAccount2.principal).to.be.equal(
         usdcWhaleAccount2.principal
       );
       expect(usdcWhale2Account2.rewardsPaid).to.be.closeTo(
-        usdcWhale2VTokensMinted.mul(vUSDCRewards2).div(ONE_V_TOKEN),
+        usdcWhale2VTokensMinted.sub(fee2).mul(vUSDCRewards2).div(ONE_V_TOKEN),
         ONE_V_TOKEN
       );
-      expect(usdcWhale2Account2.vTokens).to.be.closeTo(
-        usdcWhale2VTokensMinted,
-        ONE_V_TOKEN
-      );
+
       expect(usdcWhale2Account2.principal).to.be.equal(
         parseEther('2000000').mul(DINERO_LTV).div(parseEther('1'))
       );
@@ -1218,6 +1259,8 @@ describe('DineroLeverageVenusVault', () => {
         .mul(parseEther('1'))
         .div(exchangeRate3);
 
+      const fee3 = calculateFee(usdcWhaleVTokensMinted2);
+
       expect(vaultVUSDCBalance3).to.be.closeTo(
         vaultVUSDCBalance2
           .add(usdcWhaleVTokensMinted2)
@@ -1239,7 +1282,8 @@ describe('DineroLeverageVenusVault', () => {
               .mul(usdcWhaleAccount2.vTokens)
               .div(ONE_V_TOKEN)
               .div(PRECISION)
-          ),
+          )
+          .sub(fee3),
         ONE_V_TOKEN
       );
       expect(usdcWhaleAccount3.principal).to.be.equal(
@@ -1292,6 +1336,8 @@ describe('DineroLeverageVenusVault', () => {
         .mul(parseEther('1'))
         .div(exchangeRate4);
 
+      const fee4 = calculateFee(usdcWhale2VTokensMinted2);
+
       expect(vaultVUSDCBalance4).to.be.closeTo(
         vaultVUSDCBalance3
           .add(usdcWhale2VTokensMinted2)
@@ -1314,7 +1360,7 @@ describe('DineroLeverageVenusVault', () => {
               .sub(usdcWhale2Account3.rewardsPaid)
               .div(PRECISION)
           )
-          .add(usdcWhale2VTokensMinted2),
+          .add(usdcWhale2VTokensMinted2.sub(fee4)),
         ONE_V_TOKEN
       );
       expect(usdcWhale2Account4.principal).to.be.closeTo(
@@ -1396,19 +1442,27 @@ describe('DineroLeverageVenusVault', () => {
         .mul(parseEther('1'))
         .div(exchangeRate);
 
+      const aliceFee1 = calculateFee(aliceDeposit1);
+
       expect(vUSDCTotalLoss).to.be.equal(0);
       expect(totalFreeUnderlying).to.be.closeTo(
         parseEther('1000000'),
         parseEther('0.1')
       );
 
-      expect(aliceAccount.vTokens).to.be.closeTo(aliceDeposit1, ONE_V_TOKEN);
+      expect(aliceAccount.vTokens).to.be.closeTo(
+        aliceDeposit1.sub(aliceFee1),
+        ONE_V_TOKEN
+      );
       expect(aliceAccount.principal).to.be.equal(
         parseEther('1000000').mul(DINERO_LTV).div(parseEther('1'))
       );
       expect(aliceAccount.rewardsPaid).to.be.equal(0);
       expect(aliceAccount.lossVTokensAccrued).to.be.equal(0);
-      expect(totalFreeVTokens).to.be.closeTo(aliceDeposit1, ONE_V_TOKEN);
+      expect(totalFreeVTokens).to.be.closeTo(
+        aliceDeposit1.sub(aliceFee1),
+        ONE_V_TOKEN
+      );
 
       await network.provider.send('hardhat_mine', [
         `0x${Number(100).toString(16)}`,
@@ -1438,6 +1492,8 @@ describe('DineroLeverageVenusVault', () => {
         .mul(parseEther('1'))
         .div(exchangeRate2);
 
+      const usdcWhaleFee1 = calculateFee(usdcWhaleDeposit2);
+
       expect(totalFreeUnderlying2).to.be.closeTo(
         totalFreeUnderlying
           .add(parseEther('50000'))
@@ -1465,6 +1521,7 @@ describe('DineroLeverageVenusVault', () => {
             .mul(parseEther('1'))
             .div(exchangeRate)
             .add(parseEther('50000').mul(parseEther('1')).div(exchangeRate2))
+            .sub(usdcWhaleFee1)
         )
       ).to.be.equal(true);
 
@@ -1473,7 +1530,7 @@ describe('DineroLeverageVenusVault', () => {
       );
       // USDC WHALE should not incur any loss
       expect(usdcWhaleAccount2.vTokens).to.be.closeTo(
-        usdcWhaleDeposit2,
+        usdcWhaleDeposit2.sub(usdcWhaleFee1),
         ONE_V_TOKEN
       );
       expect(usdcWhaleAccount2.rewardsPaid).to.be.equal(0);
@@ -1506,6 +1563,8 @@ describe('DineroLeverageVenusVault', () => {
       const aliceDeposit2 = parseEther('450000')
         .mul(parseEther('1'))
         .div(exchangeRate3);
+
+      const aliceFee2 = calculateFee(aliceDeposit2);
 
       expect(vUSDCTotalLoss3.gt(vUSDCTotalLoss2)).to.be.equal(true);
 
@@ -1543,7 +1602,8 @@ describe('DineroLeverageVenusVault', () => {
               .div(PRECISION)
               .sub(aliceAccount.lossVTokensAccrued)
           )
-          .add(totalVUSDCRewards3.mul(aliceAccount.vTokens).div(ONE_V_TOKEN)),
+          .add(totalVUSDCRewards3.mul(aliceAccount.vTokens).div(ONE_V_TOKEN))
+          .sub(aliceFee2),
         ONE_V_TOKEN
       );
 
@@ -1554,10 +1614,11 @@ describe('DineroLeverageVenusVault', () => {
 
       expect(aliceAccount3.vTokens).to.be.closeTo(
         aliceDeposit2
+          .sub(aliceFee2)
           .add(aliceAccount.vTokens)
           .sub(
             vUSDCTotalLoss3
-              .mul(aliceDeposit1)
+              .mul(aliceAccount.vTokens)
               .div(ONE_V_TOKEN)
               .div(PRECISION)
               .sub(aliceAccount.lossVTokensAccrued)
@@ -1570,6 +1631,7 @@ describe('DineroLeverageVenusVault', () => {
           ),
         ONE_V_TOKEN
       );
+
       expect(aliceAccount3.rewardsPaid).to.be.closeTo(
         totalVUSDCRewards3.mul(aliceAccount3.vTokens).div(ONE_V_TOKEN),
         ONE_V_TOKEN.div(10)
@@ -1682,6 +1744,9 @@ describe('DineroLeverageVenusVault', () => {
       const vTokenAmount = parseEther('1000')
         .mul(parseEther('1'))
         .div(exchangeRate);
+
+      const fee = calculateFee(vTokenAmount);
+
       expect(usdcWhaleDineroBalance).to.be.equal(
         parseEther('1000').mul(DINERO_LTV).div(parseEther('1'))
       );
@@ -1698,7 +1763,7 @@ describe('DineroLeverageVenusVault', () => {
       expect(usdcWhaleAccount.rewardsPaid).to.be.equal(0);
       expect(usdcWhaleAccount.lossVTokensAccrued).to.be.equal(0);
       expect(usdcWhaleAccount.vTokens).to.be.closeTo(
-        parseEther('1000').mul(parseEther('1')).div(exchangeRate),
+        vTokenAmount.sub(fee),
         ONE_V_TOKEN
       );
       expect(totalFreeVTokens).to.be.equal(usdcWhaleAccount.vTokens);
@@ -1711,10 +1776,6 @@ describe('DineroLeverageVenusVault', () => {
         .mul(exchangeRate)
         .div(parseEther('1'));
 
-      const usdcWhaleFee = usdcWhaleAmountToRedeem
-        .mul(parseEther('0.005'))
-        .div(parseEther('1'));
-
       await expect(
         dineroVenusVault
           .connect(usdcWhale)
@@ -1724,23 +1785,17 @@ describe('DineroLeverageVenusVault', () => {
         .withArgs(
           usdcWhale.address,
           USDC,
-          usdcWhaleAmountToRedeem.sub(usdcWhaleFee),
+          usdcWhaleAmountToRedeem,
           vUSDCWhaleAmountToWithdraw
         )
         .to.emit(dinero, 'Transfer')
         .withArgs(
           usdcWhale.address,
           ethers.constants.AddressZero,
-          vUSDCWhaleAmountToWithdraw.mul(parseEther('1000')).div(vTokenAmount)
+          vUSDCWhaleAmountToWithdraw
+            .mul(parseEther('1000'))
+            .div(vTokenAmount.sub(fee))
         )
-        .to.emit(USDCContract, 'Transfer')
-        .withArgs(
-          dineroVenusVault.address,
-          usdcWhale.address,
-          usdcWhaleAmountToRedeem.sub(usdcWhaleFee)
-        )
-        .to.emit(USDCContract, 'Transfer')
-        .withArgs(dineroVenusVault.address, feeTo.address, usdcWhaleFee)
         .to.emit(vUSDCContract, 'Redeem')
         .to.emit(vUSDCContract, 'Transfer')
         .to.not.emit(dineroVenusVault, 'Loss')
@@ -1770,28 +1825,30 @@ describe('DineroLeverageVenusVault', () => {
         usdcWhaleDineroBalance.sub(
           vUSDCWhaleAmountToWithdraw
             .mul(usdcWhaleDineroBalance)
-            .div(vTokenAmount)
+            .div(vTokenAmount.sub(fee))
         ),
         parseEther('0.1') // 10 cents
       );
 
       expect(usdcWhaleUSDCBalance3).to.be.closeTo(
-        usdcWhaleUSDCBalance2.add(usdcWhaleAmountToRedeem.sub(usdcWhaleFee)),
+        usdcWhaleUSDCBalance2.add(usdcWhaleAmountToRedeem),
         parseEther('0.1') // 10 cents
       );
       expect(totalFreeUnderlying2).to.be.closeTo(
         totalFreeUnderlying.sub(usdcWhaleAmountToRedeem),
         parseEther('0.1') // 10 cents
       );
-      expect(totalFreeVTokens2).to.be.equal(
-        totalFreeVTokens.sub(vUSDCWhaleAmountToWithdraw)
+
+      expect(totalFreeVTokens2).to.be.closeTo(
+        totalFreeVTokens.sub(vUSDCWhaleAmountToWithdraw),
+        ONE_V_TOKEN
       );
 
       expect(usdcWhaleAccount2.principal).to.be.closeTo(
         usdcWhaleAccount.principal.sub(
           vUSDCWhaleAmountToWithdraw
             .mul(usdcWhaleAccount.principal)
-            .div(vTokenAmount)
+            .div(vTokenAmount.sub(fee))
         ),
         parseEther('0.1') // 10 cents
       );
@@ -1851,10 +1908,6 @@ describe('DineroLeverageVenusVault', () => {
         .mul(exchangeRate2)
         .div(parseEther('1'));
 
-      const usdcWhaleFee2 = usdcWhaleAmountToRedeem2
-        .mul(parseEther('0.005'))
-        .div(parseEther('1'));
-
       expect(usdcWhaleDineroBalance3).to.be.equal(
         usdcWhaleDineroBalance2.sub(
           usdcWhaleAmountToWithdraw2
@@ -1864,13 +1917,15 @@ describe('DineroLeverageVenusVault', () => {
       );
 
       expect(usdcWhaleUSDCBalance4).to.be.closeTo(
-        usdcWhaleUSDCBalance3.add(usdcWhaleAmountToRedeem2).sub(usdcWhaleFee2),
+        usdcWhaleUSDCBalance3.add(usdcWhaleAmountToRedeem2),
         parseEther('0.01') // 1 cent
       );
 
       const bobDepositInVTokens = parseEther('25000')
         .mul(parseEther('1'))
         .div(exchangeRate2);
+
+      const bobFee = calculateFee(bobDepositInVTokens);
 
       // TS does not know closeTo supports BigNumber ont he second parameter
       expect(totalFreeUnderlying3).to.be.closeTo(
@@ -1883,7 +1938,7 @@ describe('DineroLeverageVenusVault', () => {
       );
 
       expect(totalFreeVTokens3).to.be.closeTo(
-        usdcWhaleAccount3.vTokens.add(bobDepositInVTokens),
+        usdcWhaleAccount3.vTokens.add(bobDepositInVTokens.sub(bobFee)),
         ONE_V_TOKEN
       );
       expect(usdcWhaleAccount3.vTokens).to.be.closeTo(
@@ -1925,6 +1980,7 @@ describe('DineroLeverageVenusVault', () => {
       await dineroVenusVault
         .connect(usdcWhale)
         .deposit(USDC, parseEther('1000000'));
+
       const borrowAndSupply = await safeVenus.callStatic.borrowAndSupply(
         dineroVenusVault.address,
         vUSDC
@@ -1949,13 +2005,21 @@ describe('DineroLeverageVenusVault', () => {
         safeVenus.callStatic.borrowAndSupply(dineroVenusVault.address, vUSDC),
       ]);
 
+      const usdcWhaleDeposit1 = parseEther('1000000')
+        .mul(parseEther('1'))
+        .div(exchangeRate);
+
+      const fee = calculateFee(usdcWhaleDeposit1);
+
       expect(vUSDCTotalLoss).to.be.equal(0);
+
       expect(totalFreeUnderlying).to.be.closeTo(
         parseEther('1000000'),
         parseEther('0.1')
       );
+
       expect(totalFreeVTokens).to.be.closeTo(
-        parseEther('1000000').mul(parseEther('1')).div(exchangeRate),
+        usdcWhaleDeposit1.sub(fee),
         ONE_V_TOKEN
       );
 
@@ -1968,6 +2032,12 @@ describe('DineroLeverageVenusVault', () => {
           dineroVenusVault.accountOf(USDC, bob.address),
           dineroVenusVault.accountOf(USDC, usdcWhale.address),
         ]);
+
+      const bobDepositAmount = parseEther('50000')
+        .mul(parseEther('1'))
+        .div(exchangeRate);
+
+      const bobFee = calculateFee(bobDepositAmount);
 
       const loss = borrowAndSupply.supply
         .sub(borrowAndSupply.borrow)
@@ -1989,7 +2059,9 @@ describe('DineroLeverageVenusVault', () => {
         parseEther('50000')
           .add(parseEther('1000000'))
           .mul(parseEther('1'))
-          .div(exchangeRate),
+          .div(exchangeRate)
+          .sub(fee)
+          .sub(bobFee),
         ONE_V_TOKEN
       );
 
@@ -2004,7 +2076,7 @@ describe('DineroLeverageVenusVault', () => {
 
       // Loss still has not been registered in free V Tokens not incurred by BOB
       expect(await dineroVenusVault.totalFreeVTokenOf(vUSDC)).to.be.closeTo(
-        parseEther('1000000').mul(parseEther('1')).div(exchangeRate),
+        parseEther('1000000').mul(parseEther('1')).div(exchangeRate).sub(fee),
         ONE_V_TOKEN
       );
 
@@ -2092,10 +2164,10 @@ describe('DineroLeverageVenusVault', () => {
         parseEther('0.1')
       );
 
-      // DUST
+      // Reserves
       // 1 dollar = 1e18
       expect(balanceOfUnderlying).to.be.closeTo(
-        ethers.BigNumber.from(0),
+        calculateFee(parseEther('100000')),
         parseEther('0.1')
       );
 
@@ -2178,11 +2250,18 @@ describe('DineroLeverageVenusVault', () => {
       .mul(parseEther('1'))
       .div(exchangeRate);
 
+    const fee = calculateFee(vTokensMinted);
+
     await expect(
       dineroVenusVault.connect(usdcWhale).deposit(USDC, parseEther('100000'))
     )
       .to.emit(dineroVenusVault, 'Deposit')
-      .withArgs(usdcWhale.address, USDC, parseEther('100000'), vTokensMinted)
+      .withArgs(
+        usdcWhale.address,
+        USDC,
+        parseEther('100000'),
+        vTokensMinted.sub(fee)
+      )
       .to.emit(USDCContract, 'Transfer')
       .withArgs(
         usdcWhale.address,
@@ -2221,7 +2300,10 @@ describe('DineroLeverageVenusVault', () => {
     );
     expect(version).to.be.equal('V2');
     expect(vaultVUSDCBalance2).to.be.closeTo(vTokensMinted, ONE_V_TOKEN);
-    expect(totalFreeVTokens2).to.be.closeTo(vTokensMinted, ONE_V_TOKEN);
+    expect(totalFreeVTokens2).to.be.closeTo(
+      vTokensMinted.sub(fee),
+      ONE_V_TOKEN
+    );
     expect(totalFreeUnderlying2).to.be.closeTo(
       parseEther('100000'),
       parseEther('0.1')
@@ -2229,7 +2311,10 @@ describe('DineroLeverageVenusVault', () => {
     expect(usdcWhaleDineroBalance2).to.be.equal(
       parseEther('100000').mul(DINERO_LTV).div(parseEther('1'))
     );
-    expect(usdcWhaleAccount2.vTokens).to.be.closeTo(vTokensMinted, ONE_V_TOKEN);
+    expect(usdcWhaleAccount2.vTokens).to.be.closeTo(
+      vTokensMinted.sub(fee),
+      ONE_V_TOKEN
+    );
     expect(usdcWhaleAccount2.principal).to.be.equal(
       parseEther('100000').mul(DINERO_LTV).div(parseEther('1'))
     );
