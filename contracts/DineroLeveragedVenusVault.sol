@@ -1211,7 +1211,7 @@ contract DineroLeveragedVenusVault is
         userAccount.vTokens -= vTokenAmount.toUint128();
 
         // Update Global State
-        accountOf[underlying][_msgSender()] = userAccount;
+        accountOf[underlying][FEE_TO] = userAccount;
 
         // Remove DUST
         uint256 amountOfUnderlyingToRedeem = vTokenAmount.bmul(

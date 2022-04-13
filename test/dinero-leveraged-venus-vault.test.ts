@@ -2331,4 +2331,107 @@ describe('Dinero Leverage Venus Vault', () => {
       .to.emit(dineroVenusVault, 'Deposit')
       .to.emit(wBNBXvsPair, 'Swap');
   });
+
+  describe('function: withdrawReserves', () => {
+    it('reverts if does not pass the requirements', async () => {
+      await expect(
+        dineroVenusVault.connect(alice).withdrawReserves(alice.address, 0)
+      ).to.revertedWith('Ownable: caller is not the owner');
+
+      await dineroVenusVault.pause();
+
+      await expect(
+        dineroVenusVault.connect(owner).withdrawReserves(alice.address, 0)
+      ).to.revertedWith('Pausable: paused');
+
+      await dineroVenusVault.unpause();
+
+      await expect(
+        dineroVenusVault.connect(owner).withdrawReserves(alice.address, 0)
+      ).to.revertedWith('DV: underlying not whitelisted');
+
+      await expect(
+        dineroVenusVault.connect(owner).withdrawReserves(USDC, 0)
+      ).to.revertedWith('DV: no zero amount');
+
+      await expect(
+        dineroVenusVault.connect(owner).withdrawReserves(USDC, 100)
+      ).to.revertedWith('DV: not enough balance');
+    });
+    it('reverts if can not withdraw enough underlying', async () => {
+      await dineroVenusVault.removeVToken(vUSDC);
+      await Promise.all([
+        dineroVenusVault.addVToken(mockVUSDC.address),
+        safeVenus.__setSafeRedeem(parseEther('0.1')),
+      ]);
+
+      await dineroVenusVault
+        .connect(usdcWhale)
+        .deposit(USDC, parseEther('10000'));
+
+      const reserveAmount = calculateFee(
+        parseEther('10000')
+          .mul(parseEther('1'))
+          .div(ethers.BigNumber.from('213429808155036526652502393'))
+      );
+
+      await expect(
+        dineroVenusVault.connect(owner).withdrawReserves(USDC, reserveAmount)
+      ).to.revertedWith('DV: failed to withdraw');
+
+      // Reset to normal functionality
+      await Promise.all([
+        safeVenus.__setSafeRedeem(1234),
+        mockVUSDC.__setRedeemUnderlyingReturn(1),
+      ]);
+
+      await expect(
+        dineroVenusVault.connect(owner).withdrawReserves(USDC, reserveAmount)
+      ).to.revertedWith('DV: failed to redeem');
+    });
+    it('withdraws the reserves tokens', async () => {
+      await dineroVenusVault
+        .connect(usdcWhale)
+        .deposit(USDC, parseEther('100000'));
+
+      const [feeToUSDCAccount, feeToUSDCBalance, exchangeRate] =
+        await Promise.all([
+          dineroVenusVault.accountOf(USDC, feeTo.address),
+          USDCContract.balanceOf(feeTo.address),
+          vUSDCContract.callStatic.exchangeRateCurrent(),
+        ]);
+
+      const reserveAmount = calculateFee(
+        parseEther('100000').mul(parseEther('1')).div(exchangeRate)
+      );
+
+      expect(feeToUSDCAccount.vTokens).to.be.equal(reserveAmount);
+      expect(feeToUSDCBalance).to.be.equal(0);
+
+      await expect(
+        dineroVenusVault.withdrawReserves(USDC, reserveAmount)
+      ).to.emit(dineroVenusVault, 'Withdraw');
+
+      const [
+        feeToUSDCAccount2,
+        feeToUSDCBalance2,
+        totalFreeUnderlying,
+        borrowAndSupply,
+      ] = await Promise.all([
+        dineroVenusVault.accountOf(USDC, feeTo.address),
+        USDCContract.balanceOf(feeTo.address),
+        dineroVenusVault.totalFreeUnderlying(USDC),
+        safeVenus.callStatic.borrowAndSupply(dineroVenusVault.address, vUSDC),
+      ]);
+
+      expect(feeToUSDCAccount2.vTokens).to.be.equal(0);
+      expect(feeToUSDCBalance2).to.be.closeTo(
+        calculateFee(parseEther('100000')),
+        parseEther('0.01')
+      );
+      expect(totalFreeUnderlying).to.be.equal(
+        borrowAndSupply.supply.sub(borrowAndSupply.borrow)
+      );
+    });
+  });
 }).timeout(10_000);
