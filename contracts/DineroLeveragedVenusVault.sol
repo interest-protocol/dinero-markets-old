@@ -21,7 +21,6 @@ import "./lib/IntERC20.sol";
 import "./tokens/Dinero.sol";
 
 import "./SafeVenus.sol";
-import "hardhat/console.sol";
 
 /**
  * @dev This is a Vault to mint Dinero. The idea is to always keep the vault assets 1:1 to Dinero minted.
@@ -605,11 +604,11 @@ contract DineroLeveragedVenusVault is
      *
      * - The contract must be unpaused.
      */
-    function leverage(IVToken vToken) external whenNotPaused {
-        require(
-            _underlyingWhitelist.contains(vToken.underlying()),
-            "DV: not allowed"
-        );
+    function leverage(IVToken vToken)
+        external
+        whenNotPaused
+        isWhitelisted(vToken.underlying())
+    {
         _leverage(vToken);
     }
 
@@ -642,11 +641,11 @@ contract DineroLeveragedVenusVault is
      *
      * - The contract must be unpaused.
      */
-    function deleverage(IVToken vToken) external whenNotPaused {
-        require(
-            _underlyingWhitelist.contains(vToken.underlying()),
-            "DV: not allowed"
-        );
+    function deleverage(IVToken vToken)
+        external
+        whenNotPaused
+        isWhitelisted(vToken.underlying())
+    {
         _deleverage(vToken);
     }
 

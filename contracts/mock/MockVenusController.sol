@@ -137,3 +137,7 @@ contract MockVenusController is IVenusController {
         _exitMarketValueReturn = value;
     }
 }
+
+contract MockVenusControllerClaimVenus {
+    function claimVenus(address, address[] calldata) external {}
+}

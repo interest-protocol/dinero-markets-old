@@ -3,9 +3,9 @@ pragma solidity 0.8.13;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-import "../lib/IntMath.sol";
+import "../../lib/IntMath.sol";
 
-import "./ERC20/MockERC20.sol";
+import "../ERC20/MockERC20.sol";
 
 //solhint-disable
 contract MockVBNB is ERC20 {
@@ -107,7 +107,7 @@ contract MockVBNB is ERC20 {
         return 8;
     }
 
-    function mint(uint256) external payable returns (uint256) {
+    function mint(uint256) public payable returns (uint256) {
         uint256 value = returnValues.mint;
 
         if (value > 0) return value;
@@ -117,6 +117,10 @@ contract MockVBNB is ERC20 {
         _mint(_msgSender(), msg.value.bdiv(exchangeRateCurrent));
 
         return 0;
+    }
+
+    receive() external payable {
+        mint(msg.value);
     }
 
     function redeem(uint256 amount) external returns (uint256) {

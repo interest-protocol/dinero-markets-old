@@ -3,5 +3,5 @@ pragma solidity 0.8.13;
 
 interface IVBNB {
     // VBep20 Interface
-    function mint(uint256 mintAmount) external payable returns (uint256);
+    function mint(uint256 amount) external payable returns (uint256);
 }
