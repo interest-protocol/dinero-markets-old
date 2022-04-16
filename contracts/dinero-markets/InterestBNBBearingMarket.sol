@@ -31,7 +31,6 @@ import "../lib/IntERC20.sol";
 import "../OracleV1.sol";
 
 import "./DineroMarket.sol";
-import "hardhat/console.sol";
 
 /**
  * @dev It is an overcollaterized isolated lending market between an underlying Venus Token and the synthetic stable coin Dinero.
