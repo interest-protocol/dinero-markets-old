@@ -79,6 +79,14 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 allocationPoints
     );
 
+    event AddPool(
+        IERC20Upgradeable indexed token,
+        uint256 indexed poolId,
+        uint256 allocationPoints
+    );
+
+    event NewInterestTokenRatePerBlock(uint256 rate);
+
     /*///////////////////////////////////////////////////////////////
                                 STRUCTS
     //////////////////////////////////////////////////////////////*/
@@ -659,6 +667,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         updatePools(update)
     {
         interestTokenPerBlock = _interestTokenPerBlock;
+        emit NewInterestTokenRatePerBlock(_interestTokenPerBlock);
     }
 
     /**
@@ -705,6 +714,8 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // Update the pool 0.
         _updateStakingPool();
+
+        emit AddPool(token, pools.length - 1, allocationPoints);
     }
 
     /**

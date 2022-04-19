@@ -98,7 +98,7 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         IERC20Upgradeable(0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63); // Venus Token.
 
     // solhint-disable-next-line var-name-mixedcase
-    IERC20Upgradeable public COLLATERAL; // Token to be used to cover the loan. In case of BNB, it will be address(0)
+    IERC20Upgradeable public COLLATERAL; // Token to be used to cover the loan.
 
     // solhint-disable-next-line var-name-mixedcase
     IVToken public VTOKEN; // A Venus Market.

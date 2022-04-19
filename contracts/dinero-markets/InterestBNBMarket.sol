@@ -46,7 +46,7 @@ import "./DineroMarket.sol";
  * If Dinero falls below, borrowers that have open  loans and swapped to a different crypto, can buy dinero cheaper and close their loans running a profit. Liquidators can accumulate Dinero to close underwater positions with an arbitrate. As liquidation will always assume 1 Dinero is worth 1 USD. If Dinero goes above a dollar, people are encouraged to borrow more Dinero for arbitrage. We believe this will keep the price pegged at 1 USD.
  *
  */
-contract InterestBNBMarketV1 is
+contract InterestBNBMarket is
     Initializable,
     ReentrancyGuardUpgradeable,
     DineroMarket
@@ -192,7 +192,7 @@ contract InterestBNBMarketV1 is
 
         _repayFresh(account, principal);
 
-        _withdrawCollateralFresh(to, amount);
+        _withdrawCollateral(to, amount);
     }
 
     /**
@@ -234,7 +234,7 @@ contract InterestBNBMarketV1 is
         // Update how much is owed to the protocol before allowing collateral to be withdrawn
         accrue();
 
-        _withdrawCollateralFresh(to, amount);
+        _withdrawCollateral(to, amount);
     }
 
     /**
@@ -394,7 +394,7 @@ contract InterestBNBMarketV1 is
      * @param to The address that will receive the collateral being withdrawn.
      * @param amount The number of BNB tokens he wishes to withdraw.
      */
-    function _withdrawCollateralFresh(address to, uint256 amount) private {
+    function _withdrawCollateral(address to, uint256 amount) private {
         // Update State
         userCollateral[_msgSender()] -= amount;
 

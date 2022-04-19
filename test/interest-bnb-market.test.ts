@@ -1,154 +1,139 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
+import { Contract } from 'ethers';
 import { ethers, network } from 'hardhat';
 
+import PCSFactoryABI from '../abi/pcs-factory.json';
+import PCSRouterABI from '../abi/pcs-router.json';
+import WBNBABI from '../abi/wbnb.json';
 import {
   Dinero,
-  ETHRouter,
-  InterestBNBMarketV1,
-  LiquidityRouter,
-  MockChainLinkFeed,
-  MockERC20,
+  InterestBNBMarket,
+  MockOracle,
   MockTWAP,
   OracleV1,
-  PancakeFactory,
   ReentrantInterestBNBMarketLiquidate,
   ReentrantInterestBNBMarketWithdrawCollateral,
   TestInterestBNBMarketV2,
-  WETH9,
 } from '../typechain';
-import { BURNER_ROLE, MINTER_ROLE } from './lib/constants';
+import {
+  BURNER_ROLE,
+  MINTER_ROLE,
+  PCS_FACTORY,
+  PCS_ROUTER,
+  WBNB,
+  WBNB_WHALE,
+} from './lib/constants';
 import {
   advanceBlock,
   advanceBlockAndTime,
   advanceTime,
   deploy,
   deployUUPS,
+  impersonate,
   multiDeploy,
   upgrade,
 } from './lib/test-utils';
 
-const BNB_USD_PRICE = ethers.BigNumber.from('50000000000'); // 500 USD
+const INTEREST_RATE = ethers.BigNumber.from(12e8);
+
+const MAX_LTV = ethers.BigNumber.from('500000000000000000');
+
+const LIQUIDATION_FEE = ethers.BigNumber.from('100000000000000000');
 
 const { parseEther } = ethers.utils;
 
-describe('InterestBNBMarketV1', () => {
-  let interestBNBMarket: InterestBNBMarketV1;
+describe('InterestBNBMarket', () => {
+  let market: InterestBNBMarket;
   let dinero: Dinero;
   let oracle: OracleV1;
-  let mockBnbUsdDFeed: MockChainLinkFeed;
-  let weth: WETH9;
-  let factory: PancakeFactory;
-  let router: ETHRouter;
-  let liquidityRouter: LiquidityRouter;
+  let router: Contract;
   let mockTWAP: MockTWAP;
-  let busd: MockERC20;
+  let mockOracle: MockOracle;
 
   let owner: SignerWithAddress;
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
   let treasury: SignerWithAddress;
-  let developer: SignerWithAddress;
   let jose: SignerWithAddress;
   let recipient: SignerWithAddress;
 
-  beforeEach(async () => {
-    [owner, alice, bob, treasury, developer, jose, recipient] =
-      await ethers.getSigners();
+  before(async () => {
+    [owner, alice, bob, treasury, recipient, jose] = await ethers.getSigners();
 
-    [dinero, [weth, mockBnbUsdDFeed, factory, mockTWAP, busd]] =
-      await Promise.all([
-        deployUUPS('Dinero', []),
-        multiDeploy(
-          [
-            'WETH9',
-            'MockChainLinkFeed',
-            'PancakeFactory',
-            'MockTWAP',
-            'MockERC20',
-          ],
-          [
-            [],
-            [8, 'CAKE/USD', 1],
-            [developer.address],
-            [],
-            ['Binance USD', 'BUSD', parseEther('1000')],
-          ]
-        ),
-      ]);
-
-    [oracle, [router, liquidityRouter]] = await Promise.all([
-      deployUUPS('OracleV1', [
-        mockTWAP.address,
-        mockBnbUsdDFeed.address,
-        weth.address,
-        busd.address,
-      ]),
-      multiDeploy(
-        ['ETHRouter', 'LiquidityRouter'],
-        [
-          [factory.address, weth.address],
-          [factory.address, weth.address],
-        ]
-      ),
-    ]);
-
-    [interestBNBMarket] = await Promise.all([
-      deployUUPS('InterestBNBMarketV1', [
-        router.address,
-        dinero.address,
-        treasury.address,
-        oracle.address,
-        ethers.BigNumber.from(12e8),
-        ethers.BigNumber.from('500000000000000000'),
-        ethers.BigNumber.from('100000000000000000'),
-      ]),
-      mockBnbUsdDFeed.setAnswer(BNB_USD_PRICE),
-      oracle.connect(owner).setFeed(weth.address, mockBnbUsdDFeed.address, 0),
-      weth.approve(liquidityRouter.address, ethers.constants.MaxUint256),
-      weth.connect(owner).mint(parseEther('1000')),
-    ]);
-
+    dinero = await deployUUPS('Dinero', []);
     await Promise.all([
       dinero.connect(owner).grantRole(MINTER_ROLE, owner.address),
-      dinero.connect(owner).grantRole(MINTER_ROLE, interestBNBMarket.address),
-      dinero.connect(owner).grantRole(BURNER_ROLE, interestBNBMarket.address),
+      impersonate(WBNB_WHALE),
+    ]);
+
+    const wbnbWhaleSigner = await ethers.getSigner(WBNB_WHALE);
+
+    router = new ethers.Contract(PCS_ROUTER, PCSRouterABI, wbnbWhaleSigner);
+    const wbnb = new ethers.Contract(WBNB, WBNBABI, wbnbWhaleSigner);
+
+    await Promise.all([
+      dinero.connect(owner).mint(owner.address, parseEther('3000000')),
+      dinero.connect(owner).mint(alice.address, parseEther('500000')),
+      dinero.connect(owner).mint(WBNB_WHALE, parseEther('10000000')),
+      dinero
+        .connect(wbnbWhaleSigner)
+        .approve(PCS_ROUTER, ethers.constants.MaxUint256),
+      wbnb
+        .connect(wbnbWhaleSigner)
+        .approve(PCS_ROUTER, ethers.constants.MaxUint256),
+      wbnb.deposit({ value: parseEther('22000') }),
+    ]);
+
+    // BNB/DINERO Liquidity
+    await router.addLiquidity(
+      WBNB,
+      dinero.address,
+      parseEther('22200'),
+      parseEther('10000000'),
+      parseEther('22200'),
+      parseEther('10000000'),
+      owner.address,
+      ethers.constants.MaxUint256
+    );
+  });
+
+  beforeEach(async () => {
+    [mockTWAP, mockOracle] = await multiDeploy(
+      ['MockTWAP', 'MockOracle'],
+      [[], []]
+    );
+
+    oracle = await deployUUPS('OracleV1', [mockTWAP.address]);
+
+    market = await deployUUPS('InterestBNBMarket', [
+      dinero.address,
+      treasury.address,
+      oracle.address,
+      INTEREST_RATE,
+      MAX_LTV,
+      LIQUIDATION_FEE,
     ]);
 
     await Promise.all([
-      dinero.connect(owner).mint(owner.address, parseEther('700000')),
-      dinero.connect(owner).mint(alice.address, parseEther('500000')),
-      dinero.approve(liquidityRouter.address, ethers.constants.MaxUint256),
-      // BNB/DINERO Liquidity
-      liquidityRouter
-        .connect(owner)
-        .addLiquidity(
-          weth.address,
-          dinero.address,
-          parseEther('1000'),
-          parseEther('500000'),
-          parseEther('1000'),
-          parseEther('500000'),
-          owner.address,
-          ethers.constants.MaxUint256
-        ),
-      interestBNBMarket.updateExchangeRate(),
+      dinero.connect(owner).grantRole(MINTER_ROLE, market.address),
+      dinero.connect(owner).grantRole(BURNER_ROLE, market.address),
+      market.updateExchangeRate(),
     ]);
   });
 
   describe('function: initialize', () => {
     it('reverts if you initialize after deployment', async () => {
       await expect(
-        interestBNBMarket
+        market
           .connect(alice)
           .initialize(
-            router.address,
             dinero.address,
             treasury.address,
             oracle.address,
-            ethers.BigNumber.from(12e8),
-            ethers.BigNumber.from('500000000000000000'),
-            ethers.BigNumber.from('100000000000000000')
+            INTEREST_RATE,
+            MAX_LTV,
+            LIQUIDATION_FEE
           )
       ).to.revertedWith('Initializable: contract is already initialized');
     });
@@ -156,7 +141,6 @@ describe('InterestBNBMarketV1', () => {
     it('sets the initial state correctly', async () => {
       const [
         _owner,
-        _router,
         _dinero,
         _feeTo,
         _oracle,
@@ -164,104 +148,105 @@ describe('InterestBNBMarketV1', () => {
         _maxLTVRatio,
         _liquidationFee,
       ] = await Promise.all([
-        interestBNBMarket.owner(),
-        interestBNBMarket.ROUTER(),
-        interestBNBMarket.DINERO(),
-        interestBNBMarket.FEE_TO(),
-        interestBNBMarket.ORACLE(),
-        interestBNBMarket.loan(),
-        interestBNBMarket.maxLTVRatio(),
-        interestBNBMarket.liquidationFee(),
+        market.owner(),
+        market.DINERO(),
+        market.FEE_TO(),
+        market.ORACLE(),
+        market.loan(),
+        market.maxLTVRatio(),
+        market.liquidationFee(),
       ]);
 
       expect(_owner).to.be.equal(owner.address);
-      expect(_router).to.be.equal(router.address);
       expect(_dinero).to.be.equal(dinero.address);
       expect(_feeTo).to.be.equal(treasury.address);
       expect(_oracle).to.be.equal(oracle.address);
-      expect(_loan.INTEREST_RATE).to.be.equal(ethers.BigNumber.from(12e8));
-      expect(_maxLTVRatio).to.be.equal(
-        ethers.BigNumber.from('500000000000000000')
-      );
-      expect(_liquidationFee).to.be.equal(
-        ethers.BigNumber.from('100000000000000000')
-      );
+      expect(_loan.INTEREST_RATE).to.be.equal(INTEREST_RATE);
+      expect(_maxLTVRatio).to.be.equal(MAX_LTV);
+      expect(_liquidationFee).to.be.equal(LIQUIDATION_FEE);
     });
   });
 
   it('sends the fees earned to the feeTo address', async () => {
     await alice.sendTransaction({
-      to: interestBNBMarket.address,
+      to: market.address,
       value: parseEther('3'),
     });
 
-    await interestBNBMarket
-      .connect(alice)
-      .borrow(alice.address, parseEther('700'));
+    await market.connect(alice).borrow(alice.address, parseEther('500'));
 
     // Pass time to accrue fees
     await advanceTime(10_000, ethers); // advance 10_000 seconds
 
-    const debt = parseEther('700')
+    const debt = parseEther('500')
       .mul(ethers.BigNumber.from(12e8))
       .mul(10_000)
       .div(parseEther('1'));
 
-    expect(await dinero.balanceOf(treasury.address)).to.be.equal(0);
+    const [treasuryDineroBalance, totalLoan] = await Promise.all([
+      dinero.balanceOf(treasury.address),
+      market.totalLoan(),
+    ]);
+
+    expect(treasuryDineroBalance).to.be.equal(0);
     // Accrue has not been called
-    expect((await interestBNBMarket.totalLoan()).elastic).to.be.equal(
-      parseEther('700')
-    );
+    expect(totalLoan.elastic).to.be.equal(parseEther('500'));
+    expect(totalLoan.base).to.be.equal(parseEther('500'));
 
-    await expect(interestBNBMarket.getEarnings())
-      .to.emit(interestBNBMarket, 'Accrue')
-      .to.emit(interestBNBMarket, 'GetEarnings');
+    await expect(market.getEarnings())
+      .to.emit(market, 'Accrue')
+      .to.emit(market, 'GetEarnings');
 
-    expect((await interestBNBMarket.loan()).feesEarned).to.be.equal(0);
-    expect((await dinero.balanceOf(treasury.address)).gte(debt)).to.be.equal(
-      true
-    );
+    const [loan2, totalLoan2, treasuryDineroBalance2] = await Promise.all([
+      market.loan(),
+      market.totalLoan(),
+      dinero.balanceOf(treasury.address),
+    ]);
+    expect(loan2.feesEarned).to.be.equal(0);
     expect(
-      (await interestBNBMarket.totalLoan()).elastic.gte(
-        parseEther('700').add(debt)
-      )
-    );
+      treasuryDineroBalance2.gte(treasuryDineroBalance.add(debt))
+    ).to.be.equal(true);
+    expect(totalLoan2.elastic.gte(parseEther('700').add(debt)));
+    expect(totalLoan2.base).to.be.equal(parseEther('500'));
   });
   describe('function: accrue', () => {
     it('does not accrue fees if there is no open loans', async () => {
-      const loan = await interestBNBMarket.loan();
-      expect((await interestBNBMarket.totalLoan()).base).to.be.equal(0);
-      await expect(interestBNBMarket.accrue()).to.not.emit(
-        interestBNBMarket,
-        'Accrue'
-      );
-      const loan2 = await interestBNBMarket.loan();
+      const [loan, totalLoan] = await Promise.all([
+        market.loan(),
+        market.totalLoan(),
+      ]);
+
+      expect(totalLoan.base).to.be.equal(0);
+      await expect(market.accrue()).to.not.emit(market, 'Accrue');
+
+      const [loan2, totalLoan2] = await Promise.all([
+        market.loan(),
+        market.totalLoan(),
+      ]);
       // It only updated the timestamp
       expect(loan.lastAccrued.lt(loan2.lastAccrued)).to.be.equal(true);
       expect(loan2.feesEarned).to.be.equal(0);
-      expect((await interestBNBMarket.totalLoan()).base).to.be.equal(0);
+      expect(totalLoan2.base).to.be.equal(0);
     });
     it('does not update if no time has passed', async () => {
       await network.provider.send('evm_setAutomine', [false]);
 
-      // Add 50 CAKE as collateral
-      await interestBNBMarket
+      // Add 10 BNB as collateral
+      await market
         .connect(alice)
         .addCollateral(alice.address, { value: parseEther('10') });
 
       await advanceBlock(ethers);
 
       // Borrow 490 DINERO
-      await interestBNBMarket
-        .connect(alice)
-        .borrow(alice.address, parseEther('490'));
+      await market.connect(alice).borrow(alice.address, parseEther('490'));
 
       await advanceBlock(ethers);
 
       await advanceBlockAndTime(50_000, ethers);
 
-      const receipt = await interestBNBMarket.accrue();
-      const receipt2 = await interestBNBMarket.accrue();
+      const receipt = await market.accrue();
+      const receipt2 = await market.accrue();
 
       await advanceBlock(ethers);
 
@@ -282,33 +267,28 @@ describe('InterestBNBMarketV1', () => {
     });
     it('accrues the interest rate', async () => {
       await alice.sendTransaction({
-        to: interestBNBMarket.address,
+        to: market.address,
         value: parseEther('3'),
       });
 
-      await interestBNBMarket
-        .connect(alice)
-        .borrow(alice.address, parseEther('700'));
+      await market.connect(alice).borrow(alice.address, parseEther('500'));
       const [loan, totalLoan] = await Promise.all([
-        interestBNBMarket.loan(),
-        interestBNBMarket.totalLoan(),
+        market.loan(),
+        market.totalLoan(),
       ]);
 
       // Pass time to accrue fees
       await advanceTime(10_000, ethers); // advance 10_000 seconds
-      const debt = parseEther('700')
+      const debt = parseEther('500')
         .mul(ethers.BigNumber.from(12e8))
         .mul(10_000)
         .div(parseEther('1'));
 
-      await expect(interestBNBMarket.accrue()).to.emit(
-        interestBNBMarket,
-        'Accrue'
-      );
+      await expect(market.accrue()).to.emit(market, 'Accrue');
 
       const [loan2, totalLoan2] = await Promise.all([
-        interestBNBMarket.loan(),
-        interestBNBMarket.totalLoan(),
+        market.loan(),
+        market.totalLoan(),
       ]);
 
       expect(loan.feesEarned).to.be.equal(0);
@@ -322,147 +302,183 @@ describe('InterestBNBMarketV1', () => {
   });
   describe('function: updateExchangeRate', () => {
     it('reverts if the rate is 0', async () => {
-      await mockBnbUsdDFeed.setAnswer(0);
-      await expect(interestBNBMarket.updateExchangeRate()).to.revertedWith(
+      const market = await deployUUPS('InterestBNBMarket', [
+        dinero.address,
+        treasury.address,
+        mockOracle.address,
+        INTEREST_RATE,
+        MAX_LTV,
+        LIQUIDATION_FEE,
+      ]);
+
+      await expect(market.updateExchangeRate()).to.revertedWith(
         'MKT: invalid exchange rate'
       );
     });
     it('does not update the state if the interest rate is the same', async () => {
-      expect(await interestBNBMarket.exchangeRate()).to.be.equal(
-        parseEther('500')
-      );
-      await expect(interestBNBMarket.updateExchangeRate()).to.not.emit(
-        interestBNBMarket,
+      const market = await deployUUPS('InterestBNBMarket', [
+        dinero.address,
+        treasury.address,
+        mockOracle.address,
+        INTEREST_RATE,
+        MAX_LTV,
+        LIQUIDATION_FEE,
+      ]);
+
+      await mockOracle.__setBNBUSDPrice(parseEther('500'));
+      await market.updateExchangeRate();
+
+      expect(await market.exchangeRate()).to.be.equal(parseEther('500'));
+
+      await expect(market.updateExchangeRate()).to.not.emit(
+        market,
         'ExchangeRate'
       );
-      expect(await interestBNBMarket.exchangeRate()).to.be.equal(
-        parseEther('500')
-      );
+      expect(await market.exchangeRate()).to.be.equal(parseEther('500'));
     });
     it('updates the exchange rate', async () => {
-      expect(await interestBNBMarket.exchangeRate()).to.be.equal(
-        parseEther('500')
-      );
+      const market = await deployUUPS('InterestBNBMarket', [
+        dinero.address,
+        treasury.address,
+        mockOracle.address,
+        INTEREST_RATE,
+        MAX_LTV,
+        LIQUIDATION_FEE,
+      ]);
 
-      await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('52000000000'));
+      await mockOracle.__setBNBUSDPrice(parseEther('500'));
+      await market.updateExchangeRate();
 
-      await expect(interestBNBMarket.updateExchangeRate()).to.emit(
-        interestBNBMarket,
-        'ExchangeRate'
-      );
+      await mockOracle.__setBNBUSDPrice(parseEther('300'));
 
-      expect(await interestBNBMarket.exchangeRate()).to.be.equal(
-        parseEther('520')
-      );
+      await expect(market.updateExchangeRate())
+        .to.emit(market, 'ExchangeRate')
+        .withArgs(parseEther('300'));
+
+      expect(await market.exchangeRate()).to.be.equal(parseEther('300'));
     });
   });
   it('allows an account to add collateral', async () => {
-    expect(await interestBNBMarket.userCollateral(bob.address)).to.be.equal(0);
-    expect(await interestBNBMarket.userCollateral(alice.address)).to.be.equal(
-      0
-    );
+    const [aliceCollateral, bobCollateral] = await Promise.all([
+      market.userCollateral(alice.address),
+      market.userCollateral(bob.address),
+    ]);
+
+    expect(aliceCollateral).to.be.equal(0);
+    expect(bobCollateral).to.be.equal(0);
+
     await expect(
-      interestBNBMarket
+      market
         .connect(alice)
         .addCollateral(bob.address, { value: parseEther('5') })
     )
-      .to.emit(interestBNBMarket, 'AddCollateral')
+      .to.emit(market, 'AddCollateral')
       .withArgs(alice.address, bob.address, parseEther('5'));
 
-    expect(await interestBNBMarket.userCollateral(bob.address)).to.be.equal(
+    expect(await market.userCollateral(bob.address)).to.be.equal(
       parseEther('5')
     );
 
     await expect(
-      interestBNBMarket
+      market
         .connect(alice)
         .addCollateral(alice.address, { value: parseEther('2') })
     )
-      .to.emit(interestBNBMarket, 'AddCollateral')
+      .to.emit(market, 'AddCollateral')
       .withArgs(alice.address, alice.address, parseEther('2'));
 
-    expect(await interestBNBMarket.userCollateral(alice.address)).to.be.equal(
+    expect(await market.userCollateral(alice.address)).to.be.equal(
       parseEther('2')
     );
 
     await expect(
       alice.sendTransaction({
-        to: interestBNBMarket.address,
+        to: market.address,
         value: parseEther('1'),
       })
     )
-      .to.emit(interestBNBMarket, 'AddCollateral')
+      .to.emit(market, 'AddCollateral')
       .withArgs(alice.address, alice.address, parseEther('1'));
 
-    expect(await interestBNBMarket.userCollateral(alice.address)).to.be.equal(
+    expect(await market.userCollateral(alice.address)).to.be.equal(
       parseEther('3')
     );
   });
   describe('function: withdrawCollateral', () => {
     it('reverts if the caller is insolvent', async () => {
-      await interestBNBMarket
+      await market
         .connect(alice)
         .addCollateral(alice.address, { value: parseEther('2') });
 
-      await interestBNBMarket
-        .connect(alice)
-        .borrow(alice.address, parseEther('400'));
+      await market.connect(alice).borrow(alice.address, parseEther('400'));
 
       await expect(
-        interestBNBMarket
-          .connect(alice)
-          .withdrawCollateral(alice.address, parseEther('2'))
+        market.connect(alice).withdrawCollateral(alice.address, parseEther('2'))
       ).to.revertedWith('MKT: sender is insolvent');
 
       await expect(
-        interestBNBMarket
+        market
           .connect(alice)
-          .withdrawCollateral(alice.address, parseEther('1'))
+          .withdrawCollateral(alice.address, parseEther('1.1'))
       ).to.revertedWith('MKT: sender is insolvent');
     });
     it('allows collateral to be withdrawn', async () => {
-      await interestBNBMarket
+      const market = await deployUUPS('InterestBNBMarket', [
+        dinero.address,
+        treasury.address,
+        mockOracle.address,
+        INTEREST_RATE,
+        MAX_LTV,
+        LIQUIDATION_FEE,
+      ]);
+
+      await mockOracle.__setBNBUSDPrice(parseEther('500'));
+
+      await Promise.all([
+        dinero.connect(owner).grantRole(MINTER_ROLE, market.address),
+        dinero.connect(owner).grantRole(BURNER_ROLE, market.address),
+        market.updateExchangeRate(),
+      ]);
+
+      await market
         .connect(alice)
         .addCollateral(alice.address, { value: parseEther('2') });
 
       const [bobBalance, aliceCollateral] = await Promise.all([
         bob.getBalance(),
-        interestBNBMarket.userCollateral(alice.address),
-        interestBNBMarket
-          .connect(alice)
-          .borrow(alice.address, parseEther('100')),
+        market.userCollateral(alice.address),
+        market.connect(alice).borrow(alice.address, parseEther('100')),
       ]);
 
-      await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('51000000000'));
+      await mockOracle.__setBNBUSDPrice(parseEther('510'));
 
       await expect(
-        interestBNBMarket
-          .connect(alice)
-          .withdrawCollateral(bob.address, parseEther('1.5'))
+        market.connect(alice).withdrawCollateral(bob.address, parseEther('1.5'))
       )
-        .to.emit(interestBNBMarket, 'Accrue')
-        .to.emit(interestBNBMarket, 'ExchangeRate')
-        .to.emit(interestBNBMarket, 'WithdrawCollateral')
+        .to.emit(market, 'Accrue')
+        .to.emit(market, 'ExchangeRate')
+        .to.emit(market, 'WithdrawCollateral')
         .withArgs(alice.address, bob.address, parseEther('1.5'));
 
-      expect(await bob.getBalance()).to.be.equal(
-        bobBalance.add(parseEther('1.5'))
-      );
+      const [bobBalance2, aliceCollateral2] = await Promise.all([
+        bob.getBalance(),
+        market.userCollateral(alice.address),
+      ]);
+
+      expect(bobBalance2).to.be.equal(bobBalance.add(parseEther('1.5')));
       expect(aliceCollateral.sub(parseEther('1.5'))).to.be.equal(
-        await interestBNBMarket.userCollateral(alice.address)
+        aliceCollateral2
       );
     });
     it('reverts if the caller tries to reenter', async () => {
       const attackContract: ReentrantInterestBNBMarketWithdrawCollateral =
         await deploy('ReentrantInterestBNBMarketWithdrawCollateral', [
-          interestBNBMarket.address,
+          market.address,
         ]);
 
-      await interestBNBMarket
+      await market
         .connect(alice)
         .addCollateral(attackContract.address, { value: parseEther('2') });
-
-      await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('51000000000'));
 
       await expect(
         attackContract
@@ -474,26 +490,26 @@ describe('InterestBNBMarketV1', () => {
   describe('function: borrow', () => {
     it('reverts if you borrow to the zero address', async () => {
       await expect(
-        interestBNBMarket.connect(alice).borrow(ethers.constants.AddressZero, 1)
+        market.connect(alice).borrow(ethers.constants.AddressZero, 1)
       ).to.revertedWith('MKT: no zero address');
     });
     it('reverts if the user is insolvent', async () => {
-      await interestBNBMarket
+      await market
         .connect(alice)
         .addCollateral(alice.address, { value: parseEther('2') });
 
       await expect(
-        interestBNBMarket.connect(alice).borrow(bob.address, parseEther('500'))
+        market.connect(alice).borrow(bob.address, parseEther('500'))
       ).to.revertedWith('MKT: sender is insolvent');
     });
     it('allows a user to borrow as long as he remains solvent', async () => {
-      await interestBNBMarket
+      await market
         .connect(alice)
         .addCollateral(alice.address, { value: parseEther('2') });
 
       const [totalLoan, aliceLoan, aliceDineroBalance] = await Promise.all([
-        interestBNBMarket.totalLoan(),
-        interestBNBMarket.userLoan(alice.address),
+        market.totalLoan(),
+        market.userLoan(alice.address),
         dinero.balanceOf(alice.address),
       ]);
 
@@ -501,18 +517,16 @@ describe('InterestBNBMarketV1', () => {
       expect(totalLoan.elastic).to.be.equal(0);
       expect(aliceLoan).to.be.equal(0);
 
-      await expect(
-        interestBNBMarket.connect(alice).borrow(bob.address, parseEther('200'))
-      )
+      await expect(market.connect(alice).borrow(bob.address, parseEther('200')))
         .to.emit(dinero, 'Transfer')
         .withArgs(ethers.constants.AddressZero, bob.address, parseEther('200'))
-        .to.emit(interestBNBMarket, 'Borrow')
-        .to.not.emit(interestBNBMarket, 'Accrue');
+        .to.emit(market, 'Borrow')
+        .to.not.emit(market, 'Accrue');
 
       const [totalLoan2, aliceLoan2, aliceDineroBalance2, bobDineroBalance] =
         await Promise.all([
-          interestBNBMarket.totalLoan(),
-          interestBNBMarket.userLoan(alice.address),
+          market.totalLoan(),
+          market.userLoan(alice.address),
           dinero.balanceOf(alice.address),
           dinero.balanceOf(bob.address),
         ]);
@@ -526,18 +540,16 @@ describe('InterestBNBMarketV1', () => {
       await advanceTime(10_000, ethers); // advance 10_000 seconds
 
       await expect(
-        interestBNBMarket
-          .connect(alice)
-          .borrow(alice.address, parseEther('199'))
+        market.connect(alice).borrow(alice.address, parseEther('199'))
       )
-        .to.emit(interestBNBMarket, 'Accrue')
+        .to.emit(market, 'Accrue')
         .to.emit(dinero, 'Transfer')
         .withArgs(
           ethers.constants.AddressZero,
           alice.address,
           parseEther('199')
         )
-        .to.emit(interestBNBMarket, 'Borrow');
+        .to.emit(market, 'Borrow');
 
       const [
         totalLoan3,
@@ -546,9 +558,9 @@ describe('InterestBNBMarketV1', () => {
         aliceDineroBalance3,
         bobDineroBalance2,
       ] = await Promise.all([
-        interestBNBMarket.totalLoan(),
-        interestBNBMarket.userLoan(alice.address),
-        interestBNBMarket.userLoan(bob.address),
+        market.totalLoan(),
+        market.userLoan(alice.address),
+        market.userLoan(bob.address),
         dinero.balanceOf(alice.address),
         dinero.balanceOf(bob.address),
       ]);
@@ -571,39 +583,37 @@ describe('InterestBNBMarketV1', () => {
   describe('function: repay', () => {
     it('reverts if you pass zero address or 0 principal', async () => {
       await expect(
-        interestBNBMarket.repay(ethers.constants.AddressZero, 1)
+        market.repay(ethers.constants.AddressZero, 1)
       ).to.revertedWith('MKT: no zero address');
-      await expect(interestBNBMarket.repay(alice.address, 0)).to.revertedWith(
+      await expect(market.repay(alice.address, 0)).to.revertedWith(
         'MKT: principal cannot be 0'
       );
     });
     it('allows a user to repay a debt', async () => {
-      await interestBNBMarket
+      await market
         .connect(alice)
         .addCollateral(alice.address, { value: parseEther('2') });
 
-      await interestBNBMarket
-        .connect(alice)
-        .borrow(alice.address, parseEther('300'));
+      await market.connect(alice).borrow(alice.address, parseEther('300'));
 
       const [ownerDineroBalance, aliceLoan, totalLoan] = await Promise.all([
         dinero.balanceOf(owner.address),
-        interestBNBMarket.userLoan(alice.address),
-        interestBNBMarket.totalLoan(),
+        market.userLoan(alice.address),
+        market.totalLoan(),
         advanceTime(1000, ethers),
       ]);
 
       await expect(
-        interestBNBMarket.connect(owner).repay(alice.address, parseEther('150'))
+        market.connect(owner).repay(alice.address, parseEther('150'))
       )
-        .to.emit(interestBNBMarket, 'Accrue')
+        .to.emit(market, 'Accrue')
         .to.emit(dinero, 'Transfer')
-        .to.emit(interestBNBMarket, 'Repay');
+        .to.emit(market, 'Repay');
 
       const [ownerDineroBalance2, aliceLoan2, totalLoan2] = await Promise.all([
         dinero.balanceOf(owner.address),
-        interestBNBMarket.userLoan(alice.address),
-        interestBNBMarket.totalLoan(),
+        market.userLoan(alice.address),
+        market.totalLoan(),
       ]);
 
       expect(
@@ -621,112 +631,123 @@ describe('InterestBNBMarketV1', () => {
   });
   describe('function: setMaxLTVRatio', () => {
     it('reverts if it is not called by the owner', async () => {
-      await expect(
-        interestBNBMarket.connect(alice).setMaxLTVRatio(0)
-      ).to.revertedWith('Ownable: caller is not the owner');
+      await expect(market.connect(alice).setMaxLTVRatio(0)).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
     });
     it('reverts if we set a collateral higher than 9e5', async () => {
       await expect(
-        interestBNBMarket
+        market
           .connect(owner)
           .setMaxLTVRatio(ethers.BigNumber.from('900000000000000001'))
       ).to.revertedWith('MKT: too high');
     });
     it('updates the max tvl ratio', async () => {
-      expect(await interestBNBMarket.maxLTVRatio()).to.be.equal(
+      expect(await market.maxLTVRatio()).to.be.equal(
         ethers.BigNumber.from('500000000000000000')
       );
 
-      await interestBNBMarket
+      await market
         .connect(owner)
         .setMaxLTVRatio(ethers.BigNumber.from('900000000000000000'));
 
-      expect(await interestBNBMarket.maxLTVRatio()).to.be.equal(
+      expect(await market.maxLTVRatio()).to.be.equal(
         ethers.BigNumber.from('900000000000000000')
       );
     });
   });
   describe('function: setLiquidationFee', () => {
     it('reverts if it is not called by the owner', async () => {
-      await expect(
-        interestBNBMarket.connect(alice).setLiquidationFee(0)
-      ).to.revertedWith('Ownable: caller is not the owner');
+      await expect(market.connect(alice).setLiquidationFee(0)).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
     });
     it('reverts if we set a liquidation fee higher than 15e4', async () => {
       await expect(
-        interestBNBMarket
+        market
           .connect(owner)
           .setLiquidationFee(ethers.BigNumber.from('150000000000000001'))
       ).to.revertedWith('MKT: too high');
     });
     it('updates the liquidation fee', async () => {
-      expect(await interestBNBMarket.liquidationFee()).to.be.equal(
+      expect(await market.liquidationFee()).to.be.equal(
         ethers.BigNumber.from('100000000000000000')
       );
 
-      await interestBNBMarket
+      await market
         .connect(owner)
         .setLiquidationFee(ethers.BigNumber.from('150000000000000000'));
 
-      expect(await interestBNBMarket.liquidationFee()).to.be.equal(
+      expect(await market.liquidationFee()).to.be.equal(
         ethers.BigNumber.from('150000000000000000')
       );
     });
   });
   describe('function: setInterestRate', () => {
     it('reverts if it is not called by the owner', async () => {
-      await expect(
-        interestBNBMarket.connect(alice).setInterestRate(0)
-      ).to.revertedWith('Ownable: caller is not the owner');
+      await expect(market.connect(alice).setInterestRate(0)).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
     });
     it('reverts if we set a liquidation fee higher than 15e4', async () => {
       await expect(
-        interestBNBMarket
+        market
           .connect(owner)
           .setInterestRate(ethers.BigNumber.from(13e8).add(1))
       ).to.revertedWith('MKT: too high');
     });
     it('updates the liquidation fee', async () => {
-      expect((await interestBNBMarket.loan()).INTEREST_RATE).to.be.equal(
+      expect((await market.loan()).INTEREST_RATE).to.be.equal(
         ethers.BigNumber.from(12e8)
       );
 
-      await interestBNBMarket
-        .connect(owner)
-        .setInterestRate(ethers.BigNumber.from(13e8));
+      await market.connect(owner).setInterestRate(ethers.BigNumber.from(13e8));
 
-      expect((await interestBNBMarket.loan()).INTEREST_RATE).to.be.equal(
+      expect((await market.loan()).INTEREST_RATE).to.be.equal(
         ethers.BigNumber.from(13e8)
       );
     });
   });
   describe('function: liquidate', () => {
     it('reverts if you try to reenter', async () => {
+      const market = await deployUUPS('InterestBNBMarket', [
+        dinero.address,
+        treasury.address,
+        mockOracle.address,
+        INTEREST_RATE,
+        MAX_LTV,
+        LIQUIDATION_FEE,
+      ]);
+
+      await mockOracle.__setBNBUSDPrice(parseEther('500'));
+
       await Promise.all([
-        interestBNBMarket
+        dinero.connect(owner).grantRole(MINTER_ROLE, market.address),
+        dinero.connect(owner).grantRole(BURNER_ROLE, market.address),
+        market.updateExchangeRate(),
+      ]);
+
+      await Promise.all([
+        market
           .connect(alice)
           .addCollateral(alice.address, { value: parseEther('2') }),
-        interestBNBMarket
+        market
           .connect(bob)
           .addCollateral(bob.address, { value: parseEther('1') }),
-        interestBNBMarket
+        market
           .connect(jose)
           .addCollateral(jose.address, { value: parseEther('10') }),
       ]);
 
       await Promise.all([
-        interestBNBMarket
-          .connect(alice)
-          .borrow(alice.address, parseEther('499')),
-        interestBNBMarket.connect(bob).borrow(bob.address, parseEther('200')),
-        interestBNBMarket
-          .connect(jose)
-          .borrow(jose.address, parseEther('1000')),
+        market.connect(alice).borrow(alice.address, parseEther('499')),
+        market.connect(bob).borrow(bob.address, parseEther('200')),
+        market.connect(jose).borrow(jose.address, parseEther('1000')),
       ]);
 
       const attackContract: ReentrantInterestBNBMarketLiquidate = await deploy(
         'ReentrantInterestBNBMarketLiquidate',
-        [interestBNBMarket.address]
+        [market.address]
       );
 
       // Drop BNB to 250. Alice and Bob can now be liquidated
@@ -734,7 +755,7 @@ describe('InterestBNBMarketV1', () => {
         dinero
           .connect(owner)
           .mint(attackContract.address, parseEther('7000000')),
-        mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('25000000000')),
+        mockOracle.__setBNBUSDPrice(parseEther('250')),
       ]);
 
       // Pass time to accrue fees
@@ -753,66 +774,77 @@ describe('InterestBNBMarketV1', () => {
     });
     it('reverts if last item on path is not dinero', async () => {
       await expect(
-        interestBNBMarket
+        market
           .connect(owner)
-          .liquidate([], [], owner.address, [
-            bob.address,
-            dinero.address,
-            weth.address,
-          ])
+          .liquidate([], [], owner.address, [bob.address, dinero.address, WBNB])
       ).to.revertedWith('MKT: no dinero at last index');
     });
     it('ignores accounts without opened loans', async () => {
-      await interestBNBMarket
+      await market
         .connect(alice)
         .addCollateral(alice.address, { value: parseEther('2') });
 
       await expect(
-        interestBNBMarket
-          .connect(owner)
-          .liquidate([alice.address], [0], owner.address, [])
+        market.connect(owner).liquidate([alice.address], [0], owner.address, [])
       ).to.revertedWith('MKT: no liquidations');
     });
     it('reverts if there are no liquidations', async () => {
-      await interestBNBMarket
+      await market
         .connect(alice)
         .addCollateral(alice.address, { value: parseEther('2') });
 
-      await interestBNBMarket
-        .connect(alice)
-        .borrow(alice.address, parseEther('499'));
+      await market.connect(alice).borrow(alice.address, parseEther('399'));
 
       await expect(
-        interestBNBMarket
+        market
           .connect(owner)
-          .liquidate([alice.address], [parseEther('499')], owner.address, [])
+          .liquidate([alice.address], [parseEther('399')], owner.address, [])
       ).to.revertedWith('MKT: no liquidations');
     });
     it('liquidates users using caller dinero funds', async () => {
+      const market = await deployUUPS('InterestBNBMarket', [
+        dinero.address,
+        treasury.address,
+        mockOracle.address,
+        INTEREST_RATE,
+        MAX_LTV,
+        LIQUIDATION_FEE,
+      ]);
+
+      await mockOracle.__setBNBUSDPrice(parseEther('500'));
+
       await Promise.all([
-        interestBNBMarket
+        dinero.connect(owner).grantRole(MINTER_ROLE, market.address),
+        dinero.connect(owner).grantRole(BURNER_ROLE, market.address),
+        market.updateExchangeRate(),
+      ]);
+
+      await Promise.all([
+        market
           .connect(alice)
           .addCollateral(alice.address, { value: parseEther('2') }),
-        interestBNBMarket
+        market
           .connect(bob)
           .addCollateral(bob.address, { value: parseEther('1') }),
-        interestBNBMarket
+        market
           .connect(jose)
           .addCollateral(jose.address, { value: parseEther('10') }),
       ]);
 
       await Promise.all([
-        interestBNBMarket
-          .connect(alice)
-          .borrow(alice.address, parseEther('499')),
-        interestBNBMarket.connect(bob).borrow(bob.address, parseEther('200')),
-        interestBNBMarket
-          .connect(jose)
-          .borrow(jose.address, parseEther('1000')),
+        market.connect(alice).borrow(alice.address, parseEther('499')),
+        market.connect(bob).borrow(bob.address, parseEther('200')),
+        market.connect(jose).borrow(jose.address, parseEther('1000')),
       ]);
 
       // Drop BNB to 250. Alice and Bob can now be liquidated
-      await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('25000000000'));
+      await mockOracle.__setBNBUSDPrice(parseEther('250'));
+
+      const factory = new ethers.Contract(
+        PCS_FACTORY,
+        PCSFactoryABI,
+        ethers.provider
+      );
 
       const [
         totalCollateral,
@@ -827,16 +859,16 @@ describe('InterestBNBMarketV1', () => {
         pair,
         recipientBalance,
       ] = await Promise.all([
-        ethers.provider.getBalance(interestBNBMarket.address),
-        interestBNBMarket.userLoan(alice.address),
-        interestBNBMarket.userLoan(bob.address),
-        interestBNBMarket.userLoan(jose.address),
-        interestBNBMarket.userCollateral(alice.address),
-        interestBNBMarket.userCollateral(bob.address),
-        interestBNBMarket.userCollateral(jose.address),
-        interestBNBMarket.loan(),
+        ethers.provider.getBalance(market.address),
+        market.userLoan(alice.address),
+        market.userLoan(bob.address),
+        market.userLoan(jose.address),
+        market.userCollateral(alice.address),
+        market.userCollateral(bob.address),
+        market.userCollateral(jose.address),
+        market.loan(),
         dinero.balanceOf(owner.address),
-        factory.allPairs(0),
+        factory.getPair(dinero.address, WBNB),
         recipient.getBalance(),
       ]);
 
@@ -854,7 +886,7 @@ describe('InterestBNBMarketV1', () => {
       await advanceTime(63_113_904, ethers); // advance 2 years
 
       await expect(
-        interestBNBMarket
+        market
           .connect(owner)
           .liquidate(
             [alice.address, bob.address, jose.address],
@@ -863,10 +895,10 @@ describe('InterestBNBMarketV1', () => {
             []
           )
       )
-        .to.emit(interestBNBMarket, 'ExchangeRate')
-        .to.emit(interestBNBMarket, 'Accrue')
-        .to.emit(interestBNBMarket, 'WithdrawCollateral')
-        .to.emit(interestBNBMarket, 'Repay')
+        .to.emit(market, 'ExchangeRate')
+        .to.emit(market, 'Accrue')
+        .to.emit(market, 'WithdrawCollateral')
+        .to.emit(market, 'Repay')
         .to.emit(dinero, 'Transfer')
         .to.not.emit(pairContract, 'Swap');
 
@@ -883,15 +915,15 @@ describe('InterestBNBMarketV1', () => {
         ownerDineroBalance2,
         recipientBalance2,
       ] = await Promise.all([
-        interestBNBMarket.totalLoan(),
-        ethers.provider.getBalance(interestBNBMarket.address),
-        interestBNBMarket.userLoan(alice.address),
-        interestBNBMarket.userLoan(bob.address),
-        interestBNBMarket.userLoan(jose.address),
-        interestBNBMarket.userCollateral(alice.address),
-        interestBNBMarket.userCollateral(bob.address),
-        interestBNBMarket.userCollateral(jose.address),
-        interestBNBMarket.loan(),
+        market.totalLoan(),
+        ethers.provider.getBalance(market.address),
+        market.userLoan(alice.address),
+        market.userLoan(bob.address),
+        market.userLoan(jose.address),
+        market.userCollateral(alice.address),
+        market.userCollateral(bob.address),
+        market.userCollateral(jose.address),
+        market.loan(),
         dinero.balanceOf(owner.address),
         recipient.getBalance(),
       ]);
@@ -953,35 +985,55 @@ describe('InterestBNBMarketV1', () => {
       expect(totalLoan.elastic.lt(parseEther('1320'))).to.be.equal(true);
 
       // Need to remove the 4 last decimal houses for accuracy
-      expect(ownerDineroBalance.sub(ownerDineroBalance2).div(1e4)).to.be.equal(
-        allDebt.add(protocolFee).div(1e4)
+      expect(ownerDineroBalance.sub(ownerDineroBalance2)).to.be.closeTo(
+        allDebt.add(protocolFee),
+        1e4
       );
     });
     it('liquidates a user using the collateral in the contract', async () => {
+      const market = await deployUUPS('InterestBNBMarket', [
+        dinero.address,
+        treasury.address,
+        mockOracle.address,
+        INTEREST_RATE,
+        MAX_LTV,
+        LIQUIDATION_FEE,
+      ]);
+
+      await mockOracle.__setBNBUSDPrice(parseEther('500'));
+
       await Promise.all([
-        interestBNBMarket
+        dinero.connect(owner).grantRole(MINTER_ROLE, market.address),
+        dinero.connect(owner).grantRole(BURNER_ROLE, market.address),
+        market.updateExchangeRate(),
+      ]);
+
+      await Promise.all([
+        market
           .connect(alice)
           .addCollateral(alice.address, { value: parseEther('2') }),
-        interestBNBMarket
+        market
           .connect(bob)
           .addCollateral(bob.address, { value: parseEther('1') }),
-        interestBNBMarket
+        market
           .connect(jose)
           .addCollateral(jose.address, { value: parseEther('10') }),
       ]);
 
       await Promise.all([
-        interestBNBMarket
-          .connect(alice)
-          .borrow(alice.address, parseEther('499')),
-        interestBNBMarket.connect(bob).borrow(bob.address, parseEther('200')),
-        interestBNBMarket
-          .connect(jose)
-          .borrow(jose.address, parseEther('1000')),
+        market.connect(alice).borrow(alice.address, parseEther('499')),
+        market.connect(bob).borrow(bob.address, parseEther('200')),
+        market.connect(jose).borrow(jose.address, parseEther('1000')),
       ]);
 
       // Drop BNB to 250. Alice and Bob can now be liquidated
-      await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('25000000000'));
+      await mockOracle.__setBNBUSDPrice(parseEther('250'));
+
+      const factory = new ethers.Contract(
+        PCS_FACTORY,
+        PCSFactoryABI,
+        ethers.provider
+      );
 
       const [
         totalCollateral,
@@ -996,16 +1048,16 @@ describe('InterestBNBMarketV1', () => {
         pair,
         recipientDineroBalance,
       ] = await Promise.all([
-        ethers.provider.getBalance(interestBNBMarket.address),
-        interestBNBMarket.userLoan(alice.address),
-        interestBNBMarket.userLoan(bob.address),
-        interestBNBMarket.userLoan(jose.address),
-        interestBNBMarket.userCollateral(alice.address),
-        interestBNBMarket.userCollateral(bob.address),
-        interestBNBMarket.userCollateral(jose.address),
-        interestBNBMarket.loan(),
+        ethers.provider.getBalance(market.address),
+        market.userLoan(alice.address),
+        market.userLoan(bob.address),
+        market.userLoan(jose.address),
+        market.userCollateral(alice.address),
+        market.userCollateral(bob.address),
+        market.userCollateral(jose.address),
+        market.loan(),
         dinero.balanceOf(owner.address),
-        factory.allPairs(0),
+        factory.getPair(WBNB, dinero.address),
         dinero.balanceOf(recipient.address),
       ]);
 
@@ -1023,19 +1075,19 @@ describe('InterestBNBMarketV1', () => {
       await advanceTime(63_113_904, ethers); // advance 2 years
 
       await expect(
-        interestBNBMarket
+        market
           .connect(owner)
           .liquidate(
             [alice.address, bob.address, jose.address],
             [parseEther('400'), parseEther('200'), parseEther('1000')],
             recipient.address,
-            [weth.address, dinero.address]
+            [WBNB, dinero.address]
           )
       )
-        .to.emit(interestBNBMarket, 'ExchangeRate')
-        .to.emit(interestBNBMarket, 'Accrue')
-        .to.emit(interestBNBMarket, 'WithdrawCollateral')
-        .to.emit(interestBNBMarket, 'Repay')
+        .to.emit(market, 'ExchangeRate')
+        .to.emit(market, 'Accrue')
+        .to.emit(market, 'WithdrawCollateral')
+        .to.emit(market, 'Repay')
         .to.emit(dinero, 'Transfer')
         .to.emit(pairContract, 'Swap');
 
@@ -1052,15 +1104,15 @@ describe('InterestBNBMarketV1', () => {
         ownerDineroBalance2,
         recipientDineroBalance2,
       ] = await Promise.all([
-        interestBNBMarket.totalLoan(),
-        ethers.provider.getBalance(interestBNBMarket.address),
-        interestBNBMarket.userLoan(alice.address),
-        interestBNBMarket.userLoan(bob.address),
-        interestBNBMarket.userLoan(jose.address),
-        interestBNBMarket.userCollateral(alice.address),
-        interestBNBMarket.userCollateral(bob.address),
-        interestBNBMarket.userCollateral(jose.address),
-        interestBNBMarket.loan(),
+        market.totalLoan(),
+        ethers.provider.getBalance(market.address),
+        market.userLoan(alice.address),
+        market.userLoan(bob.address),
+        market.userLoan(jose.address),
+        market.userCollateral(alice.address),
+        market.userCollateral(bob.address),
+        market.userCollateral(jose.address),
+        market.loan(),
         dinero.balanceOf(owner.address),
         dinero.balanceOf(recipient.address),
       ]);
@@ -1127,28 +1179,43 @@ describe('InterestBNBMarketV1', () => {
       expect(totalLoan.elastic.lt(parseEther('1320'))).to.be.equal(true);
     });
     it('cleans up dust when liquidating full positions', async () => {
-      await interestBNBMarket
+      const market = await deployUUPS('InterestBNBMarket', [
+        dinero.address,
+        treasury.address,
+        mockOracle.address,
+        INTEREST_RATE,
+        MAX_LTV,
+        LIQUIDATION_FEE,
+      ]);
+
+      await mockOracle.__setBNBUSDPrice(parseEther('500'));
+
+      await Promise.all([
+        dinero.connect(owner).grantRole(MINTER_ROLE, market.address),
+        dinero.connect(owner).grantRole(BURNER_ROLE, market.address),
+        market.updateExchangeRate(),
+      ]);
+
+      await market
         .connect(alice)
         .addCollateral(alice.address, { value: parseEther('2') });
 
-      await interestBNBMarket
-        .connect(alice)
-        .borrow(alice.address, parseEther('499'));
+      await market.connect(alice).borrow(alice.address, parseEther('499'));
 
       // Drop BNB to 250. Alice and Bob can now be liquidated
-      await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('30000000000'));
+      await mockOracle.__setBNBUSDPrice(parseEther('300'));
 
       // Pass time to accrue fees
       await advanceTime(63_113_904, ethers); // advance 2 years
 
-      await interestBNBMarket
+      await market
         .connect(owner)
         .liquidate([alice.address], [parseEther('499')], recipient.address, [
-          weth.address,
+          WBNB,
           dinero.address,
         ]);
 
-      const totalLoan = await interestBNBMarket.totalLoan();
+      const totalLoan = await market.totalLoan();
 
       expect(totalLoan.elastic).to.be.equal(0);
       expect(totalLoan.base).to.be.equal(0);
@@ -1157,60 +1224,57 @@ describe('InterestBNBMarketV1', () => {
 
   describe('Upgrade functionality', () => {
     it('reverts if a non owner calls it', async () => {
-      await interestBNBMarket.connect(owner).transferOwnership(alice.address);
+      await market.connect(owner).transferOwnership(alice.address);
 
-      await expect(
-        upgrade(interestBNBMarket, 'TestInterestBNBMarketV2')
-      ).to.revertedWith('Ownable: caller is not the owner');
+      await expect(upgrade(market, 'TestInterestBNBMarketV2')).to.revertedWith(
+        'Ownable: caller is not the owner'
+      );
     });
 
     it('upgrades to version 2', async () => {
-      await interestBNBMarket
+      await market
         .connect(alice)
         .addCollateral(alice.address, { value: parseEther('2') });
 
       const [bobBalance, aliceCollateral] = await Promise.all([
         bob.getBalance(),
-        interestBNBMarket.userCollateral(alice.address),
-        interestBNBMarket
-          .connect(alice)
-          .borrow(alice.address, parseEther('100')),
+        market.userCollateral(alice.address),
+        market.connect(alice).borrow(alice.address, parseEther('100')),
       ]);
 
-      await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('51000000000'));
-
-      const interestBNBMarketV2: TestInterestBNBMarketV2 = await upgrade(
-        interestBNBMarket,
+      const marketV2: TestInterestBNBMarketV2 = await upgrade(
+        market,
         'TestInterestBNBMarketV2'
       );
 
       await expect(
-        interestBNBMarketV2
+        marketV2
           .connect(alice)
           .withdrawCollateral(bob.address, parseEther('1.5'))
       )
-        .to.emit(interestBNBMarketV2, 'Accrue')
-        .to.emit(interestBNBMarketV2, 'ExchangeRate')
-        .to.emit(interestBNBMarketV2, 'WithdrawCollateral')
+        .to.emit(marketV2, 'Accrue')
+        .to.emit(marketV2, 'ExchangeRate')
+        .to.emit(marketV2, 'WithdrawCollateral')
         .withArgs(alice.address, bob.address, parseEther('1.5'));
 
-      const [version, bobBalance2] = await Promise.all([
-        interestBNBMarketV2.version(),
+      const [version, bobBalance2, aliceCollateral2] = await Promise.all([
+        marketV2.version(),
         bob.getBalance(),
+        marketV2.userCollateral(alice.address),
       ]);
 
       expect(version).to.be.equal('V2');
 
       expect(bobBalance2).to.be.equal(bobBalance.add(parseEther('1.5')));
       expect(aliceCollateral.sub(parseEther('1.5'))).to.be.equal(
-        await interestBNBMarketV2.userCollateral(alice.address)
+        aliceCollateral2
       );
     });
   });
   describe('function: addCollateralAndBorrow', () => {
     it('reverts if you borrow to the zero address', async () => {
       await expect(
-        interestBNBMarket
+        market
           .connect(alice)
           .addCollateralAndBorrow(
             ethers.constants.AddressZero,
@@ -1222,7 +1286,7 @@ describe('InterestBNBMarketV1', () => {
           )
       ).to.revertedWith('DM: no zero address');
       await expect(
-        interestBNBMarket
+        market
           .connect(alice)
           .addCollateralAndBorrow(
             alice.address,
@@ -1234,7 +1298,7 @@ describe('InterestBNBMarketV1', () => {
           )
       ).to.revertedWith('DM: no zero address');
       await expect(
-        interestBNBMarket
+        market
           .connect(alice)
           .addCollateralAndBorrow(alice.address, alice.address, 0, {
             value: parseEther('2'),
@@ -1243,7 +1307,7 @@ describe('InterestBNBMarketV1', () => {
     });
     it('reverts if the user is insolvent', async () => {
       await expect(
-        interestBNBMarket
+        market
           .connect(alice)
           .addCollateralAndBorrow(
             alice.address,
@@ -1260,14 +1324,16 @@ describe('InterestBNBMarketV1', () => {
         totalLoan,
         aliceLoan,
         aliceDineroBalance,
+        bobDineroBalance,
         bobCollateral,
         aliceCollateral,
       ] = await Promise.all([
-        interestBNBMarket.totalLoan(),
-        interestBNBMarket.userLoan(alice.address),
+        market.totalLoan(),
+        market.userLoan(alice.address),
         dinero.balanceOf(alice.address),
-        interestBNBMarket.userCollateral(bob.address),
-        interestBNBMarket.userCollateral(alice.address),
+        dinero.balanceOf(bob.address),
+        market.userCollateral(bob.address),
+        market.userCollateral(alice.address),
       ]);
 
       expect(bobCollateral).to.be.equal(0);
@@ -1277,7 +1343,7 @@ describe('InterestBNBMarketV1', () => {
       expect(aliceLoan).to.be.equal(0);
 
       await expect(
-        interestBNBMarket
+        market
           .connect(alice)
           .addCollateralAndBorrow(
             alice.address,
@@ -1288,27 +1354,27 @@ describe('InterestBNBMarketV1', () => {
             }
           )
       )
-        .to.emit(interestBNBMarket, 'AddCollateral')
+        .to.emit(market, 'AddCollateral')
         .withArgs(alice.address, alice.address, parseEther('5'))
         .to.emit(dinero, 'Transfer')
         .withArgs(ethers.constants.AddressZero, bob.address, parseEther('200'))
-        .to.emit(interestBNBMarket, 'Borrow')
-        .to.not.emit(interestBNBMarket, 'Accrue');
+        .to.emit(market, 'Borrow')
+        .to.not.emit(market, 'Accrue');
 
       const [
         totalLoan2,
         aliceLoan2,
         aliceDineroBalance2,
-        bobDineroBalance,
+        bobDineroBalance2,
         bobCollateral2,
         aliceCollateral2,
       ] = await Promise.all([
-        interestBNBMarket.totalLoan(),
-        interestBNBMarket.userLoan(alice.address),
+        market.totalLoan(),
+        market.userLoan(alice.address),
         dinero.balanceOf(alice.address),
         dinero.balanceOf(bob.address),
-        interestBNBMarket.userCollateral(bob.address),
-        interestBNBMarket.userCollateral(alice.address),
+        market.userCollateral(bob.address),
+        market.userCollateral(alice.address),
       ]);
 
       expect(totalLoan2.base).to.be.equal(parseEther('200'));
@@ -1316,14 +1382,16 @@ describe('InterestBNBMarketV1', () => {
       expect(aliceLoan2).to.be.equal(parseEther('200'));
 
       expect(aliceDineroBalance2).to.be.equal(aliceDineroBalance);
-      expect(bobDineroBalance).to.be.equal(parseEther('200'));
+      expect(bobDineroBalance2).to.be.equal(
+        bobDineroBalance.add(parseEther('200'))
+      );
       expect(bobCollateral2).to.be.equal(0);
       expect(aliceCollateral2).to.be.equal(parseEther('5'));
 
       await advanceTime(10_000, ethers); // advance 10_000 seconds
 
       await expect(
-        interestBNBMarket
+        market
           .connect(alice)
           .addCollateralAndBorrow(
             bob.address,
@@ -1334,33 +1402,33 @@ describe('InterestBNBMarketV1', () => {
             }
           )
       )
-        .to.emit(interestBNBMarket, 'AddCollateral')
+        .to.emit(market, 'AddCollateral')
         .withArgs(alice.address, alice.address, parseEther('2'))
-        .to.emit(interestBNBMarket, 'Accrue')
+        .to.emit(market, 'Accrue')
         .to.emit(dinero, 'Transfer')
         .withArgs(
           ethers.constants.AddressZero,
           alice.address,
           parseEther('199')
         )
-        .to.emit(interestBNBMarket, 'Borrow');
+        .to.emit(market, 'Borrow');
 
       const [
         totalLoan3,
         aliceLoan3,
         bobLoan,
         aliceDineroBalance3,
-        bobDineroBalance2,
+        bobDineroBalance3,
         bobCollateral3,
         aliceCollateral3,
       ] = await Promise.all([
-        interestBNBMarket.totalLoan(),
-        interestBNBMarket.userLoan(alice.address),
-        interestBNBMarket.userLoan(bob.address),
+        market.totalLoan(),
+        market.userLoan(alice.address),
+        market.userLoan(bob.address),
         dinero.balanceOf(alice.address),
         dinero.balanceOf(bob.address),
-        interestBNBMarket.userCollateral(bob.address),
-        interestBNBMarket.userCollateral(alice.address),
+        market.userCollateral(bob.address),
+        market.userCollateral(alice.address),
       ]);
       expect(
         totalLoan3.base.gt(totalLoan2.base.add(parseEther('190')))
@@ -1374,7 +1442,7 @@ describe('InterestBNBMarketV1', () => {
       expect(aliceDineroBalance3).to.be.equal(
         aliceDineroBalance2.add(parseEther('199'))
       );
-      expect(bobDineroBalance2).to.be.equal(parseEther('200'));
+      expect(bobDineroBalance3).to.be.equal(bobDineroBalance2);
       expect(bobLoan).to.be.equal(0);
       expect(aliceCollateral3).to.be.equal(aliceCollateral2);
       expect(bobCollateral3).to.be.equal(parseEther('2'));
@@ -1383,7 +1451,7 @@ describe('InterestBNBMarketV1', () => {
   describe('function: repayAndWithdrawCollateral', () => {
     it('reverts if you pass invalid arguments', async () => {
       await expect(
-        interestBNBMarket.repayAndWithdrawCollateral(
+        market.repayAndWithdrawCollateral(
           ethers.constants.AddressZero,
           0,
           alice.address,
@@ -1391,7 +1459,7 @@ describe('InterestBNBMarketV1', () => {
         )
       ).to.revertedWith('DM: no zero address');
       await expect(
-        interestBNBMarket.repayAndWithdrawCollateral(
+        market.repayAndWithdrawCollateral(
           alice.address,
           0,
           ethers.constants.AddressZero,
@@ -1399,24 +1467,14 @@ describe('InterestBNBMarketV1', () => {
         )
       ).to.revertedWith('DM: no zero address');
       await expect(
-        interestBNBMarket.repayAndWithdrawCollateral(
-          alice.address,
-          0,
-          alice.address,
-          0
-        )
+        market.repayAndWithdrawCollateral(alice.address, 0, alice.address, 0)
       ).to.revertedWith('DM: principal cannot be 0');
       await expect(
-        interestBNBMarket.repayAndWithdrawCollateral(
-          alice.address,
-          1,
-          alice.address,
-          0
-        )
+        market.repayAndWithdrawCollateral(alice.address, 1, alice.address, 0)
       ).to.revertedWith('DM: no zero amount');
     });
     it('reverts if the caller is insolvent', async () => {
-      await interestBNBMarket
+      await market
         .connect(alice)
         .addCollateralAndBorrow(
           alice.address,
@@ -1426,7 +1484,7 @@ describe('InterestBNBMarketV1', () => {
         );
 
       await expect(
-        interestBNBMarket
+        market
           .connect(alice)
           .repayAndWithdrawCollateral(
             alice.address,
@@ -1437,7 +1495,7 @@ describe('InterestBNBMarketV1', () => {
       ).to.revertedWith('MKT: sender is insolvent');
 
       await expect(
-        interestBNBMarket
+        market
           .connect(alice)
           .repayAndWithdrawCollateral(
             alice.address,
@@ -1450,14 +1508,12 @@ describe('InterestBNBMarketV1', () => {
     it('reverts if the caller tries to reenter', async () => {
       const attackContract: ReentrantInterestBNBMarketWithdrawCollateral =
         await deploy('ReentrantInterestBNBMarketWithdrawCollateral', [
-          interestBNBMarket.address,
+          market.address,
         ]);
 
-      await interestBNBMarket
+      await market
         .connect(alice)
         .addCollateral(attackContract.address, { value: parseEther('2') });
-
-      await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('51000000000'));
 
       await expect(
         attackContract
@@ -1471,7 +1527,7 @@ describe('InterestBNBMarketV1', () => {
       ).to.revertedWith('ReentrancyGuard: reentrant call');
     });
     it('allows a user to repay and then withdraw', async () => {
-      await interestBNBMarket
+      await market
         .connect(alice)
         .addCollateralAndBorrow(
           alice.address,
@@ -1483,15 +1539,14 @@ describe('InterestBNBMarketV1', () => {
       const [aliceDineroBalance, aliceLoan, totalLoan, aliceBNBBalance] =
         await Promise.all([
           dinero.balanceOf(alice.address),
-          interestBNBMarket.userLoan(alice.address),
-          interestBNBMarket.totalLoan(),
+          market.userLoan(alice.address),
+          market.totalLoan(),
           alice.getBalance(),
-          mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('51000000000')),
           advanceTime(1000, ethers),
         ]);
 
       await expect(
-        interestBNBMarket
+        market
           .connect(alice)
           .repayAndWithdrawCollateral(
             alice.address,
@@ -1500,18 +1555,18 @@ describe('InterestBNBMarketV1', () => {
             parseEther('1')
           )
       )
-        .to.emit(interestBNBMarket, 'Accrue')
+        .to.emit(market, 'Accrue')
         .to.emit(dinero, 'Transfer')
-        .to.emit(interestBNBMarket, 'Repay')
-        .to.emit(interestBNBMarket, 'ExchangeRate')
-        .to.emit(interestBNBMarket, 'WithdrawCollateral')
+        .to.emit(market, 'Repay')
+        .to.emit(market, 'ExchangeRate')
+        .to.emit(market, 'WithdrawCollateral')
         .withArgs(alice.address, alice.address, parseEther('1'));
 
       const [aliceDineroBalance2, aliceLoan2, totalLoan2, aliceBNBBalance2] =
         await Promise.all([
           dinero.balanceOf(alice.address),
-          interestBNBMarket.userLoan(alice.address),
-          interestBNBMarket.totalLoan(),
+          market.userLoan(alice.address),
+          market.totalLoan(),
           alice.getBalance(),
         ]);
 
@@ -1534,4 +1589,4 @@ describe('InterestBNBMarketV1', () => {
       );
     });
   });
-}).timeout(5000);
+}).timeout(50_000);
