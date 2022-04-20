@@ -6,7 +6,7 @@ import { ethers, network } from 'hardhat';
 import ERC20ABI from '../abi/erc20.json';
 import PCSFactoryABI from '../abi/pcs-factory.json';
 import VenusControllerABI from '../abi/venus-controller.json';
-import vTokenABI from '../abi/vToken.json';
+import vUSDCABI from '../abi/vusdc.json';
 import {
   Dinero,
   MockSafeVenus,
@@ -108,8 +108,8 @@ describe('Dinero Leverage Venus Vault', () => {
       venusAdmin
     );
 
-    vUSDCContract = new ethers.Contract(vUSDC, vTokenABI, ethers.provider);
-    vDAIContract = new ethers.Contract(vDAI, vTokenABI, ethers.provider);
+    vUSDCContract = new ethers.Contract(vUSDC, vUSDCABI, ethers.provider);
+    vDAIContract = new ethers.Contract(vDAI, vUSDCABI, ethers.provider);
     XVSContract = new ethers.Contract(XVS, ERC20ABI, ethers.provider);
     USDCContract = new ethers.Contract(USDC, ERC20ABI, ethers.provider);
     venusControllerContract = new ethers.Contract(

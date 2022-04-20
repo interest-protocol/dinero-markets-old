@@ -60,7 +60,7 @@ import "./DineroMarket.sol";
  * PCS Pairs of all this tokens with WBNB - 0xA527a61703D82139F8a06Bc30097cC9CAA2df5A6
  * ADA - 0x3ee2200efb3400fabb9aacf31297cbdd1d435d47
  */
-contract InterestMarketV1 is Initializable, DineroMarket {
+contract InterestERC20Market is Initializable, DineroMarket {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/

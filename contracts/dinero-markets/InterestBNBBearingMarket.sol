@@ -183,8 +183,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         returns (uint256 rate)
     {
         // We need to add extra decimals for isSolvent function to work properly
-        uint256 one = 1 ether;
-        uint256 underlyingAmount = one.bmul(VTOKEN.exchangeRateCurrent());
+        uint256 underlyingAmount = VTOKEN.exchangeRateCurrent();
         // Get USD price for 1 VToken (18 decimals). The USD price also has 18 decimals. We need to reduce
         rate = ORACLE.getBNBUSDPrice(underlyingAmount);
 
@@ -195,7 +194,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         // if the exchange rate is different we need to update the global state
         if (normalizedRate != exchangeRate) {
             exchangeRate = normalizedRate;
-            emit ExchangeRate(rate);
+            emit ExchangeRate(normalizedRate);
         }
     }
 
@@ -579,11 +578,8 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
             return;
         }
 
-        // How much underlying was redeemed.
-        uint256 underlyingAmount;
-
         // Redeem and send BNB
-        underlyingAmount = _redeemBNBVToken(amount);
+        uint256 underlyingAmount = _redeemBNBVToken(amount);
 
         _sendBNB(payable(_msgSender()), underlyingAmount);
 
@@ -639,13 +635,8 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         // Find how many VTokens we currently have.
         uint256 balanceBefore = address(this).balance;
 
-        uint256 exchangeRateCurrent = VTOKEN.exchangeRateCurrent();
-
         // Supply ALL underlyings present in the contract even lost tokens to mint VTokens. It will revert if it fails.
-        _invariant(
-            VTOKEN.redeemUnderlying(amount.bmul(exchangeRateCurrent)),
-            "DM: failed to redeem"
-        );
+        _invariant(VTOKEN.redeem(amount), "DM: failed to redeem");
 
         // Subtract the new balance from the previous one, to find out how many VTokens we minted.
         mintedAmount = address(this).balance - balanceBefore;

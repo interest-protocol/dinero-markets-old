@@ -19,7 +19,7 @@ contract MockRedeemUnderlyingErrorVBNB {
         return 0;
     }
 
-    function redeemUnderlying(uint256) external pure returns (uint256 rate) {
+    function redeem(uint256) external pure returns (uint256 rate) {
         return 1;
     }
 

@@ -203,18 +203,19 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         override(DineroMarket)
         returns (uint256 rate)
     {
-        uint256 one = 1 ether;
-        uint256 underlyingAmount = one.bmul(VTOKEN.exchangeRateCurrent());
+        uint256 underlyingAmount = VTOKEN.exchangeRateCurrent();
 
         // Get USD price for 1 VToken (18 decimals). The USD price also has 18 decimals. We need to reduce
         rate = ORACLE.getTokenUSDPrice(address(COLLATERAL), underlyingAmount);
 
         require(rate > 0, "DM: invalid exchange rate");
 
+        uint256 normalizedRate = rate / 1e10;
+
         // if the exchange rate is different we need to update the global state
-        if (rate != exchangeRate) {
-            exchangeRate = rate;
-            emit ExchangeRate(rate);
+        if (normalizedRate != exchangeRate) {
+            exchangeRate = normalizedRate;
+            emit ExchangeRate(normalizedRate);
         }
     }
 

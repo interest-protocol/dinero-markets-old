@@ -107,6 +107,12 @@ abstract contract DineroMarket is
 
     event GetEarnings(address indexed treasury, uint256 amount);
 
+    event LiquidationFee(uint256 fee);
+
+    event MaxTVLRatio(uint256 ltv);
+
+    event InterestRate(uint256 rate);
+
     /*///////////////////////////////////////////////////////////////
                                 STATE
     //////////////////////////////////////////////////////////////*/
@@ -420,6 +426,7 @@ abstract contract DineroMarket is
     function setMaxLTVRatio(uint256 amount) external onlyOwner {
         require(0.9e18 >= amount, "MKT: too high");
         maxLTVRatio = amount;
+        emit MaxTVLRatio(amount);
     }
 
     /**
@@ -436,6 +443,7 @@ abstract contract DineroMarket is
     function setLiquidationFee(uint256 amount) external onlyOwner {
         require(0.15e18 >= amount, "MKT: too high");
         liquidationFee = amount;
+        emit LiquidationFee(amount);
     }
 
     /**
@@ -455,6 +463,7 @@ abstract contract DineroMarket is
         // 13e8 * 60 * 60 * 24 * 365 / 1e18 = ~ 0.0409968
         require(13e8 >= amount, "MKT: too high");
         loan.INTEREST_RATE = amount;
+        emit InterestRate(amount);
     }
 
     /**

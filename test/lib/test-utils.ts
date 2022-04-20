@@ -121,3 +121,6 @@ export const calculateUserPendingRewards = (
     .mul(poolAccruedIntPerShare)
     .div(ethers.utils.parseEther('1'))
     .sub(userRewardsPaid);
+
+export const toVBalance = (x: BigNumber, exchangeRate: BigNumber): BigNumber =>
+  x.mul(ethers.utils.parseEther('1')).div(exchangeRate);

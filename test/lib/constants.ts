@@ -93,6 +93,14 @@ export const BTC_WHALE_ONE = getAddress(
   '0xF977814e90dA44bFA03b6295A0616a897441aceC'
 );
 
+export const BTC_WHALE_TWO = getAddress(
+  '0x8894E0a0c962CB723c1976a4421c95949bE2D4E3'
+);
+
+export const BTC_WHALE_THREE = getAddress(
+  '0x72A53cDBBcc1b9efa39c834A540550e23463AAcB'
+);
+
 export const DAI_WHALE_ONE = getAddress(
   '0xf977814e90da44bfa03b6295a0616a897441acec'
 );
@@ -121,4 +129,8 @@ export const WBNB_XVS_PAIR = getAddress(
 
 export const BNB_USD_PRICE_FEED = getAddress(
   '0x0567f2323251f0aab15c8dfb1967e4e8a7d42aee'
+);
+
+export const BTC_USD_PRICE_FEED = getAddress(
+  '0x264990fbd0a4796a3e3d8e37c4d5f87a3aca5ebf'
 );

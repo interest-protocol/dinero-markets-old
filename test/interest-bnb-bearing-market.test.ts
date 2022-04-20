@@ -15,8 +15,6 @@ import {
   ErrorInterestBearingSendBNBRequireNoMessage,
   InterestBNBBearingMarket,
   MockOracle,
-  MockReceiveErrorVBNB,
-  MockRedeemUnderlyingErrorVBNB,
   MockTWAP,
   OracleV1,
   TestInterestBNBBearingMarketV2,
@@ -391,9 +389,7 @@ describe('Interest BNB Bearing Market', () => {
       ]);
 
       expect(exchangeRate).to.be.closeTo(
-        parseEther('450')
-          .mul(vBNBExchangeRate.mul(ONE_V_TOKEN).div(parseEther('1')))
-          .div(parseEther('1')),
+        parseEther('450').mul(vBNBExchangeRate).div(parseEther('1')).div(1e10),
         parseEther('0.00001')
       );
 
@@ -404,7 +400,7 @@ describe('Interest BNB Bearing Market', () => {
       const tx1: ContractTransaction = await market.updateExchangeRate();
       const tx2: ContractTransaction = await market.updateExchangeRate();
 
-      advanceBlock(ethers);
+      await advanceBlock(ethers);
 
       const receipt1 = await tx1.wait();
       const receipt2 = await tx2.wait();
