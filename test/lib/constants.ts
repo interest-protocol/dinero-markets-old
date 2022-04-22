@@ -134,3 +134,7 @@ export const BNB_USD_PRICE_FEED = getAddress(
 export const BTC_USD_PRICE_FEED = getAddress(
   '0x264990fbd0a4796a3e3d8e37c4d5f87a3aca5ebf'
 );
+
+export const CAKE_USD_PRICE_FEED = getAddress(
+  '0xb6064ed41d4f67e353768aa239ca86f4f73665a1'
+);

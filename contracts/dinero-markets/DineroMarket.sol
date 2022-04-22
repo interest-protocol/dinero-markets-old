@@ -117,6 +117,15 @@ abstract contract DineroMarket is
                                 STATE
     //////////////////////////////////////////////////////////////*/
 
+    // Requests
+    uint8 internal constant ADD_COLLATERAL_REQUEST = 0;
+
+    uint8 internal constant WITHDRAW_COLLATERAL_REQUEST = 1;
+
+    uint8 internal constant BORROW_REQUEST = 2;
+
+    uint8 internal constant REPAY_REQUEST = 3;
+
     // solhint-disable-next-line var-name-mixedcase
     IPancakeRouter02 internal constant ROUTER =
         IPancakeRouter02(0x10ED43C718714eb63d5aA57B78B54704E256024E); // PCS router
@@ -406,6 +415,33 @@ abstract contract DineroMarket is
         return
             collateralInUSD.bmul(maxLTVRatio) >
             _totalLoan.toElastic(principal, true);
+    }
+
+    /**
+     * @dev Helper function to check if we should check for solvency in the request functions
+     *
+     * @param _request The request action
+     * @return bool if true the function should check for solvency
+     */
+    function _checkForSolvency(uint8 _request) internal pure returns (bool) {
+        if (_request == WITHDRAW_COLLATERAL_REQUEST) return true;
+        if (_request == BORROW_REQUEST) return true;
+
+        return false;
+    }
+
+    /**
+     * @dev Helper function to check if we should accrue for the request functions
+     *
+     * @param _request The request action
+     * @return bool if true the function should accrue
+     */
+    function _checkIfAccrue(uint8 _request) internal pure returns (bool) {
+        if (_request == WITHDRAW_COLLATERAL_REQUEST) return true;
+        if (_request == REPAY_REQUEST) return true;
+        if (_request == BORROW_REQUEST) return true;
+
+        return false;
     }
 
     /*///////////////////////////////////////////////////////////////

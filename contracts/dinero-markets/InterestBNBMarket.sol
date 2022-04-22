@@ -146,56 +146,6 @@ contract InterestBNBMarket is
     }
 
     /**
-     * @dev A utility function to add BNB and borrow Dinero in one call. It applies all restrictions of {addCollateral} and {borrow}.
-     *
-     * @param collateralRecipient The address that will receive the collateral
-     * @param loanRecipient The address that will receive the DNR loan
-     * @param borrowAmount The number of DNR tokens to borrow.
-     */
-    function addCollateralAndBorrow(
-        address collateralRecipient,
-        address loanRecipient,
-        uint256 borrowAmount
-    ) external payable isSolvent {
-        require(
-            collateralRecipient != address(0) && loanRecipient != address(0),
-            "DM: no zero address"
-        );
-        require(borrowAmount > 0, "DM: no zero amount");
-        accrue();
-
-        addCollateral(collateralRecipient);
-        _borrowFresh(loanRecipient, borrowAmount);
-    }
-
-    /**
-     * @dev A utility function to repay and withdraw collateral in one call.
-     *
-     * @param account The address that will have its loan paid.
-     * @param principal How many shares of loans to repay.
-     * @param to The address that will receive the collateral being withdrawn
-     * @param amount The number of collateral to withdraw.
-     */
-    function repayAndWithdrawCollateral(
-        address account,
-        uint256 principal,
-        address to,
-        uint256 amount
-    ) external nonReentrant isSolvent {
-        require(
-            account != address(0) && to != address(0),
-            "DM: no zero address"
-        );
-        require(principal > 0, "DM: principal cannot be 0");
-        require(amount > 0, "DM: no zero amount");
-        accrue();
-
-        _repayFresh(account, principal);
-
-        _withdrawCollateral(to, amount);
-    }
-
-    /**
      * @dev Allows `msg.sender` to add collateral to a `to` address.
      *
      * @notice This is a payable function.
@@ -234,7 +184,37 @@ contract InterestBNBMarket is
         // Update how much is owed to the protocol before allowing collateral to be withdrawn
         accrue();
 
-        _withdrawCollateral(to, amount);
+        _withdrawCollateralFresh(to, amount);
+    }
+
+    /**
+     * @dev Function to call borrow, addCollateral, withdrawCollateral and repay in an arbitrary order
+     *
+     * @param requests Array of actions to denote, which function to call
+     * @param requestArgs The data to pass to the function based on the request
+     */
+    function request(uint8[] calldata requests, bytes[] calldata requestArgs)
+        external
+        nonReentrant
+    {
+        bool checkForSolvency;
+
+        bool alreadyAccrued;
+
+        for (uint256 i; i < requests.length; i++) {
+            uint8 requestAction = requests[i];
+
+            if (_checkForSolvency(requestAction)) checkForSolvency = true;
+
+            if (!alreadyAccrued && _checkIfAccrue(requestAction)) {
+                alreadyAccrued = true;
+                accrue();
+            }
+
+            _request(requestAction, requestArgs[i]);
+        }
+
+        if (checkForSolvency) _isSolvent(_msgSender(), updateExchangeRate());
     }
 
     /**
@@ -389,12 +369,57 @@ contract InterestBNBMarket is
     //////////////////////////////////////////////////////////////*/
 
     /**
+     * @dev Call a function based on requestAction
+     *
+     * @param requestAction The action associated to a function
+     * @param data The arguments to be passed to the function
+     */
+    function _request(uint8 requestAction, bytes calldata data) private {
+        if (requestAction == ADD_COLLATERAL_REQUEST) {
+            address to = abi.decode(data, (address));
+            require(to != address(0), "no zero address");
+            addCollateral(to);
+            return;
+        }
+
+        if (requestAction == WITHDRAW_COLLATERAL_REQUEST) {
+            (address to, uint256 amount) = abi.decode(data, (address, uint256));
+            require(to != address(0), "no zero address");
+            require(amount != 0, "no zero amount");
+            _withdrawCollateralFresh(to, amount);
+            return;
+        }
+
+        if (requestAction == BORROW_REQUEST) {
+            (address to, uint256 amount) = abi.decode(data, (address, uint256));
+            require(to != address(0), "MKT: no zero address");
+
+            _borrowFresh(to, amount);
+            return;
+        }
+
+        if (requestAction == REPAY_REQUEST) {
+            (address account, uint256 principal) = abi.decode(
+                data,
+                (address, uint256)
+            );
+            require(account != address(0), "MKT: no zero address");
+            require(principal > 0, "MKT: principal cannot be 0");
+
+            _repayFresh(account, principal);
+            return;
+        }
+
+        revert("DM: invalid request");
+    }
+
+    /**
      * @dev Function allows the `msg.sender` to remove his collateral as long as he remains solvent. It does not run solvency checks nor accrue beforehand. The caller must check for those.
      *
      * @param to The address that will receive the collateral being withdrawn.
      * @param amount The number of BNB tokens he wishes to withdraw.
      */
-    function _withdrawCollateral(address to, uint256 amount) private {
+    function _withdrawCollateralFresh(address to, uint256 amount) private {
         // Update State
         userCollateral[_msgSender()] -= amount;
 

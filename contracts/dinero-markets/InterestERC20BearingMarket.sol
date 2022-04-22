@@ -272,45 +272,7 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         // Update rewards.
         _claimVenus();
 
-        // Save gas
-        uint256 _userCollateral = userCollateral[_msgSender()];
-        uint256 _totalRewardsPerVToken = totalRewardsPerVToken;
-
-        uint256 rewards;
-
-        // If the user has a deposit, he is entitled to rewards.
-        if (_userCollateral > 0) {
-            rewards =
-                _totalRewardsPerVToken.mulDiv(
-                    _userCollateral,
-                    10**address(VTOKEN).safeDecimals()
-                ) -
-                rewardsOf[_msgSender()];
-        }
-
-        uint256 vTokenAmount;
-        uint256 underlyingAmount;
-
-        COLLATERAL.safeTransferFrom(_msgSender(), address(this), amount);
-        vTokenAmount = _mintERC20VToken(amount);
-        underlyingAmount = amount;
-
-        uint256 newAmount = _userCollateral + vTokenAmount;
-
-        // Update Global state
-        userCollateral[_msgSender()] = newAmount;
-        totalVCollateral += vTokenAmount;
-
-        // User has been paid all rewards.
-        rewardsOf[_msgSender()] = _totalRewardsPerVToken.mulDiv(
-            newAmount,
-            10**address(VTOKEN).safeDecimals()
-        );
-
-        // Send the rewards.
-        _transferXVS(_msgSender(), rewards);
-
-        emit AddCollateral(_msgSender(), underlyingAmount, vTokenAmount);
+        _addCollateralFresh(amount);
     }
 
     /**
@@ -333,6 +295,40 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         accrue();
 
         _withdrawCollateralFresh(amount, inUnderlying);
+    }
+
+    /**
+     * @dev Function to call borrow, addCollateral, withdrawCollateral and repay in an arbitrary order
+     *
+     * @param requests Array of actions to denote, which function to call
+     * @param requestArgs The data to pass to the function based on the request
+     */
+    function request(uint8[] calldata requests, bytes[] calldata requestArgs)
+        external
+    {
+        bool checkForSolvency;
+        bool alreadyClaimed;
+        bool alreadyAccrued;
+
+        for (uint256 i; i < requests.length; i++) {
+            uint8 requestAction = requests[i];
+
+            if (_checkForSolvency(requestAction)) checkForSolvency = true;
+
+            if (!alreadyClaimed && _checkForRewards(requestAction)) {
+                alreadyClaimed = true;
+                _claimVenus();
+            }
+
+            if (!alreadyAccrued && _checkIfAccrue(requestAction)) {
+                alreadyAccrued = true;
+                accrue();
+            }
+
+            _request(requestAction, requestArgs[i]);
+        }
+
+        if (checkForSolvency) _isSolvent(_msgSender(), updateExchangeRate());
     }
 
     /**
@@ -554,6 +550,63 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     //////////////////////////////////////////////////////////////*/
 
     /**
+     * @dev Call a function based on requestAction
+     *
+     * @param requestAction The action associated to a function
+     * @param data The arguments to be passed to the function
+     */
+    function _request(uint8 requestAction, bytes calldata data) private {
+        if (requestAction == ADD_COLLATERAL_REQUEST) {
+            _addCollateralFresh(abi.decode(data, (uint256)));
+            return;
+        }
+
+        if (requestAction == WITHDRAW_COLLATERAL_REQUEST) {
+            (uint256 amount, bool inUnderlying) = abi.decode(
+                data,
+                (uint256, bool)
+            );
+            _withdrawCollateralFresh(amount, inUnderlying);
+            return;
+        }
+
+        if (requestAction == BORROW_REQUEST) {
+            (address to, uint256 amount) = abi.decode(data, (address, uint256));
+            require(to != address(0), "MKT: no zero address");
+
+            _borrowFresh(to, amount);
+            return;
+        }
+
+        if (requestAction == REPAY_REQUEST) {
+            (address account, uint256 principal) = abi.decode(
+                data,
+                (address, uint256)
+            );
+            require(account != address(0), "MKT: no zero address");
+            require(principal > 0, "MKT: principal cannot be 0");
+
+            _repayFresh(account, principal);
+            return;
+        }
+
+        revert("DM: invalid request");
+    }
+
+    /**
+     * @dev Helper function to check if we should claim XVS rewards on request
+     *
+     * @param requestAction Request action to check
+     * @return bool If true we should claim rewards
+     */
+    function _checkForRewards(uint8 requestAction) private pure returns (bool) {
+        if (requestAction == WITHDRAW_COLLATERAL_REQUEST) return true;
+        if (requestAction == ADD_COLLATERAL_REQUEST) return true;
+
+        return false;
+    }
+
+    /**
      * @dev Allows a user to remove collateral, it does not run solvency checks nor accrue. The caller must run those.
      *
      * @notice This function can fail if Venus does not have enough cash.
@@ -564,9 +617,6 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     function _withdrawCollateralFresh(uint256 amount, bool inUnderlying)
         private
     {
-        // Update rewards.
-        _claimVenus();
-
         // Save gas
         uint256 _userCollateral = userCollateral[_msgSender()];
         uint256 _totalRewardsPerVToken = totalRewardsPerVToken;
@@ -609,6 +659,55 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         _transferXVS(_msgSender(), rewards);
 
         emit WithdrawCollateral(_msgSender(), underlyingAmount, amount);
+    }
+
+    /**
+     * @dev Allows `msg.sender` to add collateral. It will send the rewards in XVS if applicable.
+     *
+     * @notice If the `COLLATERAL` is an ERC20, the `msg.sender` must approve this contract. If it is BNB, he can send directly.
+     *
+     * @param amount The number of `COLLATERAL` tokens to be used for collateral. This argument is not used if the underlying is BNB.
+     */
+    function _addCollateralFresh(uint256 amount) private {
+        // Save gas
+        uint256 _userCollateral = userCollateral[_msgSender()];
+        uint256 _totalRewardsPerVToken = totalRewardsPerVToken;
+
+        uint256 rewards;
+
+        // If the user has a deposit, he is entitled to rewards.
+        if (_userCollateral > 0) {
+            rewards =
+                _totalRewardsPerVToken.mulDiv(
+                    _userCollateral,
+                    10**address(VTOKEN).safeDecimals()
+                ) -
+                rewardsOf[_msgSender()];
+        }
+
+        uint256 vTokenAmount;
+        uint256 underlyingAmount;
+
+        COLLATERAL.safeTransferFrom(_msgSender(), address(this), amount);
+        vTokenAmount = _mintERC20VToken(amount);
+        underlyingAmount = amount;
+
+        uint256 newAmount = _userCollateral + vTokenAmount;
+
+        // Update Global state
+        userCollateral[_msgSender()] = newAmount;
+        totalVCollateral += vTokenAmount;
+
+        // User has been paid all rewards.
+        rewardsOf[_msgSender()] = _totalRewardsPerVToken.mulDiv(
+            newAmount,
+            10**address(VTOKEN).safeDecimals()
+        );
+
+        // Send the rewards.
+        _transferXVS(_msgSender(), rewards);
+
+        emit AddCollateral(_msgSender(), underlyingAmount, vTokenAmount);
     }
 
     /**

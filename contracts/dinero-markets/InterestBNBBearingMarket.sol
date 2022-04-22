@@ -199,54 +199,37 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
     }
 
     /**
-     * @dev A utility function to allow a user to deposit collateral and borrow in the one call.
+     * @dev Function to call borrow, addCollateral, withdrawCollateral and repay in an arbitrary order
      *
-     * @param to The address that will receive the borrowed DNR.
-     * @param borrowAmount The amount of DNR to borrow
-     *
-     * Requirements:
-     *
-     * - `msg.sender` must remain solvent after these operations
+     * @param requests Array of actions to denote, which function to call
+     * @param requestArgs The data to pass to the function based on the request
      */
-    function addCollateralAndBorrow(address to, uint256 borrowAmount)
+    function request(uint8[] calldata requests, bytes[] calldata requestArgs)
         external
-        payable
-        isSolvent
     {
-        // To prevent loss of funds.
-        require(to != address(0), "DM: no zero address");
-        require(borrowAmount > 0, "DM: no zero borrow amount");
-        // Update how much is owed to the protocol before allowing collateral to be removed
-        accrue();
+        bool checkForSolvency;
+        bool alreadyClaimed;
+        bool alreadyAccrued;
 
-        addCollateral();
+        for (uint256 i; i < requests.length; i++) {
+            uint8 requestAction = requests[i];
 
-        _borrowFresh(to, borrowAmount);
-    }
+            if (_checkForSolvency(requestAction)) checkForSolvency = true;
 
-    /**
-     * @dev A utility function to allow a user to repay a portion fo his loan and then withdraw collateral in one call.
-     *
-     * @param account The that will have its loan repaid.
-     * @param principal The amount of loan shares that will be repaid.
-     * @param amount The number of collateral tokens to be withdrawn.
-     * @param inUnderlying Indicates if the collateral should be withdrawn in bearing token or underlying.
-     */
-    function repayAndWithdrawCollateral(
-        address account,
-        uint256 principal,
-        uint256 amount,
-        bool inUnderlying
-    ) external isSolvent {
-        require(account != address(0), "DM: no zero address");
-        require(principal > 0, "DM: principal cannot be 0");
-        require(amount > 0, "DM: amount cannot be 0");
+            if (!alreadyClaimed && _checkForRewards(requestAction)) {
+                alreadyClaimed = true;
+                _claimVenus();
+            }
 
-        // Update how much is owed to the protocol before allowing collateral to be removed
-        accrue();
+            if (!alreadyAccrued && _checkIfAccrue(requestAction)) {
+                alreadyAccrued = true;
+                accrue();
+            }
 
-        _repayFresh(account, principal);
-        _withdrawCollateralFresh(amount, inUnderlying);
+            _request(requestAction, requestArgs[i]);
+        }
+
+        if (checkForSolvency) _isSolvent(_msgSender(), updateExchangeRate());
     }
 
     /**
@@ -258,40 +241,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         // Update rewards.
         _claimVenus();
 
-        // Save gas
-        uint256 _userCollateral = userCollateral[_msgSender()];
-        uint256 _totalRewardsPerVToken = totalRewardsPerVToken;
-
-        uint256 rewards;
-
-        // If the user has a deposit, he is entitled to rewards.
-        if (_userCollateral > 0) {
-            rewards =
-                _totalRewardsPerVToken.mulDiv(_userCollateral, ONE_VBNB) -
-                rewardsOf[_msgSender()];
-        }
-
-        uint256 vTokenAmount;
-
-        // Supply BNB
-        vTokenAmount = _mintBNBVToken(msg.value);
-
-        uint256 newAmount = _userCollateral + vTokenAmount;
-
-        // Update Global state
-        userCollateral[_msgSender()] = newAmount;
-        totalVCollateral += vTokenAmount;
-
-        // User has been paid all rewards.
-        rewardsOf[_msgSender()] = _totalRewardsPerVToken.mulDiv(
-            newAmount,
-            ONE_VBNB
-        );
-
-        // Send the rewards.
-        _transferXVS(_msgSender(), rewards);
-
-        emit AddCollateral(_msgSender(), msg.value, vTokenAmount);
+        _addCollateralFresh();
     }
 
     /**
@@ -312,6 +262,9 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
     {
         // Update how much is owed to the protocol before allowing collateral to be removed
         accrue();
+
+        // Update rewards.
+        _claimVenus();
 
         _withdrawCollateralFresh(amount, inUnderlying);
     }
@@ -533,6 +486,105 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
     //////////////////////////////////////////////////////////////*/
 
     /**
+     * @dev Call a function based on requestAction
+     *
+     * @param requestAction The action associated to a function
+     * @param data The arguments to be passed to the function
+     */
+    function _request(uint8 requestAction, bytes calldata data) private {
+        if (requestAction == ADD_COLLATERAL_REQUEST) {
+            _addCollateralFresh();
+            return;
+        }
+
+        if (requestAction == WITHDRAW_COLLATERAL_REQUEST) {
+            (uint256 amount, bool inUnderlying) = abi.decode(
+                data,
+                (uint256, bool)
+            );
+            _withdrawCollateralFresh(amount, inUnderlying);
+            return;
+        }
+
+        if (requestAction == BORROW_REQUEST) {
+            (address to, uint256 amount) = abi.decode(data, (address, uint256));
+            require(to != address(0), "MKT: no zero address");
+
+            _borrowFresh(to, amount);
+            return;
+        }
+
+        if (requestAction == REPAY_REQUEST) {
+            (address account, uint256 principal) = abi.decode(
+                data,
+                (address, uint256)
+            );
+            require(account != address(0), "MKT: no zero address");
+            require(principal > 0, "MKT: principal cannot be 0");
+
+            _repayFresh(account, principal);
+            return;
+        }
+
+        revert("DM: invalid request");
+    }
+
+    /**
+     * @dev Helper function to check if we should claim XVS rewards on request
+     *
+     * @param requestAction Request action to check
+     * @return bool If true we should claim rewards
+     */
+    function _checkForRewards(uint8 requestAction) private pure returns (bool) {
+        if (requestAction == WITHDRAW_COLLATERAL_REQUEST) return true;
+        if (requestAction == ADD_COLLATERAL_REQUEST) return true;
+
+        return false;
+    }
+
+    /**
+     * @dev Allows `msg.sender` to add collateral. It will send the rewards in XVS if applicable.
+     *
+     * @notice If the `COLLATERAL` is an ERC20, the `msg.sender` must approve this contract. If it is BNB, he can send directly.
+     */
+    function _addCollateralFresh() private {
+        // Save gas
+        uint256 _userCollateral = userCollateral[_msgSender()];
+        uint256 _totalRewardsPerVToken = totalRewardsPerVToken;
+
+        uint256 rewards;
+
+        // If the user has a deposit, he is entitled to rewards.
+        if (_userCollateral > 0) {
+            rewards =
+                _totalRewardsPerVToken.mulDiv(_userCollateral, ONE_VBNB) -
+                rewardsOf[_msgSender()];
+        }
+
+        uint256 vTokenAmount;
+
+        // Supply BNB
+        vTokenAmount = _mintBNBVToken(msg.value);
+
+        uint256 newAmount = _userCollateral + vTokenAmount;
+
+        // Update Global state
+        userCollateral[_msgSender()] = newAmount;
+        totalVCollateral += vTokenAmount;
+
+        // User has been paid all rewards.
+        rewardsOf[_msgSender()] = _totalRewardsPerVToken.mulDiv(
+            newAmount,
+            ONE_VBNB
+        );
+
+        // Send the rewards.
+        _transferXVS(_msgSender(), rewards);
+
+        emit AddCollateral(_msgSender(), msg.value, vTokenAmount);
+    }
+
+    /**
      * @dev It holds the core logic to withdraw collateral. When using this function, you need to run accrue and solvency checks.
      *
      * @notice This function can fail if Venus does not have enough cash.
@@ -543,9 +595,6 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
     function _withdrawCollateralFresh(uint256 amount, bool inUnderlying)
         private
     {
-        // Update rewards.
-        _claimVenus();
-
         // Save gas
         uint256 _userCollateral = userCollateral[_msgSender()];
         uint256 _totalRewardsPerVToken = totalRewardsPerVToken;

@@ -18,6 +18,14 @@ contract MockOracle {
         return (prices[erc20] * amount) / 1 ether;
     }
 
+    function getUSDPrice(address erc20, uint256 amount)
+        external
+        view
+        returns (uint256)
+    {
+        return (prices[erc20] * amount) / 1 ether;
+    }
+
     function __setBNBUSDPrice(uint256 amount) external {
         bnbUSDPrice = amount;
     }
