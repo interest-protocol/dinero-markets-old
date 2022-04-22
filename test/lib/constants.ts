@@ -138,3 +138,13 @@ export const BTC_USD_PRICE_FEED = getAddress(
 export const CAKE_USD_PRICE_FEED = getAddress(
   '0xb6064ed41d4f67e353768aa239ca86f4f73665a1'
 );
+
+// Dinero Market Actions
+
+export const ADD_COLLATERAL_REQUEST = 0;
+
+export const WITHDRAW_COLLATERAL_REQUEST = 1;
+
+export const BORROW_REQUEST = 2;
+
+export const REPAY_REQUEST = 3;

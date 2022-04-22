@@ -15,6 +15,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 
 import "../interfaces/IPancakeRouter02.sol";
 import "../interfaces/IPancakePair.sol";
@@ -53,7 +54,11 @@ import "./DineroMarket.sol";
  * This contract that will support:
  * NATIVE BNB - 18 decimals
  */
-contract InterestBNBBearingMarket is Initializable, DineroMarket {
+contract InterestBNBBearingMarket is
+    Initializable,
+    ReentrancyGuardUpgradeable,
+    DineroMarket
+{
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -153,6 +158,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         );
 
         __DineroMarket_init();
+        __ReentrancyGuard_init();
 
         DINERO = dinero;
         FEE_TO = feeTo;
@@ -206,13 +212,22 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
      */
     function request(uint8[] calldata requests, bytes[] calldata requestArgs)
         external
+        payable
+        nonReentrant
     {
         bool checkForSolvency;
         bool alreadyClaimed;
         bool alreadyAccrued;
+        uint256 value = msg.value;
 
         for (uint256 i; i < requests.length; i++) {
             uint8 requestAction = requests[i];
+
+            // Check for msg.value calculations during loops
+            if (requestAction == ADD_COLLATERAL_REQUEST) {
+                uint256 amount = abi.decode(requestArgs[i], (uint256));
+                value -= amount;
+            }
 
             if (_checkForSolvency(requestAction)) checkForSolvency = true;
 
@@ -229,7 +244,11 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
             _request(requestAction, requestArgs[i]);
         }
 
-        if (checkForSolvency) _isSolvent(_msgSender(), updateExchangeRate());
+        if (checkForSolvency)
+            require(
+                _isSolvent(_msgSender(), updateExchangeRate()),
+                "MKT: sender is insolvent"
+            );
     }
 
     /**
@@ -241,7 +260,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         // Update rewards.
         _claimVenus();
 
-        _addCollateralFresh();
+        _addCollateralFresh(msg.value);
     }
 
     /**
@@ -258,6 +277,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
      */
     function withdrawCollateral(uint256 amount, bool inUnderlying)
         external
+        nonReentrant
         isSolvent
     {
         // Update how much is owed to the protocol before allowing collateral to be removed
@@ -304,7 +324,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         address recipient,
         bool inUnderlying,
         address[] calldata path
-    ) external {
+    ) external nonReentrant {
         if (path.length > 0) {
             // Make sure the token is always exchanged to Dinero as we need to burn at the end.
             // path can be empty if the liquidator has enough dinero in his accounts to close the positions.
@@ -491,9 +511,9 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
      * @param requestAction The action associated to a function
      * @param data The arguments to be passed to the function
      */
-    function _request(uint8 requestAction, bytes calldata data) private {
+    function _request(uint8 requestAction, bytes memory data) private {
         if (requestAction == ADD_COLLATERAL_REQUEST) {
-            _addCollateralFresh();
+            _addCollateralFresh(abi.decode(data, (uint256)));
             return;
         }
 
@@ -546,8 +566,10 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
      * @dev Allows `msg.sender` to add collateral. It will send the rewards in XVS if applicable.
      *
      * @notice If the `COLLATERAL` is an ERC20, the `msg.sender` must approve this contract. If it is BNB, he can send directly.
+     *
+     * @param amount The number of BNB to deposit
      */
-    function _addCollateralFresh() private {
+    function _addCollateralFresh(uint256 amount) private {
         // Save gas
         uint256 _userCollateral = userCollateral[_msgSender()];
         uint256 _totalRewardsPerVToken = totalRewardsPerVToken;
@@ -561,10 +583,8 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
                 rewardsOf[_msgSender()];
         }
 
-        uint256 vTokenAmount;
-
         // Supply BNB
-        vTokenAmount = _mintBNBVToken(msg.value);
+        uint256 vTokenAmount = _mintBNBVToken(amount);
 
         uint256 newAmount = _userCollateral + vTokenAmount;
 
@@ -581,7 +601,7 @@ contract InterestBNBBearingMarket is Initializable, DineroMarket {
         // Send the rewards.
         _transferXVS(_msgSender(), rewards);
 
-        emit AddCollateral(_msgSender(), msg.value, vTokenAmount);
+        emit AddCollateral(_msgSender(), amount, vTokenAmount);
     }
 
     /**
