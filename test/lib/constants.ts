@@ -117,12 +117,24 @@ export const VENUS_ADMIN = getAddress(
   '0x939bd8d64c0a9583a7dcea9933f7b21697ab6396'
 );
 
+export const WBNB_CAKE_LP_HOLDER = getAddress(
+  '0x14b2e8329b8e06bcd524eb114e23fabd21910109'
+);
+
+export const WBNB_CAKE_LP_HOLDER_TWO = getAddress(
+  '0xa3381829ae9cb616fa95cd0370b12b90c13caa00'
+);
+
 export const ONE_V_TOKEN = BigNumber.from(10).pow(8);
 
 export const PRECISION = BigNumber.from(10).pow(10);
 
 export const WBNB_XVS_PAIR = getAddress(
   '0x7EB5D86FD78f3852a3e0e064f2842d45a3dB6EA2'
+);
+
+export const WBNB_CAKE_PAIR_LP_TOKEN = getAddress(
+  '0x0eD7e52944161450477ee417DE9Cd3a859b14fD0'
 );
 
 // FEEDS
@@ -139,6 +151,10 @@ export const CAKE_USD_PRICE_FEED = getAddress(
   '0xb6064ed41d4f67e353768aa239ca86f4f73665a1'
 );
 
+export const CAKE_BNB_PRICE_FEED = getAddress(
+  '0xcb23da9ea243f53194cbc2380a6d4d9bc046161f'
+);
+
 // Dinero Market Actions
 
 export const ADD_COLLATERAL_REQUEST = 0;
@@ -148,3 +164,7 @@ export const WITHDRAW_COLLATERAL_REQUEST = 1;
 export const BORROW_REQUEST = 2;
 
 export const REPAY_REQUEST = 3;
+
+// POOL IDs
+
+export const WBNB_CAKE_LP_TOKEN_POOL_ID = 251;

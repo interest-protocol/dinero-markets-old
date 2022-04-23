@@ -153,17 +153,15 @@ contract InterestBNBMarket is
      * @param to The address, which the collateral will be assigned to.
      */
     function addCollateral(address to) public payable {
-        // Update Global state
-        userCollateral[to] += msg.value;
-
-        emit AddCollateral(_msgSender(), to, msg.value);
+        require(to != address(0), "DM: no zero address");
+        _addCollateralFresh(to, msg.value);
     }
 
     /**
      * @dev This a version of {addCollateral} that adds to the `msg.sender`.
      */
     receive() external payable {
-        addCollateral(_msgSender());
+        _addCollateralFresh(_msgSender(), msg.value);
     }
 
     /**
@@ -195,14 +193,24 @@ contract InterestBNBMarket is
      */
     function request(uint8[] calldata requests, bytes[] calldata requestArgs)
         external
+        payable
         nonReentrant
     {
         bool checkForSolvency;
-
         bool alreadyAccrued;
+        uint256 value = msg.value;
 
         for (uint256 i; i < requests.length; i++) {
             uint8 requestAction = requests[i];
+
+            // Make sure msg.value is not abused
+            if (requestAction == ADD_COLLATERAL_REQUEST) {
+                (, uint256 amount) = abi.decode(
+                    requestArgs[i],
+                    (address, uint256)
+                );
+                value -= amount;
+            }
 
             if (_checkForSolvency(requestAction)) checkForSolvency = true;
 
@@ -214,7 +222,11 @@ contract InterestBNBMarket is
             _request(requestAction, requestArgs[i]);
         }
 
-        if (checkForSolvency) _isSolvent(_msgSender(), updateExchangeRate());
+        if (checkForSolvency)
+            require(
+                _isSolvent(_msgSender(), updateExchangeRate()),
+                "MKT: sender is insolvent"
+            );
     }
 
     /**
@@ -369,6 +381,21 @@ contract InterestBNBMarket is
     //////////////////////////////////////////////////////////////*/
 
     /**
+     * @dev Allows `msg.sender` to add collateral to a `to` address.
+     *
+     * @notice This is a payable function.
+     *
+     * @param to The address, which the collateral will be assigned to.
+     * @param amount The number of BNB to add
+     */
+    function _addCollateralFresh(address to, uint256 amount) private {
+        // Update Global state
+        userCollateral[to] += amount;
+
+        emit AddCollateral(_msgSender(), to, amount);
+    }
+
+    /**
      * @dev Call a function based on requestAction
      *
      * @param requestAction The action associated to a function
@@ -376,16 +403,17 @@ contract InterestBNBMarket is
      */
     function _request(uint8 requestAction, bytes calldata data) private {
         if (requestAction == ADD_COLLATERAL_REQUEST) {
-            address to = abi.decode(data, (address));
-            require(to != address(0), "no zero address");
-            addCollateral(to);
+            (address to, uint256 amount) = abi.decode(data, (address, uint256));
+            require(to != address(0), "DM: no zero address");
+            require(amount > 0, "DM: no zero amount");
+            _addCollateralFresh(to, amount);
             return;
         }
 
         if (requestAction == WITHDRAW_COLLATERAL_REQUEST) {
             (address to, uint256 amount) = abi.decode(data, (address, uint256));
-            require(to != address(0), "no zero address");
-            require(amount != 0, "no zero amount");
+            require(to != address(0), "DM: no zero address");
+            require(amount != 0, "DM: no zero amount");
             _withdrawCollateralFresh(to, amount);
             return;
         }

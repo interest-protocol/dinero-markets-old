@@ -38,7 +38,7 @@ import {
   upgrade,
 } from './lib/test-utils';
 
-const { parseEther } = ethers.utils;
+const { parseEther, defaultAbiCoder } = ethers.utils;
 
 const INTEREST_RATE = ethers.BigNumber.from(12e8);
 
@@ -1474,8 +1474,6 @@ describe('InterestERC20Market', () => {
         .sub(aliceCollateral2)
         .add(joseCollateral.sub(joseCollateral2));
 
-      console.log(allCollateral.toString(), 'all collateral');
-
       const allDebt = allCollateral
         .mul(exchangeRate)
         .div(parseEther('1'))
@@ -1523,272 +1521,72 @@ describe('InterestERC20Market', () => {
         parseEther('1')
       );
     });
-
-    // it('reverts if the collateral is a pair token and the path is passed without a path2 is', async () => {
-    //   const cakeBnbLPAddress = await factory.getPair(bnb.address, cake.address);
-
-    //   const cakeBnbLP = (await ethers.getContractFactory('PancakePair')).attach(
-    //     cakeBnbLPAddress
-    //   );
-
-    //   const cakeBnbLPMarket: InterestMarketV1 = await deployUUPS(
-    //     'InterestMarketV1',
-    //     [
-    //       router.address,
-    //       dinero.address,
-    //       treasury.address,
-    //       oracle.address,
-    //       cakeBnbLPAddress,
-    //       // Already tested the logic of the vault
-    //       ethers.constants.AddressZero,
-    //       ethers.BigNumber.from(12e8),
-    //       ethers.BigNumber.from('500000000000000000'),
-    //       ethers.BigNumber.from('100000000000000000'),
-    //     ]
-    //   );
-
-    //   await Promise.all([
-    //     cakeBnbLP
-    //       .connect(owner)
-    //       .approve(cakeBnbLPMarket.address, ethers.constants.MaxUint256),
-    //     cakeBnbLPMarket.updateExchangeRate(),
-    //     dinero.connect(owner).grantRole(MINTER_ROLE, cakeBnbLPMarket.address),
-    //     dinero.connect(owner).grantRole(BURNER_ROLE, cakeBnbLPMarket.address),
-    //   ]);
-
-    //   await cakeBnbLPMarket
-    //     .connect(owner)
-    //     .addCollateral(owner.address, parseEther('10000'));
-
-    //   await cakeBnbLPMarket
-    //     .connect(owner)
-    //     .borrow(owner.address, parseEther('700000'));
-
-    //   // BEFORE: 1 LP = 200 USD
-    //   // Owner can now be liquidated
-    //   await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('10000000000'));
-
-    //   // BEFORE: 1 LP = 40 USD
-
-    //   await expect(
-    //     cakeBnbLPMarket
-    //       .connect(alice)
-    //       .liquidate(
-    //         [owner.address],
-    //         [parseEther('100000')],
-    //         recipient.address,
-    //         [bnb.address, dinero.address],
-    //         []
-    //       )
-    //   ).to.revertedWith('MKT: provide a path for token1');
-
-    //   await expect(
-    //     cakeBnbLPMarket
-    //       .connect(alice)
-    //       .liquidate(
-    //         [owner.address],
-    //         [parseEther('100000')],
-    //         recipient.address,
-    //         [bnb.address, dinero.address],
-    //         [dinero.address, cake.address]
-    //       )
-    //   ).to.revertedWith('MKT: no dinero on last index');
-    // });
-    // it('liquidates an underwater loan using a LP token as collateral', async () => {
-    //   const cakeBnbLPAddress = await factory.getPair(bnb.address, cake.address);
-
-    //   const cakeBnbLP = (await ethers.getContractFactory('PancakePair')).attach(
-    //     cakeBnbLPAddress
-    //   );
-
-    //   const cakeBnbLPMarket = await deployUUPS('InterestMarketV1', [
-    //     router.address,
-    //     dinero.address,
-    //     treasury.address,
-    //     oracle.address,
-    //     cakeBnbLPAddress,
-    //     // Already tested the logic of the vault
-    //     ethers.constants.AddressZero,
-    //     ethers.BigNumber.from(12e8),
-    //     ethers.BigNumber.from('500000000000000000'),
-    //     ethers.BigNumber.from('100000000000000000'),
-    //   ]);
-
-    //   await Promise.all([
-    //     cakeBnbLP
-    //       .connect(owner)
-    //       .approve(cakeBnbLPMarket.address, ethers.constants.MaxUint256),
-    //     cakeBnbLPMarket.updateExchangeRate(),
-    //     dinero.connect(owner).grantRole(MINTER_ROLE, cakeBnbLPMarket.address),
-    //     dinero.connect(owner).grantRole(BURNER_ROLE, cakeBnbLPMarket.address),
-    //   ]);
-
-    //   await cakeBnbLPMarket
-    //     .connect(owner)
-    //     .addCollateral(owner.address, parseEther('1000'));
-
-    //   await cakeBnbLPMarket
-    //     .connect(owner)
-    //     .borrow(owner.address, parseEther('25000'));
-
-    //   // BEFORE: 1 LP = 200 USD
-    //   // Owner can now be liquidated
-    //   await mockBnbUsdDFeed.setAnswer(ethers.BigNumber.from('10000000000'));
-
-    //   // BEFORE: 1 LP = 40 USD
-
-    //   const [
-    //     totalCollateral,
-    //     ownerLoan,
-    //     ownerCollateral,
-    //     loan,
-    //     cakeBnbLpRecipientBalance,
-    //     dineroRecipientBalance,
-    //   ] = await Promise.all([
-    //     cakeBnbLPMarket.totalCollateral(),
-    //     cakeBnbLPMarket.userLoan(owner.address),
-    //     cakeBnbLPMarket.userCollateral(owner.address),
-    //     cakeBnbLPMarket.loan(),
-    //     cakeBnbLP.balanceOf(recipient.address),
-    //     dinero.balanceOf(recipient.address),
-    //   ]);
-
-    //   expect(totalCollateral).to.be.equal(parseEther('1000'));
-    //   expect(ownerLoan).to.be.equal(parseEther('25000'));
-    //   expect(ownerCollateral).to.be.equal(parseEther('1000'));
-    //   expect(cakeBnbLpRecipientBalance).to.be.equal(0);
-    //   expect(loan.feesEarned).to.be.equal(0);
-    //   expect(dineroRecipientBalance).to.be.equal(0);
-
-    //   // Pass time to accrue fees
-    //   await advanceTime(63_113_904, ethers); // advance 2 years
-
-    //   await expect(
-    //     cakeBnbLPMarket
-    //       .connect(alice)
-    //       .liquidate(
-    //         [owner.address],
-    //         [parseEther('250000')],
-    //         recipient.address,
-    //         [cake.address, bnb.address, dinero.address],
-    //         [bnb.address, dinero.address]
-    //       )
-    //   )
-    //     .to.emit(cakeBnbLPMarket, 'Repay')
-    //     .to.emit(cakeBnbLPMarket, 'Accrue')
-    //     .to.emit(cakeBnbLPMarket, 'ExchangeRate')
-    //     .to.emit(cakeBnbLPMarket, 'WithdrawCollateral')
-    //     .to.emit(cakeBnbLP, 'Swap')
-    //     // Burn emits a Transfer event
-    //     .to.emit(dinero, 'Transfer')
-    //     // remove liquidity
-    //     .to.emit(cakeBnbLP, 'Burn');
-
-    //   const [
-    //     totalCollateral2,
-    //     ownerLoan2,
-    //     ownerCollateral2,
-    //     loan2,
-    //     totalLoan,
-    //     cakeBnbLpRecipientBalance2,
-    //     dineroRecipientBalance2,
-    //   ] = await Promise.all([
-    //     cakeBnbLPMarket.totalCollateral(),
-    //     cakeBnbLPMarket.userLoan(owner.address),
-    //     cakeBnbLPMarket.userCollateral(owner.address),
-    //     cakeBnbLPMarket.loan(),
-    //     cakeBnbLPMarket.totalLoan(),
-    //     cakeBnbLP.balanceOf(recipient.address),
-    //     dinero.balanceOf(recipient.address),
-    //   ]);
-
-    //   // State properly updated
-
-    //   // Collateral is sold for Dinero
-    //   expect(totalCollateral2.gt(0)).to.be.equal(true);
-    //   expect(ownerCollateral2).to.be.equal(totalCollateral2);
-    //   expect(ownerCollateral.gt(ownerCollateral2)).to.be.equal(true);
-
-    //   // Loan is completely paid off and accrued was called
-    //   expect(ownerLoan2).to.be.equal(0);
-    //   expect(loan2.lastAccrued.gt(loan.lastAccrued)).to.be.equal(true);
-    //   expect(loan2.feesEarned.gt(0)).to.be.equal(true);
-    //   expect(totalLoan.base).to.be.equal(0);
-    //   expect(totalLoan.elastic).to.be.equal(0);
-
-    //   // Recipient got paid in Dinero and not in collateral
-    //   expect(cakeBnbLpRecipientBalance2).to.be.equal(0);
-    //   expect(dineroRecipientBalance2.gt(0)).to.be.equal(true);
-    // });
   });
 
-  // describe('Upgrade functionality', () => {
-  //   it('reverts if it not called by the owner', async () => {
-  //     await market.connect(owner).transferOwnership(alice.address);
+  it('reverts if you pass an unknown request', async () => {
+    await expect(
+      market
+        .connect(alice)
+        .request([7], [defaultAbiCoder.encode(['uint256'], [parseEther('2')])])
+    ).to.be.revertedWith('DM: invalid request');
+  });
 
-  //     await expect(upgrade(market, 'TestInterestMarketV2')).to.revertedWith(
-  //       'Ownable: caller is not the owner'
-  //     );
-  //   });
+  describe('Upgrade functionality', () => {
+    it('reverts if it not called by the owner', async () => {
+      await market.connect(owner).transferOwnership(alice.address);
 
-  //   it('updates to version 2', async () => {
-  //     expect(await market.totalCollateral()).to.be.equal(0);
+      await expect(
+        upgrade(market, 'TestInterestERC20MarketV2')
+      ).to.revertedWith('Ownable: caller is not the owner');
+    });
 
-  //     expect(await market.userCollateral(alice.address)).to.be.equal(0);
+    it('updates to version 2', async () => {
+      expect(await market.totalCollateral()).to.be.equal(0);
 
-  //     const amount = parseEther('10');
+      expect(await market.userCollateral(alice.address)).to.be.equal(0);
 
-  //     await expect(
-  //       market.connect(alice).addCollateral(alice.address, amount)
-  //     )
-  //       .to.emit(market, 'AddCollateral')
-  //       .withArgs(alice.address, alice.address, amount)
-  //       .to.emit(cakeVault, 'Deposit')
-  //       .withArgs(alice.address, alice.address, amount)
-  //       .to.emit(cake, 'Transfer')
-  //       .withArgs(alice.address, cakeVault.address, amount);
+      const amount = parseEther('10');
 
-  //     expect(await market.totalCollateral()).to.be.equal(amount);
+      await expect(market.connect(alice).addCollateral(alice.address, amount))
+        .to.emit(market, 'AddCollateral')
+        .withArgs(alice.address, alice.address, amount)
+        .to.emit(CakeContract, 'Transfer')
+        .withArgs(alice.address, market.address, amount);
 
-  //     expect(await market.userCollateral(alice.address)).to.be.equal(
-  //       amount
-  //     );
+      expect(await market.totalCollateral()).to.be.equal(amount);
 
-  //     const marketV2: TestInterestMarketV2 = await upgrade(
-  //       market,
-  //       'TestInterestMarketV2'
-  //     );
+      expect(await market.userCollateral(alice.address)).to.be.equal(amount);
 
-  //     await expect(
-  //       marketV2.connect(bob).addCollateral(alice.address, amount)
-  //     )
-  //       .to.emit(marketV2, 'AddCollateral')
-  //       .withArgs(bob.address, alice.address, amount)
-  //       .to.emit(cakeVault, 'Deposit')
-  //       .withArgs(bob.address, alice.address, amount)
-  //       .to.emit(cake, 'Transfer')
-  //       .withArgs(bob.address, cakeVault.address, amount);
+      const marketV2: TestInterestERC20MarketV2 = await upgrade(
+        market,
+        'TestInterestERC20MarketV2'
+      );
 
-  //     const [
-  //       totalCollateral,
-  //       aliceCollateral,
-  //       bobCollateral,
-  //       version,
-  //       marketCakeBalance,
-  //     ] = await Promise.all([
-  //       marketV2.totalCollateral(),
-  //       marketV2.userCollateral(alice.address),
-  //       marketV2.userCollateral(bob.address),
-  //       marketV2.version(),
-  //       cake.balanceOf(market.address),
-  //     ]);
+      await expect(marketV2.connect(bob).addCollateral(alice.address, amount))
+        .to.emit(marketV2, 'AddCollateral')
+        .withArgs(bob.address, alice.address, amount)
+        .to.emit(CakeContract, 'Transfer')
+        .withArgs(bob.address, market.address, amount);
 
-  //     expect(totalCollateral).to.be.equal(amount.add(amount));
+      const [
+        totalCollateral,
+        aliceCollateral,
+        bobCollateral,
+        version,
+        marketCakeBalance,
+      ] = await Promise.all([
+        marketV2.totalCollateral(),
+        marketV2.userCollateral(alice.address),
+        marketV2.userCollateral(bob.address),
+        marketV2.version(),
+        CakeContract.balanceOf(market.address),
+      ]);
 
-  //     expect(aliceCollateral).to.be.equal(amount.add(amount));
-  //     expect(bobCollateral).to.be.equal(0);
-  //     expect(version).to.be.equal('V2');
-  //     expect(marketCakeBalance).to.be.equal(0); // Cake is in the masterChef
-  //   });
-  // });
+      expect(totalCollateral).to.be.equal(amount.add(amount));
+      expect(aliceCollateral).to.be.equal(amount.add(amount));
+      expect(bobCollateral).to.be.equal(0);
+      expect(version).to.be.equal('V2');
+      expect(marketCakeBalance).to.be.equal(amount.add(amount)); // Cake is in the masterChef
+    });
+  });
 }).timeout(50_000);

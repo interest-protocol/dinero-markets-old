@@ -30,7 +30,6 @@ import "../master-chef-vaults/MasterChefVault.sol";
 import "../OracleV1.sol";
 
 import "./DineroMarket.sol";
-import "hardhat/console.sol";
 
 /**
  * @dev It is an overcollaterized isolated lending market between a collateral token and the synthetic stable coin Dinero.
@@ -223,7 +222,11 @@ contract InterestERC20Market is Initializable, DineroMarket {
             _request(requestAction, requestArgs[i]);
         }
 
-        if (checkForSolvency) _isSolvent(_msgSender(), updateExchangeRate());
+        if (checkForSolvency)
+            require(
+                _isSolvent(_msgSender(), updateExchangeRate()),
+                "MKT: sender is insolvent"
+            );
     }
 
     /**

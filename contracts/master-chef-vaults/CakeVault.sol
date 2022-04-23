@@ -21,7 +21,6 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeab
 import "../lib/IntMath.sol";
 
 import "./MasterChefVault.sol";
-import "hardhat/console.sol";
 
 /**
  * @dev This vault is designed to work with PCS {MasterChef} contract, 0x73feaa1eE314F8c655E354234017bE2193C9E24E, pool id 0.
@@ -254,7 +253,6 @@ contract CakeVault is
         if (to == from) {
             _safeCakeTransfer(to, amountToRecipient);
         } else {
-            console.log(rewards, "rewards");
             _safeCakeTransfer(to, amount);
             _safeCakeTransfer(from, rewards);
         }

@@ -220,48 +220,6 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     }
 
     /**
-     * @dev A utility function to add collateral and borrow in one call.
-     *
-     * @param amount The number of collateral tokens to add.
-     * @param to The address that will receive the borrowed DNR.
-     * @param borrowAmount The number of DNR tokens to borrow.
-     */
-    function addCollateralAndBorrow(
-        uint256 amount,
-        address to,
-        uint256 borrowAmount
-    ) external isSolvent {
-        require(amount > 0, "DM: no zero collateral amount");
-        require(to != address(0), "DM: no zero address");
-        require(borrowAmount > 0, "DM: no zero borrowAmount");
-        accrue();
-        addCollateral(amount);
-        _borrowFresh(to, borrowAmount);
-    }
-
-    /**
-     * @dev A utility function to repay and withdraw collateral in one call.
-     *
-     * @param account The address that will have its loan repaid.
-     * @param principal The number of loan shares to repay.
-     * @param amount The number of collateral tokens to remove.
-     * @param inUnderlying Indicates if the collateral should be withdrawn in bearing token or the underlying.
-     */
-    function repayAndWithdrawCollateral(
-        address account,
-        uint256 principal,
-        uint256 amount,
-        bool inUnderlying
-    ) external isSolvent {
-        require(account != address(0), "DM: no zero account");
-        require(principal > 0, "DM: no zero principal");
-        require(amount > 0, "DM: no zero withdrawl amount");
-        accrue();
-        _repayFresh(account, principal);
-        _withdrawCollateralFresh(amount, inUnderlying);
-    }
-
-    /**
      * @dev Allows `msg.sender` to add collateral. It will send the rewards in XVS if applicable.
      *
      * @notice If the `COLLATERAL` is an ERC20, the `msg.sender` must approve this contract. If it is BNB, he can send directly.
@@ -328,7 +286,11 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
             _request(requestAction, requestArgs[i]);
         }
 
-        if (checkForSolvency) _isSolvent(_msgSender(), updateExchangeRate());
+        if (checkForSolvency)
+            require(
+                _isSolvent(_msgSender(), updateExchangeRate()),
+                "MKT: sender is insolvent"
+            );
     }
 
     /**

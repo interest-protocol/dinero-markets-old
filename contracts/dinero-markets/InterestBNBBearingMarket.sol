@@ -511,7 +511,7 @@ contract InterestBNBBearingMarket is
      * @param requestAction The action associated to a function
      * @param data The arguments to be passed to the function
      */
-    function _request(uint8 requestAction, bytes memory data) private {
+    function _request(uint8 requestAction, bytes calldata data) private {
         if (requestAction == ADD_COLLATERAL_REQUEST) {
             _addCollateralFresh(abi.decode(data, (uint256)));
             return;
