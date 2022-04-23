@@ -91,6 +91,17 @@ describe('Case de Papel', () => {
     ]);
   });
 
+  it('returns the id of a pool', async () => {
+    await casaDePapel.connect(owner).addPool(1500, lpToken.address, false);
+    const [id, id2] = await Promise.all([
+      casaDePapel.getPoolId(interestToken.address),
+      casaDePapel.getPoolId(lpToken.address),
+    ]);
+
+    expect(id).to.be.equal(0);
+    expect(id2).to.be.equal(1);
+  });
+
   it('returns the total number of pools', async () => {
     expect(await casaDePapel.getPoolsLength()).to.be.equal(1);
     // Adds two pools

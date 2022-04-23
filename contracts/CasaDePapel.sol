@@ -125,6 +125,8 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     // Check if the token has a pool.
     mapping(address => bool) public hasPool;
 
+    mapping(address => uint256) public getPoolId;
+
     // Total allocation points to know how much to allocate to a new pool.
     uint256 public totalAllocationPoints;
 
@@ -160,6 +162,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         startBlock = _startBlock;
 
         hasPool[address(interestToken)] = true;
+        getPoolId[address(interestToken)] = 0;
 
         // Setup the first pool. Stake {InterestToken} to get {InterestToken}.
         pools.push(
@@ -715,7 +718,11 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // Update the pool 0.
         _updateStakingPool();
 
-        emit AddPool(token, pools.length - 1, allocationPoints);
+        uint256 id = pools.length - 1;
+
+        getPoolId[address(token)] = id;
+
+        emit AddPool(token, id, allocationPoints);
     }
 
     /**
