@@ -40,7 +40,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     // solhint-disable-next-line var-name-mixedcase
     IVenusController internal constant VENUS_CONTROLLER =
-        IVenusController(0xfD36E2c2a6789Db23113685031d7F16329158384); //
+        IVenusController(0xfD36E2c2a6789Db23113685031d7F16329158384);
 
     /**
      * @dev This is the oracle we use in the entire project. It uses Chainlink as the primary source.

@@ -43,6 +43,8 @@ export const CAKE_MASTER_CHEF = getAddress(
   '0x73feaa1eE314F8c655E354234017bE2193C9E24E'
 );
 
+export const ETH = getAddress('0x2170Ed0880ac9A755fd29B2688956BD959F933F8');
+
 export const WBNB = getAddress('0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c');
 
 export const XVS = getAddress('0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63');
@@ -153,6 +155,14 @@ export const CAKE_USD_PRICE_FEED = getAddress(
 
 export const CAKE_BNB_PRICE_FEED = getAddress(
   '0xcb23da9ea243f53194cbc2380a6d4d9bc046161f'
+);
+
+export const ETH_USD_PRICE_FEED = getAddress(
+  '0x9ef1b8c0e4f7dc8bf5719ea496883dc6401d5b2e'
+);
+
+export const XVS_USD_PRICE_FEED = getAddress(
+  '0xbf63f430a79d4036a5900c19818aff1fa710f206'
 );
 
 // Dinero Market Actions
