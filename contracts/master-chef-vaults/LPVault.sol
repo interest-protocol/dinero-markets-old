@@ -107,19 +107,13 @@ contract LPVault is
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev It gives maximum allowance to {CAKE_MASTER_CHEF} for {CAKE} and the {STAKING_TOKEN}.
+     * @dev It gives maximum allowance to {CAKE_MASTER_CHEF} for {CAKE}.
+     *
+     * @notice LP tokens have infinite allowance if set to max uint
      *
      * @notice Front-running is not an issue as we trust {CAKE_MASTER_CHEF}. It is an non-upgradeable contract.
      */
     function approve() external {
-        STAKING_TOKEN.safeIncreaseAllowance(
-            address(CAKE_MASTER_CHEF),
-            type(uint256).max -
-                STAKING_TOKEN.allowance(
-                    address(this),
-                    address(CAKE_MASTER_CHEF)
-                )
-        );
         CAKE.safeIncreaseAllowance(
             address(CAKE_MASTER_CHEF),
             type(uint256).max -
