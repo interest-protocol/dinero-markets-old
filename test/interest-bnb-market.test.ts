@@ -11,7 +11,7 @@ import {
   InterestBNBMarket,
   MockOracle,
   MockTWAP,
-  OracleV1,
+  Oracle,
   ReentrantInterestBNBMarketLiquidate,
   ReentrantInterestBNBMarketRequest,
   ReentrantInterestBNBMarketWithdrawCollateral,
@@ -51,7 +51,7 @@ const { parseEther, defaultAbiCoder } = ethers.utils;
 describe('InterestBNBMarket', () => {
   let market: InterestBNBMarket;
   let dinero: Dinero;
-  let oracle: OracleV1;
+  let oracle: Oracle;
   let router: Contract;
   let mockTWAP: MockTWAP;
   let mockOracle: MockOracle;
@@ -109,7 +109,7 @@ describe('InterestBNBMarket', () => {
       [[], []]
     );
 
-    oracle = await deployUUPS('OracleV1', [mockTWAP.address]);
+    oracle = await deployUUPS('Oracle', [mockTWAP.address]);
 
     market = await deployUUPS('InterestBNBMarket', [
       dinero.address,

@@ -40,7 +40,7 @@ import "./PancakeOracle.sol";
  * @notice Only supports tokens supported by Chainlink  https://docs.chain.link/docs/binance-smart-chain-addresses/.
  * @notice We assume that BUSD is USD - 0x4Fabb145d64652a948d72533023f6E7A623C7C53
  */
-contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
+contract Oracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -70,7 +70,7 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     address internal constant WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c; // 18 decimals
 
     // solhint-disable-next-line var-name-mixedcase
-    address internal constant BUSD = 0x4Fabb145d64652a948d72533023f6E7A623C7C53;
+    address internal constant BUSD = 0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56;
 
     // solhint-disable-next-line var-name-mixedcase
     PancakeOracle public TWAP;

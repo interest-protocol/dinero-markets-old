@@ -12,7 +12,7 @@ import {
   ERC20,
   InterestERC20Market,
   MockOracle,
-  OracleV1,
+  Oracle,
   TestInterestERC20MarketV2,
 } from '../typechain';
 import {
@@ -49,7 +49,7 @@ const MOCK_ORACLE_PRICE = parseEther('20');
 describe('InterestERC20Market', () => {
   let market: InterestERC20Market;
   let dinero: Dinero;
-  let oracle: OracleV1;
+  let oracle: Oracle;
   let mockOracle: MockOracle;
   const CakeContract = new ethers.Contract(
     CAKE,
@@ -135,7 +135,7 @@ describe('InterestERC20Market', () => {
 
     mockOracle = _mockOracle;
 
-    oracle = await deployUUPS('OracleV1', [mockTWAP.address]);
+    oracle = await deployUUPS('Oracle', [mockTWAP.address]);
 
     await oracle.connect(owner).setFeed(CAKE, CAKE_USD_PRICE_FEED, 0);
 

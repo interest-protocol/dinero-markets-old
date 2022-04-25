@@ -10,7 +10,7 @@ import {
   MockVenusController,
   MockVenusToken,
   MockVenusVault,
-  OracleV1,
+  Oracle,
   SafeVenus,
   TestSafeVenus,
   TestSafeVenusV2,
@@ -28,7 +28,7 @@ describe('SafeVenus', () => {
   let safeVenus: SafeVenus;
   let venusController: MockVenusController;
   let vault: MockVenusVault;
-  let oracle: OracleV1;
+  let oracle: Oracle;
   let vToken: MockVenusToken;
   let xvsUSDFeed: MockChainLinkFeed;
   let ethUSDFeed: MockChainLinkFeed;
@@ -91,7 +91,7 @@ describe('SafeVenus', () => {
     ]);
 
     [oracle, venusController] = await Promise.all([
-      deployUUPS('OracleV1', [
+      deployUUPS('Oracle', [
         TWAP.address,
         bnbUSDFeed.address,
         WBNB.address,

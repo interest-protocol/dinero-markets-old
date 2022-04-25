@@ -14,7 +14,7 @@ import {
   ERC20,
   InterestERC20BearingMarket,
   MockOracle,
-  OracleV1,
+  Oracle,
   TestInterestERC20BearingMarketV2,
 } from '../typechain';
 import {
@@ -81,7 +81,7 @@ const convertBorrowToLiquidationCollateral = (
 describe('Interest ERC20 Bearing Market', () => {
   let market: InterestERC20BearingMarket;
   let dinero: Dinero;
-  let oracle: OracleV1;
+  let oracle: Oracle;
   let mockOracle: MockOracle;
 
   const XVSContract = new ethers.Contract(XVS, ERC20ABI, ethers.provider);
@@ -171,7 +171,7 @@ describe('Interest ERC20 Bearing Market', () => {
 
     mockOracle = _mockOracle;
 
-    oracle = await deployUUPS('OracleV1', [mockTWAP.address]);
+    oracle = await deployUUPS('Oracle', [mockTWAP.address]);
 
     await oracle.connect(owner).setFeed(BTC, BTC_USD_PRICE_FEED, 0);
 

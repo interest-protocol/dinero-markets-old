@@ -12,7 +12,7 @@ import {
   InterestERC20Market,
   LPVault,
   MockOracle,
-  OracleV1,
+  Oracle,
 } from '../typechain';
 import {
   BNB_USD_PRICE_FEED,
@@ -51,7 +51,7 @@ const LP_TOKEN_USD_PRICE = ethers.BigNumber.from('133831249510302866440');
 describe('InterestERC20Market', () => {
   let market: InterestERC20Market;
   let dinero: Dinero;
-  let oracle: OracleV1;
+  let oracle: Oracle;
   let mockOracle: MockOracle;
   let vault: LPVault;
   const LPTokenContract = new ethers.Contract(
@@ -139,7 +139,7 @@ describe('InterestERC20Market', () => {
 
     mockOracle = _mockOracle;
 
-    oracle = await deployUUPS('OracleV1', [mockTWAP.address]);
+    oracle = await deployUUPS('Oracle', [mockTWAP.address]);
 
     await Promise.all([
       oracle.connect(owner).setFeed(CAKE, CAKE_USD_PRICE_FEED, 0),

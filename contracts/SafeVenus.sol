@@ -13,7 +13,7 @@ import "./interfaces/IVenusInterestRateModel.sol";
 
 import "./lib/IntMath.sol";
 
-import "./OracleV1.sol";
+import "./Oracle.sol";
 
 /**
  * @dev This is a helper contract, similarly to a library, to calculate "safe" values. Safe in the essence that they give enough room to avoid liquidation.
@@ -47,7 +47,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * It uses PCS TWAP only when Chainlink fails.
      */
     // solhint-disable-next-line var-name-mixedcase
-    OracleV1 public ORACLE;
+    Oracle public ORACLE;
 
     /*///////////////////////////////////////////////////////////////
                             CONSTRUCTOR
@@ -60,7 +60,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      *
      * - Can only be called at once and should be called during creation to prevent front running.
      */
-    function initialize(OracleV1 oracle) external initializer {
+    function initialize(Oracle oracle) external initializer {
         __Ownable_init();
 
         ORACLE = oracle;

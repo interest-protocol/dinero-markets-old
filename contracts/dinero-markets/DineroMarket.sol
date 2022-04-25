@@ -23,7 +23,7 @@ import "../lib/IntMath.sol";
 
 import "../tokens/Dinero.sol";
 
-import "../OracleV1.sol";
+import "../Oracle.sol";
 
 /**
  * @dev It is an overcollaterized isolated lending market that accepts BNB as coollateral to back a loan in a synthetic stable coin called Dinero.
@@ -137,7 +137,7 @@ abstract contract DineroMarket is
     address public FEE_TO; // treasury address
 
     // solhint-disable-next-line var-name-mixedcase
-    OracleV1 public ORACLE; // Oracle contract
+    Oracle public ORACLE; // Oracle contract
 
     // Total amount of princicpal borrowed in Dinero.
     Rebase public totalLoan;

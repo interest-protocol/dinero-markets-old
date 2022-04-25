@@ -16,7 +16,7 @@ import {
   InterestBNBBearingMarket,
   MockOracle,
   MockTWAP,
-  OracleV1,
+  Oracle,
   ReentrantInterestBearingBNBMarketLiquidate,
   ReentrantInterestBearingBNBMarketRequest,
   ReentrantInterestBearingBNBMarketWithdrawCollateral,
@@ -79,7 +79,7 @@ const convertBorrowToLiquidationCollateral = (
 describe('Interest BNB Bearing Market', () => {
   let market: InterestBNBBearingMarket;
   let dinero: Dinero;
-  let oracle: OracleV1;
+  let oracle: Oracle;
   let mockTWAP: MockTWAP;
   let router: Contract;
   let mockOracle: MockOracle;
@@ -145,7 +145,7 @@ describe('Interest BNB Bearing Market', () => {
       [[], []]
     );
 
-    oracle = await deployUUPS('OracleV1', [mockTWAP.address]);
+    oracle = await deployUUPS('Oracle', [mockTWAP.address]);
 
     market = await deployUUPS('InterestBNBBearingMarket', [
       dinero.address,

@@ -27,7 +27,7 @@ import "../lib/IntERC20.sol";
 
 import "../master-chef-vaults/MasterChefVault.sol";
 
-import "../OracleV1.sol";
+import "../Oracle.sol";
 
 import "./DineroMarket.sol";
 
@@ -41,7 +41,7 @@ import "./DineroMarket.sol";
  * @notice There is no deposit fee.
  * @notice There is a liquidation fee.
  * @notice Since Dinero is assumed to always be pegged to USD. Only need an exchange rate from collateral to USD.
- * @notice We assume that {_exchangeRate} has 18 decimals. Please check OracleV1 and PancakeOracle
+ * @notice We assume that {_exchangeRate} has 18 decimals. Please check Oracle and PancakeOracle
  * @notice The govenor owner has sole access to critical functions in this contract.
  * @notice Market will only support tokens on BSC with immutable contracts and 18 decimals.
  * @notice We will start by supporting tokens with high liquidity. The {maxLTVRatio} will start at 60% and slow be raised up to 80%.
@@ -122,7 +122,7 @@ contract InterestERC20Market is Initializable, DineroMarket {
     function initialize(
         Dinero dinero,
         address feeTo,
-        OracleV1 oracle,
+        Oracle oracle,
         IERC20Upgradeable collateral,
         MasterChefVault vault,
         uint64 interestRate,

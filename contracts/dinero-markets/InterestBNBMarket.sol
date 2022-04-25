@@ -22,7 +22,7 @@ import "../lib/IntMath.sol";
 
 import "../tokens/Dinero.sol";
 
-import "../OracleV1.sol";
+import "../Oracle.sol";
 
 import "./DineroMarket.sol";
 
@@ -96,7 +96,7 @@ contract InterestBNBMarket is
     function initialize(
         Dinero dinero,
         address feeTo,
-        OracleV1 oracle,
+        Oracle oracle,
         uint64 interestRate,
         uint256 _maxLTVRatio,
         uint256 _liquidationFee
