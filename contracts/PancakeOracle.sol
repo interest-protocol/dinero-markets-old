@@ -141,11 +141,8 @@ contract PancakeOracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     function update(address tokenA, address tokenB) external {
         uint256 granularity = GRANULARITY;
 
-        address pair = PancakeLibrary.pairFor(FACTORY, tokenA, tokenB);
-        require(
-            IPancakeFactory(FACTORY).getPair(tokenA, tokenB) != address(0),
-            "PO: pair does not exist"
-        );
+        address pair = IPancakeFactory(FACTORY).getPair(tokenA, tokenB);
+        require(pair != address(0), "PO: pair does not exist");
 
         // populate the array with empty observations (first call only)
         for (uint256 i = pairObservations[pair].length; i < granularity; i++) {

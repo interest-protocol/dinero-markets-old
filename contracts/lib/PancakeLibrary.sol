@@ -2,7 +2,7 @@
 pragma solidity 0.8.13;
 
 /**
- * @notice This was copied directly from https://github.com/pancakeswap/pancake-swap-periphery/blob/master/contracts/libraries/PancakeLibrary.sol
+ * @notice Init code hash from https://bscscan.com/address/0x10ED43C718714eb63d5aA57B78B54704E256024E#code
  */
 library PancakeLibrary {
     // returns sorted token addresses, used to handle return values from pairs sorted in this order
@@ -33,7 +33,7 @@ library PancakeLibrary {
                             hex"ff",
                             factory,
                             keccak256(abi.encodePacked(token0, token1)),
-                            hex"d0d4c4cd0848c93cb4fd1f498d7013ee6bfb25783ea21593d5834f5d250ece66" // init code hash
+                            hex"00fb7f630766e6a796048ea87d01acd3068e8ff67d078148a3fa3f4a84f69bd5" // init code hash
                         )
                     )
                 )

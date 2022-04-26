@@ -124,3 +124,6 @@ export const calculateUserPendingRewards = (
 
 export const toVBalance = (x: BigNumber, exchangeRate: BigNumber): BigNumber =>
   x.mul(ethers.utils.parseEther('1')).div(exchangeRate);
+
+export const sortTokens = (a: string, b: string): [string, string] =>
+  a < b ? [a, b] : [b, a];
