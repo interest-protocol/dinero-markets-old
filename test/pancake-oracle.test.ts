@@ -242,12 +242,14 @@ describe('PancakeOracle', () => {
       const bnbCakePrice = await oracle.consult(WBNB, parseEther('1'), CAKE);
 
       // Taken after the fact
-      expect(cakeBNBPrice).to.be.equal(
-        ethers.BigNumber.from('2164507108173697662')
+      expect(cakeBNBPrice).to.be.closeTo(
+        parseEther('2.164'),
+        parseEther('0.001')
       );
       // Taken after the fact
-      expect(bnbCakePrice).to.be.equal(
-        ethers.BigNumber.from('46199894480538331549')
+      expect(bnbCakePrice).to.be.closeTo(
+        parseEther('46.199'),
+        parseEther('0.001')
       );
 
       const cakeWhale = await impersonate(CAKE_WHALE_ONE);
@@ -384,12 +386,14 @@ describe('PancakeOracle', () => {
       ]);
 
       // Taken after the fact
-      expect(cakeBNBPrice).to.be.equal(
-        ethers.BigNumber.from('2164448100172529649')
+      expect(cakeBNBPrice).to.be.closeTo(
+        parseEther('2.16444'),
+        parseEther('0.001')
       );
       // Taken after the fact
-      expect(bnbCakePrice).to.be.equal(
-        ethers.BigNumber.from('46201153999501734914')
+      expect(bnbCakePrice).to.be.closeTo(
+        parseEther('46.20115'),
+        parseEther('0.001')
       );
       expect(version).to.be.equal('V2');
     });

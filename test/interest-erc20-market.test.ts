@@ -1397,6 +1397,7 @@ describe('InterestERC20Market', () => {
         loan,
         pair,
         ownerDineroBalance,
+        recipientCakeBalance,
       ] = await Promise.all([
         market.totalCollateral(),
         market.userLoan(alice.address),
@@ -1408,6 +1409,7 @@ describe('InterestERC20Market', () => {
         market.loan(),
         factoryContract.getPair(dinero.address, WBNB),
         dinero.balanceOf(owner.address),
+        CakeContract.balanceOf(recipient.address),
       ]);
 
       expect(totalCollateral).to.be.equal(parseEther('120'));
@@ -1501,7 +1503,7 @@ describe('InterestERC20Market', () => {
 
       // recipient gets the all the collateral to cover
       expect(await CakeContract.balanceOf(recipient.address)).to.be.equal(
-        allCollateral
+        allCollateral.add(recipientCakeBalance)
       );
 
       // Means loan2 feesEarned includes accrued + protocol fee
