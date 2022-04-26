@@ -1468,6 +1468,8 @@ describe('Dinero Leverage Venus Vault', () => {
         `0x${Number(100).toString(16)}`,
       ]);
 
+      await network.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x0']);
+
       // Alice should incur a loss, as the state will be updated
       // usdcWhale should not incur a loss
       await expect(
