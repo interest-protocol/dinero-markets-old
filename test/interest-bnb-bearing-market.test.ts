@@ -470,8 +470,7 @@ describe('Interest BNB Bearing Market', () => {
           alice.address,
           parseEther('10').mul(vBNBExchangeRate).div(parseEther('1')),
           parseEther('10').mul(parseEther('1')).div(vBNBExchangeRate)
-        )
-        .to.not.emit(VenusControllerContract, 'DistributedSupplierVenus');
+        );
 
       const vBNBExchangeRate2 =
         await vBNBContract.callStatic.exchangeRateCurrent();
@@ -2349,9 +2348,7 @@ describe('Interest BNB Bearing Market', () => {
           alice.address,
           parseEther('10').mul(vBNBExchangeRate).div(parseEther('1')),
           parseEther('10').mul(parseEther('1')).div(vBNBExchangeRate)
-        )
-        .to.not.emit(VenusControllerContract, 'DistributedSupplierVenus')
-        .to.not.emit(XVSContract, 'Transfer');
+        );
 
       const vBNBExchangeRate2 =
         await vBNBContract.callStatic.exchangeRateCurrent();
