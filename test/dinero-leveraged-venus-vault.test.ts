@@ -2071,6 +2071,8 @@ describe('Dinero Leverage Venus Vault', () => {
         `0x${Number(100).toString(16)}`,
       ]);
 
+      await network.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x0']);
+
       // Bob is able to completely get his entire deposit back because loss happened before his deposit.
       await expect(
         dineroVenusVault.connect(bob).withdraw(USDC, bobAccount.vTokens)

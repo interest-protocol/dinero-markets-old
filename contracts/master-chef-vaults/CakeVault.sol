@@ -291,6 +291,7 @@ contract CakeVault is
      */
     function _authorizeSetMarket()
         internal
+        view
         override
         onlyOwner
     //solhint-disable-next-line no-empty-blocks
