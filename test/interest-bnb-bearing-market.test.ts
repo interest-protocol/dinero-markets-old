@@ -471,8 +471,7 @@ describe('Interest BNB Bearing Market', () => {
           parseEther('10').mul(vBNBExchangeRate).div(parseEther('1')),
           parseEther('10').mul(parseEther('1')).div(vBNBExchangeRate)
         )
-        .to.not.emit(VenusControllerContract, 'DistributedSupplierVenus')
-        .to.not.emit(XVSContract, 'Transfer');
+        .to.not.emit(VenusControllerContract, 'DistributedSupplierVenus');
 
       const vBNBExchangeRate2 =
         await vBNBContract.callStatic.exchangeRateCurrent();

@@ -615,7 +615,7 @@ describe('Dinero Leverage Venus Vault', () => {
     it('reverts if the vToken is not listed', async () => {
       await dineroVenusVault.removeVToken(vUSDC);
       await expect(dineroVenusVault.leverage(vUSDC)).to.revertedWith(
-        'DV: not allowed'
+        'DV: underlying not whitelisted'
       );
     });
     it('does not borrow if the safe borrow amount is 500 USD or less', async () => {
@@ -790,7 +790,7 @@ describe('Dinero Leverage Venus Vault', () => {
     it('reverts if the vToken is not listed', async () => {
       await dineroVenusVault.removeVToken(vUSDC);
       await expect(dineroVenusVault.deleverage(vUSDC)).to.revertedWith(
-        'DV: not allowed'
+        'DV: underlying not whitelisted'
       );
     });
     it('does nothing if the deleverage amount is 0', async () => {
@@ -2409,7 +2409,7 @@ describe('Dinero Leverage Venus Vault', () => {
         parseEther('100000').mul(parseEther('1')).div(exchangeRate)
       );
 
-      expect(feeToUSDCAccount.vTokens).to.be.equal(reserveAmount);
+      expect(feeToUSDCAccount.vTokens).to.closeTo(reserveAmount, ONE_V_TOKEN);
       expect(feeToUSDCBalance).to.be.equal(0);
 
       await expect(
@@ -2438,4 +2438,4 @@ describe('Dinero Leverage Venus Vault', () => {
       );
     });
   });
-}).timeout(10_000);
+}).timeout(40_000);

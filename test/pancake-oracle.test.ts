@@ -247,10 +247,7 @@ describe('PancakeOracle', () => {
         parseEther('0.001')
       );
       // Taken after the fact
-      expect(bnbCakePrice).to.be.closeTo(
-        parseEther('46.199'),
-        parseEther('0.001')
-      );
+      expect(bnbCakePrice).to.be.closeTo(parseEther('46.199'), parseEther('1'));
 
       const cakeWhale = await impersonate(CAKE_WHALE_ONE);
 
