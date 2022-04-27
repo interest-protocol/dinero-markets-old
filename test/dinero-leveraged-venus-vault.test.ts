@@ -1406,7 +1406,7 @@ describe('Dinero Leverage Venus Vault', () => {
       expect(totalFreeUnderlying).to.be.closeTo(
         // TS does not know that Chai supports big number in this matcher with waffle
         vaultVUSDCBalance4.mul(exchangeRate4).div(parseEther('1')),
-        ONE_V_TOKEN
+        parseEther('1')
       );
     });
     it('calculates losses proportionally', async () => {
