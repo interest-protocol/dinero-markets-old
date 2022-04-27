@@ -1118,7 +1118,7 @@ describe('Dinero Leverage Venus Vault', () => {
         .to.emit(venusControllerContract, 'DistributedSupplierVenus')
         .to.not.emit(venusControllerContract, 'DistributedBorrowerVenus');
     });
-    it.only('distributes rewards fairly', async () => {
+    it('distributes rewards fairly', async () => {
       const usdcWhale2 = await impersonate(USDC_WHALE_TWO);
 
       await dineroVenusVault
