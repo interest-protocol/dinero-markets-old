@@ -1119,8 +1119,7 @@ describe('Dinero Leverage Venus Vault', () => {
         .to.not.emit(venusControllerContract, 'DistributedBorrowerVenus');
     });
     it('distributes rewards fairly', async () => {
-      await impersonate(USDC_WHALE_TWO);
-      const usdcWhale2 = await ethers.getSigner(USDC_WHALE_TWO);
+      const usdcWhale2 = await impersonate(USDC_WHALE_TWO);
 
       await dineroVenusVault
         .connect(usdcWhale)
@@ -1195,18 +1194,19 @@ describe('Dinero Leverage Venus Vault', () => {
         .to.emit(venusControllerContract, 'DistributedSupplierVenus')
         .to.emit(wBNBXvsPair, 'Swap');
 
+      const exchangeRate2 =
+        await vUSDCContract.callStatic.exchangeRateCurrent();
+
       const [
         vaultVUSDCBalance2,
         vUSDCRewards2,
         usdcWhaleAccount2,
         usdcWhale2Account2,
-        exchangeRate2,
       ] = await Promise.all([
         vUSDCContract.balanceOf(dineroVenusVault.address),
         dineroVenusVault.rewardsOf(vUSDC),
         dineroVenusVault.accountOf(USDC, usdcWhale.address),
         dineroVenusVault.accountOf(USDC, usdcWhale2.address),
-        vUSDCContract.callStatic.exchangeRateCurrent(),
       ]);
 
       const usdcWhale2VTokensMinted = parseEther('2000000')
@@ -1219,7 +1219,7 @@ describe('Dinero Leverage Venus Vault', () => {
         vaultVUSDCBalance
           .add(usdcWhale2VTokensMinted)
           .add(
-            vUSDCRewards2.mul(vaultVUSDCBalance).div(ONE_V_TOKEN).div(PRECISION)
+            vUSDCRewards2.mul(totalFreeVUSDC).div(ONE_V_TOKEN).div(PRECISION)
           )
       ).to.be.closeTo(vaultVUSDCBalance2, ONE_V_TOKEN);
 
@@ -1230,9 +1230,11 @@ describe('Dinero Leverage Venus Vault', () => {
           .mul(PRECISION)
           .div(totalFreeVUSDC)
       );
+
       expect(usdcWhale2Account2.rewardsPaid).to.be.equal(
         usdcWhale2Account2.vTokens.mul(vUSDCRewards2).div(ONE_V_TOKEN)
       );
+
       expect(usdcWhale2Account2.vTokens).to.be.closeTo(
         usdcWhale2VTokensMinted.sub(fee2),
         ONE_V_TOKEN
