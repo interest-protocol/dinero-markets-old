@@ -1,6 +1,6 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
-import { ethers } from 'hardhat';
+import { ethers, network } from 'hardhat';
 
 import {
   CakeToken,
@@ -548,6 +548,30 @@ describe('Master Chef CakeVault', () => {
           .connect(market)
           .withdraw(alice.address, alice.address, parseEther('20.1'))
       ).to.revertedWith('Vault: not enough tokens');
+    });
+    it('withdraws to one recipient and restakes Cake', async () => {
+      await cakeVault
+        .connect(market)
+        .deposit(alice.address, alice.address, parseEther('1000'));
+
+      await cakeVault
+        .connect(market)
+        .deposit(bob.address, bob.address, parseEther('30'));
+
+      await network.provider.send('hardhat_mine', [
+        `0x${Number(100_000).toString(16)}`,
+      ]);
+
+      await network.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x0']);
+
+      await expect(
+        cakeVault
+          .connect(market)
+          .withdraw(bob.address, bob.address, parseEther('0.1'))
+      )
+        .to.emit(masterChef, 'Withdraw')
+        .withArgs(cakeVault.address, 0, parseEther('0.1'))
+        .to.emit(cake, 'Transfer');
     });
     it('market to withdraw assets', async () => {
       await Promise.all([

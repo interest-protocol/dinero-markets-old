@@ -2498,8 +2498,9 @@ describe('Dinero Leverage Venus Vault', () => {
         calculateFee(parseEther('100000')).add(feeToUSDCBalance),
         parseEther('0.01')
       );
-      expect(totalFreeUnderlying).to.be.equal(
-        borrowAndSupply.supply.sub(borrowAndSupply.borrow)
+      expect(totalFreeUnderlying).to.be.closeTo(
+        borrowAndSupply.supply.sub(borrowAndSupply.borrow),
+        parseEther('0.1')
       );
     });
   });

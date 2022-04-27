@@ -1,6 +1,6 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
-import { ethers } from 'hardhat';
+import { ethers, network } from 'hardhat';
 
 import ERC20ABI from '../abi/erc20.json';
 import MasterChefABI from '../abi/master-chef.json';
@@ -639,6 +639,38 @@ describe('Master Chef LPVault', () => {
           .connect(market)
           .withdraw(alice.address, alice.address, parseEther('20.1'))
       ).to.revertedWith('Vault: not enough tokens');
+    });
+    it('withdraws to one recipient and restakes Cake', async () => {
+      await lpVault
+        .connect(market)
+        .deposit(alice.address, alice.address, parseEther('300'));
+
+      await lpVault
+        .connect(market)
+        .deposit(bob.address, bob.address, parseEther('30'));
+
+      await network.provider.send('hardhat_mine', [
+        `0x${Number(100_000).toString(16)}`,
+      ]);
+
+      await network.provider.send('hardhat_setNextBlockBaseFeePerGas', ['0x0']);
+
+      await expect(
+        lpVault
+          .connect(market)
+          .withdraw(bob.address, bob.address, parseEther('0.1'))
+      )
+        .to.emit(MasterChefContract, 'Withdraw')
+        .withArgs(lpVault.address, 0, parseEther('0.1'))
+        .to.emit(CakeContract, 'Transfer');
+
+      await lpVault
+        .connect(market)
+        .withdraw(alice.address, alice.address, parseEther('300'));
+
+      await lpVault
+        .connect(market)
+        .withdraw(bob.address, bob.address, parseEther('29.9'));
     });
     it('market to withdraw assets', async () => {
       await Promise.all([

@@ -436,16 +436,16 @@ contract InterestERC20Market is Initializable, DineroMarket {
     function _request(uint8 requestAction, bytes calldata data) private {
         if (requestAction == ADD_COLLATERAL_REQUEST) {
             (address to, uint256 amount) = abi.decode(data, (address, uint256));
-            require(to != address(0), "no zero address");
-            require(amount != 0, "no zero amount");
+            require(to != address(0), "DM: no zero address");
+            require(amount != 0, "DM: no zero amount");
             _addCollateralFresh(to, amount);
             return;
         }
 
         if (requestAction == WITHDRAW_COLLATERAL_REQUEST) {
             (address to, uint256 amount) = abi.decode(data, (address, uint256));
-            require(to != address(0), "no zero address");
-            require(amount != 0, "no zero amount");
+            require(to != address(0), "DM: no zero address");
+            require(amount != 0, "DM: no zero amount");
             _withdrawCollateralFresh(to, amount);
             return;
         }

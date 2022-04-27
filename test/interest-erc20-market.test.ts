@@ -16,6 +16,8 @@ import {
   TestInterestERC20MarketV2,
 } from '../typechain';
 import {
+  ADD_COLLATERAL_REQUEST,
+  BORROW_REQUEST,
   BURNER_ROLE,
   CAKE,
   CAKE_USD_PRICE_FEED,
@@ -25,8 +27,10 @@ import {
   MINTER_ROLE,
   PCS_FACTORY,
   PCS_ROUTER,
+  REPAY_REQUEST,
   WBNB,
   WBNB_WHALE,
+  WITHDRAW_COLLATERAL_REQUEST,
 } from './lib/constants';
 import {
   advanceBlock,
@@ -1531,6 +1535,634 @@ describe('InterestERC20Market', () => {
         .connect(alice)
         .request([7], [defaultAbiCoder.encode(['uint256'], [parseEther('2')])])
     ).to.be.revertedWith('DM: invalid request');
+  });
+
+  describe('function: request addCollateral', () => {
+    it('reverts if invalid arguments are passed', async () => {
+      await expect(
+        market.request(
+          [ADD_COLLATERAL_REQUEST],
+          [
+            defaultAbiCoder.encode(
+              ['address', 'uint256'],
+              [ethers.constants.AddressZero, 1]
+            ),
+          ]
+        )
+      ).to.revertedWith('DM: no zero address');
+      await expect(
+        market.request(
+          [ADD_COLLATERAL_REQUEST],
+          [defaultAbiCoder.encode(['address', 'uint256'], [alice.address, 0])]
+        )
+      ).to.revertedWith('DM: no zero amount');
+    });
+
+    it('accepts collateral and deposits to the vault', async () => {
+      const [market, cakeVault] = await makeMarketWithVault();
+
+      const [totalCollateral, aliceCollateral] = await Promise.all([
+        market.totalCollateral(),
+        market.userCollateral(alice.address),
+      ]);
+
+      expect(totalCollateral).to.be.equal(0);
+
+      expect(aliceCollateral).to.be.equal(0);
+
+      const amount = parseEther('10');
+
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [ADD_COLLATERAL_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [alice.address, amount]
+              ),
+            ]
+          )
+      )
+        .to.emit(market, 'AddCollateral')
+        .withArgs(alice.address, alice.address, amount)
+        .to.emit(cakeVault, 'Deposit')
+        .withArgs(alice.address, alice.address, amount)
+        .to.emit(CakeContract, 'Transfer')
+        .withArgs(alice.address, cakeVault.address, amount);
+
+      const [totalCollateral2, aliceCollateral2] = await Promise.all([
+        market.totalCollateral(),
+        market.userCollateral(alice.address),
+      ]);
+
+      expect(totalCollateral2).to.be.equal(amount);
+
+      expect(aliceCollateral2).to.be.equal(amount);
+
+      await expect(
+        market
+          .connect(bob)
+          .request(
+            [ADD_COLLATERAL_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [alice.address, amount]
+              ),
+            ]
+          )
+      )
+        .to.emit(market, 'AddCollateral')
+        .withArgs(bob.address, alice.address, amount)
+        .to.emit(cakeVault, 'Deposit')
+        .withArgs(bob.address, alice.address, amount)
+        .to.emit(CakeContract, 'Transfer')
+        .withArgs(bob.address, cakeVault.address, amount);
+
+      const [
+        totalCollateral3,
+        aliceCollateral3,
+        bobCollateral3,
+        marketCakeBalance3,
+      ] = await Promise.all([
+        market.totalCollateral(),
+        market.userCollateral(alice.address),
+        market.userCollateral(bob.address),
+        CakeContract.balanceOf(market.address),
+      ]);
+
+      expect(totalCollateral3).to.be.equal(amount.add(amount));
+      expect(aliceCollateral3).to.be.equal(amount.add(amount));
+      expect(bobCollateral3).to.be.equal(0);
+      expect(marketCakeBalance3).to.be.equal(0); // Cake is in the masterChef
+    });
+    it('accepts collateral without a vault', async () => {
+      const [totalCollateral, aliceCollateral] = await Promise.all([
+        market.totalCollateral(),
+        market.userCollateral(alice.address),
+      ]);
+
+      expect(totalCollateral).to.be.equal(0);
+      expect(aliceCollateral).to.be.equal(0);
+
+      const amount = parseEther('25');
+
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [ADD_COLLATERAL_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [alice.address, amount]
+              ),
+            ]
+          )
+      )
+        .to.emit(market, 'AddCollateral')
+        .withArgs(alice.address, alice.address, amount)
+        .to.emit(CakeContract, 'Transfer')
+        .withArgs(alice.address, market.address, amount);
+
+      const [totalCollateral2, aliceCollateral2] = await Promise.all([
+        market.totalCollateral(),
+        market.userCollateral(alice.address),
+      ]);
+
+      expect(totalCollateral2).to.be.equal(amount);
+      expect(aliceCollateral2).to.be.equal(amount);
+
+      await expect(
+        market
+          .connect(bob)
+          .request(
+            [ADD_COLLATERAL_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [alice.address, amount]
+              ),
+            ]
+          )
+      )
+        .to.emit(market, 'AddCollateral')
+        .withArgs(bob.address, alice.address, amount)
+        .to.emit(CakeContract, 'Transfer')
+        .withArgs(bob.address, market.address, amount);
+
+      const [
+        totalCollateral3,
+        aliceCollateral3,
+        bobCollateral3,
+        marketCakeBalance3,
+      ] = await Promise.all([
+        market.totalCollateral(),
+        market.userCollateral(alice.address),
+        market.userCollateral(bob.address),
+        CakeContract.balanceOf(market.address),
+      ]);
+
+      expect(totalCollateral3).to.be.equal(amount.add(amount));
+
+      expect(aliceCollateral3).to.be.equal(amount.add(amount));
+      expect(bobCollateral3).to.be.equal(0);
+      expect(marketCakeBalance3).to.be.equal(amount.add(amount));
+    });
+  });
+
+  describe('function: request withdrawCollateral', () => {
+    it('reverts if you pass invalid arguments', async () => {
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [WITHDRAW_COLLATERAL_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [ethers.constants.AddressZero, 0]
+              ),
+            ]
+          )
+      ).to.revertedWith('DM: no zero address');
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [WITHDRAW_COLLATERAL_REQUEST],
+            [defaultAbiCoder.encode(['address', 'uint256'], [alice.address, 0])]
+          )
+      ).to.revertedWith('DM: no zero amount');
+    });
+    it('reverts if the user is insolvent', async () => {
+      await market
+        .connect(alice)
+        .request(
+          [ADD_COLLATERAL_REQUEST, BORROW_REQUEST],
+          [
+            defaultAbiCoder.encode(
+              ['address', 'uint256'],
+              [alice.address, parseEther('10')]
+            ),
+            defaultAbiCoder.encode(
+              ['address', 'uint256'],
+              [alice.address, parseEther('45')]
+            ),
+          ]
+        );
+
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [WITHDRAW_COLLATERAL_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [alice.address, parseEther('2')]
+              ),
+            ]
+          )
+      ).to.revertedWith('MKT: sender is insolvent');
+    });
+    it('removes collateral using a vault', async () => {
+      const [market, cakeVault] = await makeMarketWithVault();
+
+      const aliceAmount = parseEther('3000');
+      const bobAmount = parseEther('400');
+
+      await Promise.all([
+        market.connect(alice).addCollateral(alice.address, aliceAmount),
+        market.connect(bob).addCollateral(bob.address, bobAmount),
+      ]);
+
+      // We need to borrow to test the Accrue event
+      await market.connect(bob).borrow(alice.address, parseEther('10'));
+
+      const [totalCollateral, aliceCollateral, bobCollateral] =
+        await Promise.all([
+          market.totalCollateral(),
+          market.userCollateral(alice.address),
+          market.userCollateral(bob.address),
+        ]);
+
+      expect(totalCollateral).to.be.equal(aliceAmount.add(bobAmount));
+
+      expect(aliceCollateral).to.be.equal(aliceAmount);
+      expect(bobCollateral).to.be.equal(bobAmount);
+
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [WITHDRAW_COLLATERAL_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [alice.address, aliceAmount]
+              ),
+            ]
+          )
+      )
+        .to.emit(market, 'WithdrawCollateral')
+        .withArgs(alice.address, alice.address, aliceAmount)
+        .to.emit(cakeVault, 'Withdraw')
+        .withArgs(alice.address, alice.address, aliceAmount)
+        .to.emit(market, 'Accrue')
+        .to.emit(CakeContract, 'Transfer');
+
+      const [
+        totalCollateral2,
+        aliceCollateral2,
+        bobCollateral2,
+        aliceCakeBalance2,
+        bobCakeBalance2,
+      ] = await Promise.all([
+        market.totalCollateral(),
+        market.userCollateral(alice.address),
+        market.userCollateral(bob.address),
+        CakeContract.balanceOf(alice.address),
+        CakeContract.balanceOf(bob.address),
+      ]);
+
+      expect(totalCollateral2).to.be.equal(bobAmount);
+
+      expect(aliceCollateral2).to.be.equal(0);
+
+      expect(bobCollateral2).to.be.equal(bobAmount);
+
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+      await advanceBlock(ethers);
+
+      await expect(
+        market
+          .connect(bob)
+          .request(
+            [WITHDRAW_COLLATERAL_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [alice.address, parseEther('3')]
+              ),
+            ]
+          )
+      )
+        .to.emit(market, 'WithdrawCollateral')
+        .withArgs(bob.address, alice.address, parseEther('3'))
+        .to.emit(cakeVault, 'Withdraw')
+        .withArgs(bob.address, alice.address, parseEther('3'))
+        .to.emit(market, 'Accrue')
+        .to.emit(CakeContract, 'Transfer');
+
+      const [
+        totalCollateral3,
+        bobCollateral3,
+        aliceCakeBalance3,
+        bobCakeBalance3,
+      ] = await Promise.all([
+        market.totalCollateral(),
+        market.userCollateral(bob.address),
+        CakeContract.balanceOf(alice.address),
+        CakeContract.balanceOf(bob.address),
+      ]);
+
+      expect(totalCollateral3).to.be.equal(bobAmount.sub(parseEther('3')));
+
+      // he got rewards
+      expect(bobCollateral3).to.be.equal(bobCollateral2.sub(parseEther('3')));
+
+      expect(aliceCakeBalance3).to.be.equal(
+        aliceCakeBalance2.add(parseEther('3'))
+      );
+
+      // Got rewards
+      expect(bobCakeBalance3.gt(bobCakeBalance2)).to.be.equal(true);
+    });
+  });
+
+  describe('function: request repay', () => {
+    it('reverts if you try to repay for address(0) or try to repay nothing', async () => {
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [REPAY_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [ethers.constants.AddressZero, 0]
+              ),
+            ]
+          )
+      ).to.revertedWith('MKT: no zero address');
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [REPAY_REQUEST],
+            [defaultAbiCoder.encode(['address', 'uint256'], [alice.address, 0])]
+          )
+      ).to.revertedWith('MKT: principal cannot be 0');
+    });
+    it('allows loans to be repaid', async () => {
+      await market
+        .connect(alice)
+        .addCollateral(alice.address, parseEther('10')); // 200 USD of collateral
+
+      await market.connect(alice).borrow(alice.address, parseEther('30'));
+
+      const [totalLoan, aliceLoan, aliceDineroBalance] = await Promise.all([
+        market.totalLoan(),
+        market.userLoan(alice.address),
+        dinero.balanceOf(alice.address),
+      ]);
+
+      expect(aliceLoan).to.be.equal(parseEther('30'));
+
+      expect(totalLoan.base).to.be.equal(parseEther('30'));
+
+      // specific debt is very hard to calculate
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [REPAY_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [alice.address, parseEther('10')]
+              ),
+            ]
+          )
+      )
+        .to.emit(market, 'Repay')
+        .to.emit(dinero, 'Transfer')
+        .to.emit(market, ' Accrue');
+
+      const [totalLoan2, aliceLoan2, aliceDineroBalance2, ownerDineroBalance2] =
+        await Promise.all([
+          market.totalLoan(),
+          market.userLoan(alice.address),
+          dinero.balanceOf(alice.address),
+          dinero.balanceOf(owner.address),
+        ]);
+
+      expect(aliceLoan2).to.be.equal(parseEther('20'));
+
+      // She paid fees
+      expect(
+        aliceDineroBalance2.lt(aliceDineroBalance.sub(parseEther('10')))
+      ).to.be.equal(true);
+
+      expect(totalLoan2.base).to.be.equal(parseEther('20'));
+      expect(totalLoan2.elastic.lt(totalLoan.elastic)).to.be.equal(true);
+
+      // specific debt is very hard to calculate
+      await expect(
+        market
+          .connect(owner)
+          .request(
+            [REPAY_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [alice.address, parseEther('20')]
+              ),
+            ]
+          )
+      )
+        .to.emit(market, 'Repay')
+        .to.emit(dinero, 'Transfer')
+        .to.emit(market, ' Accrue');
+
+      const [totalLoan3, aliceLoan3, aliceDineroBalance3, ownerDineroBalance3] =
+        await Promise.all([
+          market.totalLoan(),
+          market.userLoan(alice.address),
+          dinero.balanceOf(alice.address),
+          dinero.balanceOf(owner.address),
+        ]);
+
+      expect(aliceLoan3).to.be.equal(0);
+
+      // She did not pay for her loan. The owner did
+      expect(aliceDineroBalance3).to.be.equal(aliceDineroBalance2);
+
+      expect(
+        ownerDineroBalance3.lt(ownerDineroBalance2.sub(parseEther('20')))
+      ).to.be.equal(true);
+
+      expect(totalLoan3.base).to.be.equal(0);
+      expect(totalLoan3.elastic).to.be.equal(0);
+    });
+  });
+
+  describe('function: request borrow', () => {
+    it('reverts if the user is insolvent', async () => {
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [BORROW_REQUEST],
+            [defaultAbiCoder.encode(['address', 'uint256'], [alice.address, 1])]
+          )
+      ).to.revertedWith('MKT: sender is insolvent');
+
+      // @notice the collateral ratio is 49.9%
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [ADD_COLLATERAL_REQUEST, BORROW_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [alice.address, parseEther('10')]
+              ),
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [alice.address, parseEther('100')]
+              ),
+            ]
+          ) // Borrow 100 USD
+      ).to.revertedWith('MKT: sender is insolvent');
+    });
+    it('reverts if the recipient is the zero address', async () => {
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [ADD_COLLATERAL_REQUEST, BORROW_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [alice.address, parseEther('10')]
+              ),
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [ethers.constants.AddressZero, parseEther('50')]
+              ),
+            ]
+          )
+      ).to.revertedWith('MKT: no zero address');
+    });
+    it('allows borrowing', async () => {
+      await market
+        .connect(alice)
+        .addCollateral(alice.address, parseEther('100')); // 200 USD of collateral
+
+      const [totalLoan, aliceLoan, aliceDineroBalance, recipientDineroBalance] =
+        await Promise.all([
+          market.totalLoan(),
+          market.userLoan(alice.address),
+          dinero.balanceOf(alice.address),
+          dinero.balanceOf(recipient.address),
+        ]);
+
+      expect(aliceLoan).to.be.equal(0);
+      expect(totalLoan.base).to.be.equal(0);
+      expect(totalLoan.elastic).to.be.equal(0);
+
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [BORROW_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [recipient.address, parseEther('50')]
+              ),
+            ]
+          )
+      )
+        .to.emit(dinero, 'Transfer')
+        .withArgs(
+          ethers.constants.AddressZero,
+          recipient.address,
+          parseEther('50')
+        )
+        .to.emit(market, 'Borrow')
+        .withArgs(
+          alice.address,
+          recipient.address,
+          parseEther('50'),
+          parseEther('50')
+        )
+        .to.not.emit(market, 'Accrue');
+
+      const [
+        totalLoan2,
+        aliceLoan2,
+        aliceDineroBalance2,
+        recipientDineroBalance2,
+        bobDineroBalance2,
+      ] = await Promise.all([
+        market.totalLoan(),
+        market.userLoan(alice.address),
+        dinero.balanceOf(alice.address),
+        dinero.balanceOf(recipient.address),
+        dinero.balanceOf(bob.address),
+      ]);
+
+      expect(aliceLoan2).to.be.equal(parseEther('50'));
+      expect(aliceDineroBalance2).to.be.equal(aliceDineroBalance);
+      expect(recipientDineroBalance2).to.be.equal(
+        parseEther('50').add(recipientDineroBalance)
+      );
+      expect(totalLoan2.base).to.be.equal(parseEther('50'));
+      expect(totalLoan2.elastic).to.be.equal(parseEther('50'));
+
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [BORROW_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [bob.address, parseEther('30')]
+              ),
+            ]
+          )
+      )
+        .to.emit(market, 'Accrue')
+        .to.emit(dinero, 'Transfer')
+        .withArgs(ethers.constants.AddressZero, bob.address, parseEther('30'))
+        .to.emit(market, 'Borrow');
+
+      const [
+        totalLoan3,
+        aliceLoan3,
+        bobLoan3,
+        aliceDineroBalance3,
+        recipientDineroBalance3,
+        bobDineroBalance3,
+      ] = await Promise.all([
+        market.totalLoan(),
+        market.userLoan(alice.address),
+        market.userLoan(bob.address),
+        dinero.balanceOf(alice.address),
+        dinero.balanceOf(recipient.address),
+        dinero.balanceOf(bob.address),
+      ]);
+
+      expect(aliceLoan3).to.be.equal(totalLoan3.base);
+      expect(bobLoan3).to.be.equal(0);
+      expect(recipientDineroBalance3).to.be.equal(recipientDineroBalance2);
+      expect(aliceDineroBalance3).to.be.equal(aliceDineroBalance2);
+      expect(bobDineroBalance3).to.be.equal(
+        parseEther('30').add(bobDineroBalance2)
+      );
+      expect(totalLoan3.base.gt(parseEther('78'))).to.be.equal(true); // Due to fees this value is not easy to estimate
+      expect(totalLoan3.base.lt(parseEther('80'))).to.be.equal(true); // Due to fees this value is not easy to estimate
+      expect(totalLoan3.elastic.gt(parseEther('80'))).to.be.equal(true); // includes fees
+    });
   });
 
   describe('Upgrade functionality', () => {
