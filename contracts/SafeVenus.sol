@@ -13,7 +13,7 @@ import "./interfaces/IVenusInterestRateModel.sol";
 
 import "./lib/IntMath.sol";
 
-import "./OracleV1.sol";
+import "./Oracle.sol";
 
 /**
  * @dev This is a helper contract, similarly to a library, to calculate "safe" values. Safe in the essence that they give enough room to avoid liquidation.
@@ -35,47 +35,34 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                                 STATE
     //////////////////////////////////////////////////////////////*/
 
-    /**
-     * @dev It is the ERC20 address of the Venus token 0xcf6bb5389c92bdda8a3747ddb454cb7a64626c63
-     */
     // solhint-disable-next-line var-name-mixedcase
-    address public XVS;
+    address internal constant XVS = 0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63;
 
-    /**
-     * @dev This is the Venus controller 0xfD36E2c2a6789Db23113685031d7F16329158384
-     */
     // solhint-disable-next-line var-name-mixedcase
-    IVenusController public VENUS_CONTROLLER;
+    IVenusController internal constant VENUS_CONTROLLER =
+        IVenusController(0xfD36E2c2a6789Db23113685031d7F16329158384);
 
     /**
      * @dev This is the oracle we use in the entire project. It uses Chainlink as the primary source.
      * It uses PCS TWAP only when Chainlink fails.
      */
     // solhint-disable-next-line var-name-mixedcase
-    OracleV1 public ORACLE;
+    Oracle public ORACLE;
 
     /*///////////////////////////////////////////////////////////////
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @param venusController The address of the Venus controller
-     * @param xvs The address of the Venus token
      * @param oracle The address of our maintained oracle address
      *
      * Requirements:
      *
      * - Can only be called at once and should be called during creation to prevent front running.
      */
-    function initialize(
-        IVenusController venusController,
-        address xvs,
-        OracleV1 oracle
-    ) external initializer {
+    function initialize(Oracle oracle) external initializer {
         __Ownable_init();
 
-        VENUS_CONTROLLER = venusController;
-        XVS = xvs;
         ORACLE = oracle;
     }
 
@@ -244,23 +231,19 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             vault,
             vToken
         );
-
         // If we are not borrowing, we can redeem as much as the liquidity allows
         if (borrowBalance == 0) return supplyBalance.min(vToken.getCash());
-
         // borrowBalance / collateralLimitRatio will give us a safe supply value that we need to maintain to avoid liquidation.
         uint256 safeCollateral = borrowBalance.bdiv(
             // Should never be 0. As Venus uses the overcollaterized loan model. Cannot borrow without having collatera.
             // If it is 0, it should throw to alert there is an issue with Venus.
             safeCollateralRatio(vault, vToken)
         );
-
         // If our supply is larger than the safe collateral, we can redeem the difference
         // If not, we should not redeem
         uint256 redeemAmount = supplyBalance > safeCollateral
             ? supplyBalance - safeCollateral
             : 0;
-
         // We cannot redeem more than the current liquidity in the market.
         // This value can be used to safely redeem from the supply or borrow.
         // C

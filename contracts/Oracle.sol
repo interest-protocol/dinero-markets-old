@@ -40,7 +40,7 @@ import "./PancakeOracle.sol";
  * @notice Only supports tokens supported by Chainlink  https://docs.chain.link/docs/binance-smart-chain-addresses/.
  * @notice We assume that BUSD is USD - 0x4Fabb145d64652a948d72533023f6E7A623C7C53
  */
-contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
+contract Oracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -63,16 +63,17 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line var-name-mixedcase
+    AggregatorV3Interface internal constant BNB_USD =
+        AggregatorV3Interface(0x0567F2323251f0Aab15c8dFb1967E4e8A7D42aeE);
+
+    // solhint-disable-next-line var-name-mixedcase
+    address internal constant WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c; // 18 decimals
+
+    // solhint-disable-next-line var-name-mixedcase
+    address internal constant BUSD = 0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56;
+
+    // solhint-disable-next-line var-name-mixedcase
     PancakeOracle public TWAP;
-
-    // solhint-disable-next-line var-name-mixedcase
-    AggregatorV3Interface public BNB_USD;
-
-    // solhint-disable-next-line var-name-mixedcase
-    address public WBNB;
-
-    // solhint-disable-next-line var-name-mixedcase
-    address public BUSD;
 
     // Token Address -> Chainlink feed with USD base.
     mapping(address => AggregatorV3Interface) public getUSDFeeds;
@@ -85,27 +86,15 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     /**
      * @param twap The address of our internal PCS TWAP
-     * @param bnb_usd The chainlink feed for bnb/usd.
-     * @param wbnb The address for WBNB.
-     * @param busd The address for ERC20 Binance pegged USD
      *
      * Requirements:
      *
      * - Can only be called at once and should be called during creation to prevent front running.
      */
-    function initialize(
-        PancakeOracle twap,
-        // solhint-disable-next-line var-name-mixedcase
-        AggregatorV3Interface bnb_usd,
-        address wbnb,
-        address busd
-    ) external initializer {
+    function initialize(PancakeOracle twap) external initializer {
         __Ownable_init();
 
         TWAP = twap;
-        BNB_USD = bnb_usd;
-        WBNB = wbnb;
-        BUSD = busd;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -196,24 +185,20 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                 amount
             );
         } catch Error(string memory) {
-            address wbnb = WBNB;
-
             // Get the token price in BNB as token/BUSD pairs are rare
             uint256 bnbPrice = _scaleDecimals(
-                TWAP.consult(token, amount, wbnb),
-                wbnb.safeDecimals()
+                TWAP.consult(token, amount, WBNB),
+                WBNB.safeDecimals()
             );
 
             // Then get BNB price in
             // We just need price for 1BNB because we already computed the amount above
             price = bnbPrice.bmul(getBNBUSDPrice(1 ether));
         } catch (bytes memory) {
-            address wbnb = WBNB;
-
             // Get the token price in BNB as token/BUSD pairs are rare
             uint256 bnbPrice = _scaleDecimals(
-                TWAP.consult(token, amount, wbnb),
-                wbnb.safeDecimals()
+                TWAP.consult(token, amount, WBNB),
+                WBNB.safeDecimals()
             );
 
             // Then get BNB price in
@@ -310,16 +295,14 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                 amount
             );
         } catch Error(string memory) {
-            address wbnb = WBNB;
             price = _scaleDecimals(
-                TWAP.consult(token, amount, wbnb),
-                wbnb.safeDecimals()
+                TWAP.consult(token, amount, WBNB),
+                WBNB.safeDecimals()
             );
         } catch (bytes memory) {
-            address wbnb = WBNB;
             price = _scaleDecimals(
-                TWAP.consult(token, amount, wbnb),
-                wbnb.safeDecimals()
+                TWAP.consult(token, amount, WBNB),
+                WBNB.safeDecimals()
             );
         }
     }
@@ -331,10 +314,7 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @return uint256 A pair that has the value price and the decimal houses in the right
      */
     function getBNBUSDPrice(uint256 amount) public view returns (uint256) {
-        // solhint-disable-next-line var-name-mixedcase
-        AggregatorV3Interface bnb_usd = BNB_USD;
-
-        try bnb_usd.latestRoundData() returns (
+        try BNB_USD.latestRoundData() returns (
             uint80,
             int256 answer,
             uint256,
@@ -342,22 +322,20 @@ contract OracleV1 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             uint80
         ) {
             return
-                (_scaleDecimals(answer.toUint256(), bnb_usd.decimals())).bmul(
+                (_scaleDecimals(answer.toUint256(), BNB_USD.decimals())).bmul(
                     amount
                 );
         } catch Error(string memory) {
-            address busd = BUSD;
             return
                 _scaleDecimals(
-                    TWAP.consult(WBNB, amount, busd),
-                    busd.safeDecimals()
+                    TWAP.consult(WBNB, amount, BUSD),
+                    BUSD.safeDecimals()
                 );
         } catch (bytes memory) {
-            address busd = BUSD;
             return
                 _scaleDecimals(
-                    TWAP.consult(WBNB, amount, busd),
-                    busd.safeDecimals()
+                    TWAP.consult(WBNB, amount, BUSD),
+                    BUSD.safeDecimals()
                 );
         }
     }

@@ -63,10 +63,12 @@ abstract contract MasterChefVault {
     //////////////////////////////////////////////////////////////*/
 
     //solhint-disable-next-line var-name-mixedcase
-    IMasterChef public CAKE_MASTER_CHEF; // The cake masterchef. He is an honest Cooker!
+    IMasterChef internal constant CAKE_MASTER_CHEF =
+        IMasterChef(0x73feaa1eE314F8c655E354234017bE2193C9E24E); // The cake masterchef. He is an honest Cooker!
 
     // solhint-disable-next-line var-name-mixedcase
-    IERC20Upgradeable public CAKE; // The famous Cake token!!
+    IERC20Upgradeable internal constant CAKE =
+        IERC20Upgradeable(0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82); // The famous Cake token!!
 
     // solhint-disable-next-line var-name-mixedcase
     address public MARKET; // The market contract that deposits/withdraws from this contract.

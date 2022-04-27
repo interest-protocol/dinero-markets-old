@@ -27,7 +27,7 @@ import "../lib/Rebase.sol";
 import "../lib/IntMath.sol";
 import "../lib/IntERC20.sol";
 
-import "../OracleV1.sol";
+import "../Oracle.sol";
 
 import "./DineroMarket.sol";
 
@@ -39,7 +39,7 @@ import "./DineroMarket.sol";
  * @notice There is no deposit fee.
  * @notice There is a liquidation fee.
  * @notice Since Dinero is assumed to always be pegged to USD. Only need an exchange rate from collateral to USD.
- * @notice We assume that {_exchangeRate} has 18 decimals. Please check OracleV1 and PancakeOracle
+ * @notice We assume that {_exchangeRate} has 18 decimals. Please check Oracle and PancakeOracle
  * @notice The govenor owner has sole access to critical functions in this contract.
  * @notice Market will only support tokens on BSC with 18 decimals.
  * @notice We will start by supporting tokens with high liquidity. The {maxLTVRatio} will start at 60% and slow be raised up to 80%.
@@ -89,17 +89,16 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     // Compound and by extension Venus return 0 on successful calls.
     uint256 private constant NO_ERROR = 0;
 
-    /**
-     * @dev This is the Venus controller 0xfD36E2c2a6789Db23113685031d7F16329158384
-     */
     // solhint-disable-next-line var-name-mixedcase
-    IVenusController public VENUS_CONTROLLER;
+    IVenusController internal constant VENUS_CONTROLLER =
+        IVenusController(0xfD36E2c2a6789Db23113685031d7F16329158384);
 
     // solhint-disable-next-line var-name-mixedcase
-    IERC20Upgradeable public XVS; // Venus Token.
+    IERC20Upgradeable internal constant XVS =
+        IERC20Upgradeable(0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63); // Venus Token.
 
     // solhint-disable-next-line var-name-mixedcase
-    IERC20Upgradeable public COLLATERAL; // Token to be used to cover the loan. In case of BNB, it will be address(0)
+    IERC20Upgradeable public COLLATERAL; // Token to be used to cover the loan.
 
     // solhint-disable-next-line var-name-mixedcase
     IVToken public VTOKEN; // A Venus Market.
@@ -122,12 +121,9 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
      *
      * @notice A `Collateral` of address(0) represents BNB.
      *
-     * @param router The address of the PCS router.
      * @param dinero The address of Dinero.
      * @param feeTo Treasury address.
      * @param oracle The address of the oracle.
-     * @param venusController The address of Venus Controller
-     * @param xvs the address of the Venus token.
      * @param collateral The address of the collateral of this market, an ERC20 or BNB
      * @param vToken The address of the `collateral` vToken
      * @param interestRate the interest rate charged every second
@@ -139,12 +135,9 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
      * - Can only be called at once and should be called during creation to prevent front running.
      */
     function initialize(
-        IPancakeRouter02 router,
         Dinero dinero,
         address feeTo,
-        OracleV1 oracle,
-        IVenusController venusController,
-        IERC20Upgradeable xvs,
+        Oracle oracle,
         IERC20Upgradeable collateral,
         IVToken vToken,
         uint64 interestRate,
@@ -159,12 +152,9 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
 
         __DineroMarket_init();
 
-        ROUTER = router;
         DINERO = dinero;
         FEE_TO = feeTo;
         ORACLE = oracle;
-        VENUS_CONTROLLER = venusController;
-        XVS = xvs;
         COLLATERAL = collateral;
         VTOKEN = vToken;
         loan.INTEREST_RATE = interestRate;
@@ -172,7 +162,7 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         liquidationFee = _liquidationFee;
 
         // Approve the router to trade the collateral in case of liquidations.
-        COLLATERAL.safeApprove(address(router), type(uint256).max);
+        COLLATERAL.safeApprove(address(ROUTER), type(uint256).max);
         // Approve the `vToken` to be able to mint to it.
         COLLATERAL.safeApprove(address(vToken), type(uint256).max);
     }
@@ -213,61 +203,20 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         override(DineroMarket)
         returns (uint256 rate)
     {
-        uint256 one = 1 ether;
-        uint256 underlyingAmount = one.bmul(VTOKEN.exchangeRateCurrent());
+        uint256 underlyingAmount = VTOKEN.exchangeRateCurrent();
 
         // Get USD price for 1 VToken (18 decimals). The USD price also has 18 decimals. We need to reduce
         rate = ORACLE.getTokenUSDPrice(address(COLLATERAL), underlyingAmount);
 
         require(rate > 0, "DM: invalid exchange rate");
 
+        uint256 normalizedRate = rate / 1e10;
+
         // if the exchange rate is different we need to update the global state
-        if (rate != exchangeRate) {
-            exchangeRate = rate;
-            emit ExchangeRate(rate);
+        if (normalizedRate != exchangeRate) {
+            exchangeRate = normalizedRate;
+            emit ExchangeRate(normalizedRate);
         }
-    }
-
-    /**
-     * @dev A utility function to add collateral and borrow in one call.
-     *
-     * @param amount The number of collateral tokens to add.
-     * @param to The address that will receive the borrowed DNR.
-     * @param borrowAmount The number of DNR tokens to borrow.
-     */
-    function addCollateralAndBorrow(
-        uint256 amount,
-        address to,
-        uint256 borrowAmount
-    ) external isSolvent {
-        require(amount > 0, "DM: no zero collateral amount");
-        require(to != address(0), "DM: no zero address");
-        require(borrowAmount > 0, "DM: no zero borrowAmount");
-        accrue();
-        addCollateral(amount);
-        _borrowFresh(to, borrowAmount);
-    }
-
-    /**
-     * @dev A utility function to repay and withdraw collateral in one call.
-     *
-     * @param account The address that will have its loan repaid.
-     * @param principal The number of loan shares to repay.
-     * @param amount The number of collateral tokens to remove.
-     * @param inUnderlying Indicates if the collateral should be withdrawn in bearing token or the underlying.
-     */
-    function repayAndWithdrawCollateral(
-        address account,
-        uint256 principal,
-        uint256 amount,
-        bool inUnderlying
-    ) external isSolvent {
-        require(account != address(0), "DM: no zero account");
-        require(principal > 0, "DM: no zero principal");
-        require(amount > 0, "DM: no zero withdrawl amount");
-        accrue();
-        _repayFresh(account, principal);
-        _withdrawCollateralFresh(amount, inUnderlying);
     }
 
     /**
@@ -281,45 +230,7 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         // Update rewards.
         _claimVenus();
 
-        // Save gas
-        uint256 _userCollateral = userCollateral[_msgSender()];
-        uint256 _totalRewardsPerVToken = totalRewardsPerVToken;
-
-        uint256 rewards;
-
-        // If the user has a deposit, he is entitled to rewards.
-        if (_userCollateral > 0) {
-            rewards =
-                _totalRewardsPerVToken.mulDiv(
-                    _userCollateral,
-                    10**address(VTOKEN).safeDecimals()
-                ) -
-                rewardsOf[_msgSender()];
-        }
-
-        uint256 vTokenAmount;
-        uint256 underlyingAmount;
-
-        COLLATERAL.safeTransferFrom(_msgSender(), address(this), amount);
-        vTokenAmount = _mintERC20VToken(amount);
-        underlyingAmount = amount;
-
-        uint256 newAmount = _userCollateral + vTokenAmount;
-
-        // Update Global state
-        userCollateral[_msgSender()] = newAmount;
-        totalVCollateral += vTokenAmount;
-
-        // User has been paid all rewards.
-        rewardsOf[_msgSender()] = _totalRewardsPerVToken.mulDiv(
-            newAmount,
-            10**address(VTOKEN).safeDecimals()
-        );
-
-        // Send the rewards.
-        _transferXVS(_msgSender(), rewards);
-
-        emit AddCollateral(_msgSender(), underlyingAmount, vTokenAmount);
+        _addCollateralFresh(amount);
     }
 
     /**
@@ -342,6 +253,44 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         accrue();
 
         _withdrawCollateralFresh(amount, inUnderlying);
+    }
+
+    /**
+     * @dev Function to call borrow, addCollateral, withdrawCollateral and repay in an arbitrary order
+     *
+     * @param requests Array of actions to denote, which function to call
+     * @param requestArgs The data to pass to the function based on the request
+     */
+    function request(uint8[] calldata requests, bytes[] calldata requestArgs)
+        external
+    {
+        bool checkForSolvency;
+        bool alreadyClaimed;
+        bool alreadyAccrued;
+
+        for (uint256 i; i < requests.length; i++) {
+            uint8 requestAction = requests[i];
+
+            if (_checkForSolvency(requestAction)) checkForSolvency = true;
+
+            if (!alreadyClaimed && _checkForRewards(requestAction)) {
+                alreadyClaimed = true;
+                _claimVenus();
+            }
+
+            if (!alreadyAccrued && _checkIfAccrue(requestAction)) {
+                alreadyAccrued = true;
+                accrue();
+            }
+
+            _request(requestAction, requestArgs[i]);
+        }
+
+        if (checkForSolvency)
+            require(
+                _isSolvent(_msgSender(), updateExchangeRate()),
+                "MKT: sender is insolvent"
+            );
     }
 
     /**
@@ -544,10 +493,13 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
             // Liquidator will be paid in `COLLATERAL`
             if (inUnderlying) {
                 // Send collateral in Underlying to the `recipient` (includes liquidator fee + protocol fee)
-                COLLATERAL.safeTransfer(recipient, totalUnderlyingAmount);
+                address(COLLATERAL).safeERC20Transfer(
+                    recipient,
+                    totalUnderlyingAmount
+                );
             } else {
                 // Send as a VToken
-                IERC20Upgradeable(address(VTOKEN)).safeTransfer(
+                address(VTOKEN).safeERC20Transfer(
                     recipient,
                     liquidationInfo.allCollateral
                 );
@@ -560,6 +512,63 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     //////////////////////////////////////////////////////////////*/
 
     /**
+     * @dev Call a function based on requestAction
+     *
+     * @param requestAction The action associated to a function
+     * @param data The arguments to be passed to the function
+     */
+    function _request(uint8 requestAction, bytes calldata data) private {
+        if (requestAction == ADD_COLLATERAL_REQUEST) {
+            _addCollateralFresh(abi.decode(data, (uint256)));
+            return;
+        }
+
+        if (requestAction == WITHDRAW_COLLATERAL_REQUEST) {
+            (uint256 amount, bool inUnderlying) = abi.decode(
+                data,
+                (uint256, bool)
+            );
+            _withdrawCollateralFresh(amount, inUnderlying);
+            return;
+        }
+
+        if (requestAction == BORROW_REQUEST) {
+            (address to, uint256 amount) = abi.decode(data, (address, uint256));
+            require(to != address(0), "MKT: no zero address");
+
+            _borrowFresh(to, amount);
+            return;
+        }
+
+        if (requestAction == REPAY_REQUEST) {
+            (address account, uint256 principal) = abi.decode(
+                data,
+                (address, uint256)
+            );
+            require(account != address(0), "MKT: no zero address");
+            require(principal > 0, "MKT: principal cannot be 0");
+
+            _repayFresh(account, principal);
+            return;
+        }
+
+        revert("DM: invalid request");
+    }
+
+    /**
+     * @dev Helper function to check if we should claim XVS rewards on request
+     *
+     * @param requestAction Request action to check
+     * @return bool If true we should claim rewards
+     */
+    function _checkForRewards(uint8 requestAction) private pure returns (bool) {
+        if (requestAction == WITHDRAW_COLLATERAL_REQUEST) return true;
+        if (requestAction == ADD_COLLATERAL_REQUEST) return true;
+
+        return false;
+    }
+
+    /**
      * @dev Allows a user to remove collateral, it does not run solvency checks nor accrue. The caller must run those.
      *
      * @notice This function can fail if Venus does not have enough cash.
@@ -570,9 +579,6 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     function _withdrawCollateralFresh(uint256 amount, bool inUnderlying)
         private
     {
-        // Update rewards.
-        _claimVenus();
-
         // Save gas
         uint256 _userCollateral = userCollateral[_msgSender()];
         uint256 _totalRewardsPerVToken = totalRewardsPerVToken;
@@ -595,10 +601,7 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         // If the person withdrawing wants the vTokens, we do not need to redeem the underlying.
         if (!inUnderlying) {
             // Send the collateral
-            IERC20Upgradeable(address(VTOKEN)).safeTransfer(
-                _msgSender(),
-                amount
-            );
+            address(VTOKEN).safeERC20Transfer(_msgSender(), amount);
 
             // Send the rewards.
             _transferXVS(_msgSender(), rewards);
@@ -612,7 +615,7 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         uint256 underlyingAmount;
 
         underlyingAmount = _redeemERC20VToken(amount);
-        COLLATERAL.safeTransfer(_msgSender(), underlyingAmount);
+        address(COLLATERAL).safeERC20Transfer(_msgSender(), underlyingAmount);
 
         // Send the rewards.
         _transferXVS(_msgSender(), rewards);
@@ -621,14 +624,52 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     }
 
     /**
-     * @dev Helper function to check the balance of a `token` this contract has.
+     * @dev Allows `msg.sender` to add collateral. It will send the rewards in XVS if applicable.
      *
-     * @param token An ERC20 token.
-     * @return uint256 The number of `token` in this contract.
+     * @notice If the `COLLATERAL` is an ERC20, the `msg.sender` must approve this contract. If it is BNB, he can send directly.
+     *
+     * @param amount The number of `COLLATERAL` tokens to be used for collateral. This argument is not used if the underlying is BNB.
      */
-    function _contractBalanceOf(address token) private view returns (uint256) {
-        // Find how many ERC20 tokens this contract has.
-        return IERC20Upgradeable(token).balanceOf(address(this));
+    function _addCollateralFresh(uint256 amount) private {
+        // Save gas
+        uint256 _userCollateral = userCollateral[_msgSender()];
+        uint256 _totalRewardsPerVToken = totalRewardsPerVToken;
+
+        uint256 rewards;
+
+        // If the user has a deposit, he is entitled to rewards.
+        if (_userCollateral > 0) {
+            rewards =
+                _totalRewardsPerVToken.mulDiv(
+                    _userCollateral,
+                    10**address(VTOKEN).safeDecimals()
+                ) -
+                rewardsOf[_msgSender()];
+        }
+
+        uint256 vTokenAmount;
+        uint256 underlyingAmount;
+
+        COLLATERAL.safeTransferFrom(_msgSender(), address(this), amount);
+        vTokenAmount = _mintERC20VToken(amount);
+        underlyingAmount = amount;
+
+        uint256 newAmount = _userCollateral + vTokenAmount;
+
+        // Update Global state
+        userCollateral[_msgSender()] = newAmount;
+        totalVCollateral += vTokenAmount;
+
+        // User has been paid all rewards.
+        rewardsOf[_msgSender()] = _totalRewardsPerVToken.mulDiv(
+            newAmount,
+            10**address(VTOKEN).safeDecimals()
+        );
+
+        // Send the rewards.
+        _transferXVS(_msgSender(), rewards);
+
+        emit AddCollateral(_msgSender(), underlyingAmount, vTokenAmount);
     }
 
     /**
@@ -657,13 +698,13 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     {
         IVToken vToken = VTOKEN;
         // Find how many VTokens we currently have.
-        uint256 balanceBefore = _contractBalanceOf(address(vToken));
+        uint256 balanceBefore = address(vToken).contractBalanceOf();
 
         // Supply ALL underlyings present in the contract even lost tokens to mint VTokens. It will revert if it fails.
         _invariant(vToken.mint(amount), "DV: failed to mint");
 
         // Subtract the new balance from the previous one, to find out how many VTokens we minted.
-        mintedAmount = _contractBalanceOf(address(vToken)) - balanceBefore;
+        mintedAmount = address(vToken).contractBalanceOf() - balanceBefore;
     }
 
     /**
@@ -677,13 +718,13 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     {
         address collateral = address(COLLATERAL);
         // Find how many VTokens we currently have.
-        uint256 balanceBefore = _contractBalanceOf(collateral);
+        uint256 balanceBefore = collateral.contractBalanceOf();
 
         // Supply ALL underlyings present in the contract even lost tokens to mint VTokens. It will revert if it fails.
         _invariant(VTOKEN.redeem(amount), "DV: failed to redeem");
 
         // Subtract the new balance from the previous one, to find out how many VTokens we minted.
-        mintedAmount = _contractBalanceOf(collateral) - balanceBefore;
+        mintedAmount = collateral.contractBalanceOf() - balanceBefore;
     }
 
     /**
@@ -702,17 +743,17 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         vTokenArray[0] = address(vToken);
 
         // Save balance of XVS before claiming.
-        uint256 xvsBalanceBefore = _contractBalanceOf(address(XVS));
+        uint256 xvsBalanceBefore = address(XVS).contractBalanceOf();
 
         // Claim XVS in the `vToken`.
         VENUS_CONTROLLER.claimVenus(address(this), vTokenArray);
 
         // Calculate how much XVS we claimed.
-        uint256 claimedVToken = _contractBalanceOf(address(XVS)) -
+        uint256 claimedVenus = address(XVS).contractBalanceOf() -
             xvsBalanceBefore;
 
         // Update state
-        totalRewardsPerVToken += claimedVToken.mulDiv(
+        totalRewardsPerVToken += claimedVenus.mulDiv(
             10**address(vToken).safeDecimals(),
             _totalCollateral
         );
@@ -727,15 +768,6 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
     function _transferXVS(address to, uint256 amount) private {
         if (amount == 0) return;
 
-        IERC20Upgradeable xvs = XVS;
-
-        //solhint-disable-next-line var-name-mixedcase
-        uint256 XVSBalance = _contractBalanceOf(address(xvs));
-
-        // In this contract our math should never cause a deviation bigger than this one.
-        assert(XVSBalance + 0.001 ether >= amount);
-
-        // Send the rewards
-        xvs.safeTransfer(to, amount > XVSBalance ? XVSBalance : amount);
+        address(XVS).safeERC20Transfer(to, amount);
     }
 }

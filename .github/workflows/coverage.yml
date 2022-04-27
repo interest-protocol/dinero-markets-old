@@ -23,7 +23,8 @@ jobs:
       - run: npm run compile
       - run: npm run coverage
         env:
-          NODE_OPTIONS: --max_old_space_size=8192
+          NODE_OPTIONS: --max_old_space_size=8192 
+          BSC_URL: ${{ secrets.BSC_URL }}
       - uses: codecov/codecov-action@v2
 
   slither: 

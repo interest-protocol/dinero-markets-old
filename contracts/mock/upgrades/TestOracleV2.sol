@@ -1,9 +1,9 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.13;
 
-import "../../OracleV1.sol";
+import "../../Oracle.sol";
 
-contract TestOracleV2 is OracleV1 {
+contract TestOracleV2 is Oracle {
     function version() external pure returns (string memory) {
         return "V2";
     }
