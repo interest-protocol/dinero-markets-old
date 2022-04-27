@@ -81,7 +81,7 @@ library IntERC20 {
     }
 
     /**
-     * @dev Due to math limitations, some dust must be left in the calculations. To present such errors we will send the current balance if the amount is higher. However it should never deviate more than 1 unit
+     * @dev Due to math limitations, some dust must be left in the calculations. To prevent such errors we will send the current balance if the amount is higher. However it should never deviate more than 1 unit
      *
      * @param token The ERC20 to send
      * @param to The address to send the ERC20

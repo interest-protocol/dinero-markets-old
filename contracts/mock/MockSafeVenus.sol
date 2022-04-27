@@ -34,6 +34,8 @@ contract MockSafeVenus {
     uint256 public borrowBalance;
     uint256 public supplyBalance;
 
+    uint256 public _deleverageAmount = DEFAULT;
+
     // Because we do not want to add complexity by mocking the Venus Controller
     mapping(IVToken => uint256) public vTokenCollateralFactor;
 
@@ -83,6 +85,9 @@ contract MockSafeVenus {
         if (_safeReddem != DEFAULT) return _safeReddem;
 
         (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
+
+        if (borrowBalance == 0) return supplyBalance;
+
         uint256 collateralRatio = safeCollateralRatio(vault, vToken);
         uint256 result = supply - borrow.bdiv(collateralRatio);
         safeRedeemReturn = result;
@@ -124,6 +129,8 @@ contract MockSafeVenus {
         external
         returns (uint256)
     {
+        if (_deleverageAmount != DEFAULT) return _deleverageAmount;
+
         // Get a safe ratio between borrow amount and collateral required.
         uint256 _collateralLimit = safeCollateralRatio(vault, vToken);
 
@@ -181,5 +188,10 @@ contract MockSafeVenus {
         external
     {
         vTokenCollateralFactor[vToken] = amount;
+    }
+
+    // Because we do not want to add complexity by mocking the Venus Controller
+    function __setDeleverageAmount(uint256 amount) external {
+        _deleverageAmount = amount;
     }
 }

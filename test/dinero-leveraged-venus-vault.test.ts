@@ -861,6 +861,18 @@ describe('Dinero Leverage Venus Vault', () => {
         .to.emit(vUSDCContract, 'Redeem')
         .to.emit(vUSDCContract, 'RepayBorrow');
     });
+    it('does not deleverage if the borrow amount is too low', async () => {
+      await dineroVenusVault
+        .connect(usdcWhale)
+        .deposit(USDC, parseEther('1000000'));
+
+      await safeVenus.__setDeleverageAmount(parseEther('0.1'));
+
+      await expect(dineroVenusVault.deleverage(vUSDC)).to.not.emit(
+        vUSDCContract,
+        'Redeem'
+      );
+    });
     it('deleverages all listed assets', async () => {
       await Promise.all([
         dineroVenusVault
@@ -1715,6 +1727,29 @@ describe('Dinero Leverage Venus Vault', () => {
           )
       ).to.revertedWith('DV: failed to redeem');
     });
+    it('withdraws without needing to redeem after the loop', async () => {
+      await dineroVenusVault
+        .connect(usdcWhale)
+        .deposit(USDC, parseEther('100'));
+
+      const exchangeRate = await vUSDCContract.callStatic.exchangeRateCurrent();
+
+      const vUSDCWhaleAmountToWithdraw = parseEther('51')
+        .mul(parseEther('1'))
+        .div(exchangeRate);
+
+      await dineroVenusVault.connect(owner).pause();
+
+      await dineroVenusVault.connect(owner).emergencyRecovery();
+
+      await dineroVenusVault.connect(owner).unpause();
+
+      await expect(
+        dineroVenusVault
+          .connect(usdcWhale)
+          .withdraw(USDC, vUSDCWhaleAmountToWithdraw)
+      ).to.not.be.emit(vUSDCContract, 'Redeem');
+    });
     it('allows for withdraws', async () => {
       const usdcWhaleUSDCBalance = await USDCContract.balanceOf(
         usdcWhale.address
@@ -2393,6 +2428,37 @@ describe('Dinero Leverage Venus Vault', () => {
         dineroVenusVault.connect(owner).withdrawReserves(USDC, reserveAmount)
       ).to.revertedWith('DV: failed to redeem');
     });
+    it('withdraws without needing to redeem after the loop', async () => {
+      await dineroVenusVault.connect(usdcWhale).donate(USDC, parseEther('100'));
+
+      const exchangeRate = await vUSDCContract.callStatic.exchangeRateCurrent();
+
+      const vUSDCWhaleAmountToWithdraw = parseEther('51')
+        .mul(parseEther('1'))
+        .div(exchangeRate);
+
+      await dineroVenusVault.connect(owner).pause();
+
+      await dineroVenusVault.connect(owner).emergencyRecovery();
+
+      await dineroVenusVault.connect(owner).unpause();
+
+      await expect(
+        dineroVenusVault
+          .connect(owner)
+          .withdrawReserves(USDC, vUSDCWhaleAmountToWithdraw)
+      ).to.not.be.emit(vUSDCContract, 'Redeem');
+
+      await dineroVenusVault.connect(usdcWhale).donate(USDC, parseEther('100'));
+
+      await safeVenus.__setSafeRedeem(parseEther('20'));
+
+      await expect(
+        dineroVenusVault
+          .connect(owner)
+          .withdrawReserves(USDC, vUSDCWhaleAmountToWithdraw)
+      ).to.not.be.reverted;
+    });
     it('withdraws the reserves tokens', async () => {
       await dineroVenusVault
         .connect(usdcWhale)
@@ -2410,7 +2476,6 @@ describe('Dinero Leverage Venus Vault', () => {
       );
 
       expect(feeToUSDCAccount.vTokens).to.closeTo(reserveAmount, ONE_V_TOKEN);
-      expect(feeToUSDCBalance).to.be.equal(0);
 
       await expect(
         dineroVenusVault.withdrawReserves(USDC, reserveAmount)
@@ -2430,7 +2495,7 @@ describe('Dinero Leverage Venus Vault', () => {
 
       expect(feeToUSDCAccount2.vTokens).to.be.equal(0);
       expect(feeToUSDCBalance2).to.be.closeTo(
-        calculateFee(parseEther('100000')),
+        calculateFee(parseEther('100000')).add(feeToUSDCBalance),
         parseEther('0.01')
       );
       expect(totalFreeUnderlying).to.be.equal(
@@ -2438,4 +2503,4 @@ describe('Dinero Leverage Venus Vault', () => {
       );
     });
   });
-}).timeout(40_000);
+}).timeout(70_000);

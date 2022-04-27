@@ -394,6 +394,8 @@ contract DineroLeveragedVenusVault is
         // Update global state
         accountOf[underlying][_msgSender()] = userAccount;
         totalFreeVTokenOf[vToken] = totalFreeVTokens;
+
+        // Needs to be done after ALL Mutions in exceptions of Dinero.
         totalFreeUnderlying[underlying] = _getTotalFreeUnderlying(vToken);
 
         // Give them `DINERO` to the `msg.sender`; essentially giving them liquidity to employ more strategies.
@@ -493,6 +495,7 @@ contract DineroLeveragedVenusVault is
                 userAccount.principal,
                 userAccount.vTokens
             );
+
             // We do effects before checks/updates here to save memory and we can trust this token.
             // Recover the Dinero lent to keep the ratio 1:1
             DINERO.burn(_msgSender(), dineroToBurn);
@@ -532,6 +535,7 @@ contract DineroLeveragedVenusVault is
             // Get a safe redeemable amount to prevent liquidation.
             uint256 safeAmount = safeVenus.safeRedeem(this, vToken);
             uint256 balance = underlying.contractBalanceOf();
+
             // Upper bound to prevent infinite loops.
             uint256 maxTries;
 
@@ -577,14 +581,14 @@ contract DineroLeveragedVenusVault is
 
         // Uniswap style ,block scoping, to prevent stack too deep local variable errors.
         {
-            // Update current free underlying after all mutations in underlying.
-            totalFreeUnderlying[underlying] = _getTotalFreeUnderlying(vToken);
-
             // Send underlying to user.
             underlying.safeERC20Transfer(
                 _msgSender(),
                 amountOfUnderlyingToRedeem
             );
+
+            // Update current free underlying after ALL mutations in underlying.
+            totalFreeUnderlying[underlying] = _getTotalFreeUnderlying(vToken);
 
             emit Withdraw(
                 _msgSender(),
@@ -774,7 +778,10 @@ contract DineroLeveragedVenusVault is
     function _getTotalFreeUnderlying(IVToken vToken) private returns (uint256) {
         (uint256 borrowBalance, uint256 supplyBalance) = SAFE_VENUS
             .borrowAndSupply(this, vToken);
-        return supplyBalance - borrowBalance;
+        return
+            supplyBalance -
+            borrowBalance +
+            vToken.underlying().contractBalanceOf();
     }
 
     /**
@@ -942,8 +949,6 @@ contract DineroLeveragedVenusVault is
         // We intend to only have a compound depth of 3. So an upperbound of 10 is more than enough.
 
         while (redeemAmount > 0 && borrowAmount > 0 && maxTries <= 15) {
-            if (1 ether > redeemAmount) break;
-
             // redeem and repay
             _redeemAndRepay(vToken, redeemAmount);
 
@@ -1268,11 +1273,11 @@ contract DineroLeveragedVenusVault is
             }
         }
 
-        // Update current free underlying after all mutations in underlying.
-        totalFreeUnderlying[underlying] = _getTotalFreeUnderlying(vToken);
-
         // Send underlying to user.
         underlying.safeERC20Transfer(FEE_TO, amountOfUnderlyingToRedeem);
+
+        // Update current free underlying after all mutations in underlying.
+        totalFreeUnderlying[underlying] = _getTotalFreeUnderlying(vToken);
 
         emit Withdraw(
             FEE_TO,

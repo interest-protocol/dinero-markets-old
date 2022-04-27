@@ -442,7 +442,7 @@ describe('Interest BNB Bearing Market', () => {
 
       await network.provider.send('hardhat_setCode', [vBNB, vBNBCode]);
     });
-    it('accepts BNB deposits', async () => {
+    it.only('accepts BNB deposits', async () => {
       const [
         aliceCollateral,
         totalRewardsPerVToken,
@@ -468,7 +468,7 @@ describe('Interest BNB Bearing Market', () => {
         .to.emit(market, 'AddCollateral')
         .withArgs(
           alice.address,
-          parseEther('10').mul(vBNBExchangeRate).div(parseEther('1')),
+          parseEther('10'),
           parseEther('10').mul(parseEther('1')).div(vBNBExchangeRate)
         );
 
@@ -481,7 +481,7 @@ describe('Interest BNB Bearing Market', () => {
         .to.emit(market, 'AddCollateral')
         .withArgs(
           alice.address,
-          parseEther('5').mul(vBNBExchangeRate2).div(parseEther('1')),
+          parseEther('5'),
           parseEther('5').mul(parseEther('1')).div(vBNBExchangeRate2)
         )
         .to.emit(VenusControllerContract, 'DistributedSupplierVenus')
@@ -532,7 +532,7 @@ describe('Interest BNB Bearing Market', () => {
         .to.emit(market, 'AddCollateral')
         .withArgs(
           alice.address,
-          parseEther('5').mul(vBNBExchangeRate3).div(parseEther('1')),
+          parseEther('5'),
           parseEther('5').mul(parseEther('1')).div(vBNBExchangeRate3)
         )
         .to.emit(VenusControllerContract, 'Claim')
@@ -2346,7 +2346,7 @@ describe('Interest BNB Bearing Market', () => {
         .to.emit(market, 'AddCollateral')
         .withArgs(
           alice.address,
-          parseEther('10').mul(vBNBExchangeRate).div(parseEther('1')),
+          parseEther('10'),
           parseEther('10').mul(parseEther('1')).div(vBNBExchangeRate)
         );
 
@@ -2365,7 +2365,7 @@ describe('Interest BNB Bearing Market', () => {
         .to.emit(market, 'AddCollateral')
         .withArgs(
           alice.address,
-          parseEther('5').mul(vBNBExchangeRate2).div(parseEther('1')),
+          parseEther('5'),
           parseEther('5').mul(parseEther('1')).div(vBNBExchangeRate2)
         )
         .to.emit(VenusControllerContract, 'DistributedSupplierVenus')
@@ -2422,7 +2422,7 @@ describe('Interest BNB Bearing Market', () => {
         .to.emit(market, 'AddCollateral')
         .withArgs(
           alice.address,
-          parseEther('5').mul(vBNBExchangeRate3).div(parseEther('1')),
+          parseEther('5'),
           parseEther('5').mul(parseEther('1')).div(vBNBExchangeRate3)
         )
         .to.emit(VenusControllerContract, 'Claim')
