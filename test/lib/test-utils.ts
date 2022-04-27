@@ -1,8 +1,20 @@
 /* eslint-disable  @typescript-eslint/no-explicit-any */
 // eslint-disable-next-line node/no-unpublished-import
+import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { ContractAddressOrInstance } from '@openzeppelin/hardhat-upgrades/dist/utils';
 import { BigNumber } from 'ethers';
-import { ethers, upgrades } from 'hardhat';
+import { ethers, network, upgrades } from 'hardhat';
+
+export const impersonate = async (
+  address: string
+): Promise<SignerWithAddress> => {
+  await network.provider.request({
+    method: 'hardhat_impersonateAccount',
+    params: [address],
+  });
+
+  return ethers.getSigner(address);
+};
 
 export const multiDeploy = async (
   x: ReadonlyArray<string>,
@@ -109,3 +121,9 @@ export const calculateUserPendingRewards = (
     .mul(poolAccruedIntPerShare)
     .div(ethers.utils.parseEther('1'))
     .sub(userRewardsPaid);
+
+export const toVBalance = (x: BigNumber, exchangeRate: BigNumber): BigNumber =>
+  x.mul(ethers.utils.parseEther('1')).div(exchangeRate);
+
+export const sortTokens = (a: string, b: string): [string, string] =>
+  a < b ? [a, b] : [b, a];

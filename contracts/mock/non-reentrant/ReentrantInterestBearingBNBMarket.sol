@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.13;
 
-interface IInterestMarketBNBV1 {
-    function withdrawCollateral(address to, uint256 amount) external;
+interface IInterestBearingBNBMarket {
+    function withdrawCollateral(uint256 amount, bool inUnderlying) external;
 
-    function addCollateral(address to) external payable;
+    function addCollateral() external payable;
 
     function borrow(address to, uint256 amount) external;
 
@@ -15,43 +15,49 @@ interface IInterestMarketBNBV1 {
     function liquidate(
         address[] calldata accounts,
         uint256[] calldata principals,
-        address payable recipient,
+        address recipient,
+        bool inUnderlying,
         address[] calldata path
     ) external;
 }
 
 // solhint-disable
 
-contract ReentrantInterestBNBMarketWithdrawCollateral {
-    IInterestMarketBNBV1 public Contract;
+contract ReentrantInterestBearingBNBMarketWithdrawCollateral {
+    IInterestBearingBNBMarket public Contract;
 
-    constructor(IInterestMarketBNBV1 _contract) {
+    constructor(IInterestBearingBNBMarket _contract) {
         Contract = _contract;
     }
 
-    function withdrawCollateral(address to, uint256 amount) external {
-        Contract.withdrawCollateral(to, amount);
+    function addCollateral() external payable {
+        Contract.addCollateral{value: msg.value}();
+    }
+
+    function withdrawCollateral(uint256 amount, bool inUnderlying) external {
+        Contract.withdrawCollateral(amount, inUnderlying);
     }
 
     receive() external payable {
-        Contract.withdrawCollateral(address(0), 0);
+        Contract.withdrawCollateral(0, false);
     }
 }
 
-contract ReentrantInterestBNBMarketLiquidate {
-    IInterestMarketBNBV1 public Contract;
+contract ReentrantInterestBearingBNBMarketLiquidate {
+    IInterestBearingBNBMarket public Contract;
 
-    constructor(IInterestMarketBNBV1 _contract) {
+    constructor(IInterestBearingBNBMarket _contract) {
         Contract = _contract;
     }
 
     function liquidate(
         address[] calldata accounts,
         uint256[] calldata principals,
-        address payable recipient,
+        address recipient,
+        bool inUnderlying,
         address[] calldata path
     ) external {
-        Contract.liquidate(accounts, principals, recipient, path);
+        Contract.liquidate(accounts, principals, recipient, inUnderlying, path);
     }
 
     receive() external payable {
@@ -61,15 +67,16 @@ contract ReentrantInterestBNBMarketLiquidate {
             _array,
             new uint256[](0),
             payable(address(0)),
+            false,
             _array
         );
     }
 }
 
-contract ReentrantInterestBNBMarketRequest {
-    IInterestMarketBNBV1 public Contract;
+contract ReentrantInterestBearingBNBMarketRequest {
+    IInterestBearingBNBMarket public Contract;
 
-    constructor(IInterestMarketBNBV1 _contract) {
+    constructor(IInterestBearingBNBMarket _contract) {
         Contract = _contract;
     }
 
@@ -80,8 +87,8 @@ contract ReentrantInterestBNBMarketRequest {
         Contract.request{value: msg.value}(requests, requestArgs);
     }
 
-    function addCollateral(address to) external payable {
-        Contract.addCollateral{value: msg.value}(to);
+    function addCollateral() external payable {
+        Contract.addCollateral{value: msg.value}();
     }
 
     receive() external payable {

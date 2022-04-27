@@ -27,7 +27,7 @@ import "../lib/IntERC20.sol";
 
 import "../master-chef-vaults/MasterChefVault.sol";
 
-import "../OracleV1.sol";
+import "../Oracle.sol";
 
 import "./DineroMarket.sol";
 
@@ -41,7 +41,7 @@ import "./DineroMarket.sol";
  * @notice There is no deposit fee.
  * @notice There is a liquidation fee.
  * @notice Since Dinero is assumed to always be pegged to USD. Only need an exchange rate from collateral to USD.
- * @notice We assume that {_exchangeRate} has 18 decimals. Please check OracleV1 and PancakeOracle
+ * @notice We assume that {_exchangeRate} has 18 decimals. Please check Oracle and PancakeOracle
  * @notice The govenor owner has sole access to critical functions in this contract.
  * @notice Market will only support tokens on BSC with immutable contracts and 18 decimals.
  * @notice We will start by supporting tokens with high liquidity. The {maxLTVRatio} will start at 60% and slow be raised up to 80%.
@@ -60,7 +60,7 @@ import "./DineroMarket.sol";
  * PCS Pairs of all this tokens with WBNB - 0xA527a61703D82139F8a06Bc30097cC9CAA2df5A6
  * ADA - 0x3ee2200efb3400fabb9aacf31297cbdd1d435d47
  */
-contract InterestMarketV1 is Initializable, DineroMarket {
+contract InterestERC20Market is Initializable, DineroMarket {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -106,7 +106,6 @@ contract InterestMarketV1 is Initializable, DineroMarket {
     /**
      * @dev This is only callable once to set the initial data.
      *
-     * @param router The address of the PCS router.
      * @param dinero The address of Dinero.
      * @param feeTo Treasury address.
      * @param oracle The address of the oracle.
@@ -121,10 +120,9 @@ contract InterestMarketV1 is Initializable, DineroMarket {
      * - Can only be called at once and should be called during creation to prevent front running.
      */
     function initialize(
-        IPancakeRouter02 router,
         Dinero dinero,
         address feeTo,
-        OracleV1 oracle,
+        Oracle oracle,
         IERC20Upgradeable collateral,
         MasterChefVault vault,
         uint64 interestRate,
@@ -132,16 +130,15 @@ contract InterestMarketV1 is Initializable, DineroMarket {
         uint256 _liquidationFee
     ) external initializer {
         // Collateral must not be zero address.
-        require(address(collateral) != address(0), "MKT: no zero address");
+        require(address(collateral) != address(0), "DM: no zero address");
         // {maxLTVRatio} must be within the acceptable bounds.
         require(
             0.9e18 >= _maxLTVRatio && _maxLTVRatio >= 0.5e18,
-            "MKT: ltc ratio out of bounds"
+            "DM: ltc ratio out of bounds"
         );
 
         __DineroMarket_init();
 
-        ROUTER = router;
         DINERO = dinero;
         FEE_TO = feeTo;
         ORACLE = oracle;
@@ -153,7 +150,7 @@ contract InterestMarketV1 is Initializable, DineroMarket {
 
         // Also make sure that {COLLATERAL} is a deployed ERC20.
         // Approve the router to trade the collateral.
-        COLLATERAL.safeApprove(address(router), type(uint256).max);
+        COLLATERAL.safeApprove(address(ROUTER), type(uint256).max);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -200,51 +197,36 @@ contract InterestMarketV1 is Initializable, DineroMarket {
     }
 
     /**
-     * @dev A utility function to addCollateral and borrow in one call.
+     * @dev Function to call borrow, addCollateral, withdrawCollateral and repay in an arbitrary order
      *
-     * @param to The address that will have collateral added.
-     * @param amount The number of collateral tokens to add.
-     * @param borrowTo The address that will receive the borrow dinero.
-     * @param borrowAmount The number of DNR tokens to borrow.
+     * @param requests Array of actions to denote, which function to call
+     * @param requestArgs The data to pass to the function based on the request
      */
-    function addCollateralAndBorrow(
-        address to,
-        uint256 amount,
-        address borrowTo,
-        uint256 borrowAmount
-    ) external isSolvent {
-        require(
-            to != address(0) && borrowTo != address(0),
-            "DM: no zero address"
-        );
-        require(amount != 0 && borrowAmount != 0, "DM: no zero amount");
-        accrue();
-        addCollateral(to, amount);
-        _borrowFresh(borrowTo, borrowAmount);
-    }
+    function request(uint8[] calldata requests, bytes[] calldata requestArgs)
+        external
+    {
+        bool checkForSolvency;
 
-    /**
-     * @dev A utility function to repay and withdraw collateral in one call.
-     *
-     * @param account The account that will have its loan repaid.
-     * @param principal The number of loan shares to repay.
-     * @param to The address that will receive the withdawn collateral
-     * @param amount The number of collateral tokens to remove.
-     */
-    function repayAndWithdrawCollateral(
-        address account,
-        uint256 principal,
-        address to,
-        uint256 amount
-    ) external isSolvent {
-        require(
-            account != address(0) && to != address(0),
-            "DM: no zero address"
-        );
-        require(principal > 0 && amount > 0, "DM: no zero amount");
-        accrue();
-        _repayFresh(account, principal);
-        _withdrawCollateralFresh(to, amount);
+        bool alreadyAccrued;
+
+        for (uint256 i; i < requests.length; i++) {
+            uint8 requestAction = requests[i];
+
+            if (_checkForSolvency(requestAction)) checkForSolvency = true;
+
+            if (!alreadyAccrued && _checkIfAccrue(requestAction)) {
+                alreadyAccrued = true;
+                accrue();
+            }
+
+            _request(requestAction, requestArgs[i]);
+        }
+
+        if (checkForSolvency)
+            require(
+                _isSolvent(_msgSender(), updateExchangeRate()),
+                "MKT: sender is insolvent"
+            );
     }
 
     /**
@@ -255,15 +237,10 @@ contract InterestMarketV1 is Initializable, DineroMarket {
      * @param to The address, which the `COLLATERAL` will be assigned to.
      * @param amount The number of `COLLATERAL` tokens to be used for collateral
      */
-    function addCollateral(address to, uint256 amount) public {
-        // Get `COLLATERAL` from `msg.sender`
-        _depositCollateral(_msgSender(), to, amount);
-
-        // Update Global state
-        userCollateral[to] += amount;
-        totalCollateral += amount;
-
-        emit AddCollateral(_msgSender(), to, amount);
+    function addCollateral(address to, uint256 amount) external {
+        require(to != address(0), "DM: no zero address");
+        require(amount > 0, "DM: no zero amount");
+        _addCollateralFresh(to, amount);
     }
 
     /**
@@ -435,7 +412,10 @@ contract InterestMarketV1 is Initializable, DineroMarket {
         } else {
             // Liquidator will be paid in `COLLATERAL`
             // Send collateral to the `recipient` (includes liquidator fee + protocol fee)
-            COLLATERAL.safeTransfer(recipient, liquidationInfo.allCollateral);
+            address(COLLATERAL).safeERC20Transfer(
+                recipient,
+                liquidationInfo.allCollateral
+            );
             // This step we destroy `DINERO` equivalent to all outstanding debt + protocol fee. This does not include the liquidator fee.
             // Liquidator keeps the rest as profit.
             // Liquidator has dinero in this scenario
@@ -446,6 +426,63 @@ contract InterestMarketV1 is Initializable, DineroMarket {
     /*///////////////////////////////////////////////////////////////
                             PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev Call a function based on requestAction
+     *
+     * @param requestAction The action associated to a function
+     * @param data The arguments to be passed to the function
+     */
+    function _request(uint8 requestAction, bytes calldata data) private {
+        if (requestAction == ADD_COLLATERAL_REQUEST) {
+            (address to, uint256 amount) = abi.decode(data, (address, uint256));
+            require(to != address(0), "DM: no zero address");
+            require(amount != 0, "DM: no zero amount");
+            _addCollateralFresh(to, amount);
+            return;
+        }
+
+        if (requestAction == WITHDRAW_COLLATERAL_REQUEST) {
+            (address to, uint256 amount) = abi.decode(data, (address, uint256));
+            require(to != address(0), "DM: no zero address");
+            require(amount != 0, "DM: no zero amount");
+            _withdrawCollateralFresh(to, amount);
+            return;
+        }
+
+        if (requestAction == BORROW_REQUEST) {
+            (address to, uint256 amount) = abi.decode(data, (address, uint256));
+            require(to != address(0), "MKT: no zero address");
+
+            _borrowFresh(to, amount);
+            return;
+        }
+
+        if (requestAction == REPAY_REQUEST) {
+            (address account, uint256 principal) = abi.decode(
+                data,
+                (address, uint256)
+            );
+            require(account != address(0), "MKT: no zero address");
+            require(principal > 0, "MKT: principal cannot be 0");
+
+            _repayFresh(account, principal);
+            return;
+        }
+
+        revert("DM: invalid request");
+    }
+
+    function _addCollateralFresh(address to, uint256 amount) private {
+        // Get `COLLATERAL` from `msg.sender`
+        _depositCollateral(_msgSender(), to, amount);
+
+        // Update Global state
+        userCollateral[to] += amount;
+        totalCollateral += amount;
+
+        emit AddCollateral(_msgSender(), to, amount);
+    }
 
     /**
      * @dev It allows the `msg.sender` to remove collateral. The caller has to run {accrue beforehand}  and must do solvency checks.
@@ -603,7 +640,7 @@ contract InterestMarketV1 is Initializable, DineroMarket {
         uint256 amount
     ) private {
         if (MasterChefVault(address(0)) == VAULT) {
-            COLLATERAL.safeTransfer(recipient, amount);
+            address(COLLATERAL).safeERC20Transfer(recipient, amount);
         } else {
             VAULT.withdraw(account, recipient, amount);
         }

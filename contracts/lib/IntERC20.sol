@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.13;
 
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+
 /**
  * @dev All credits to boring crypto https://github.com/boringcrypto/BoringSolidity/blob/master/contracts/libraries/BoringERC20.sol
  */
 library IntERC20 {
+    using SafeERC20Upgradeable for IERC20Upgradeable;
+
     bytes4 private constant SIG_DECIMALS = 0x313ce567; // decimals()
     bytes4 private constant SIG_SYMBOL = 0x95d89b41; // symbol()
 
@@ -62,5 +67,35 @@ library IntERC20 {
 
     function isContract(address account) internal view returns (bool) {
         return account.code.length > 0;
+    }
+
+    /**
+     * @dev Helper function to check the balance of a `token` this contract has.
+     *
+     * @param token An ERC20 token.
+     * @return uint256 The number of `token` in this contract.
+     */
+    function contractBalanceOf(address token) internal view returns (uint256) {
+        // Find how many ERC20 tokens this contract has.
+        return IERC20Upgradeable(token).balanceOf(address(this));
+    }
+
+    /**
+     * @dev Due to math limitations, some dust must be left in the calculations. To prevent such errors we will send the current balance if the amount is higher. However it should never deviate more than 1 unit
+     *
+     * @param token The ERC20 to send
+     * @param to The address to send the ERC20
+     * @param amount The number of `token` to send.
+     */
+    function safeERC20Transfer(
+        address token,
+        address to,
+        uint256 amount
+    ) internal {
+        uint256 balance = contractBalanceOf(token);
+        IERC20Upgradeable(token).safeTransfer(
+            to,
+            amount > balance ? balance : amount
+        );
     }
 }

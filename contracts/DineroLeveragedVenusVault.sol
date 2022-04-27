@@ -19,6 +19,7 @@ import "./lib/IntMath.sol";
 import "./lib/IntERC20.sol";
 
 import "./tokens/Dinero.sol";
+
 import "./SafeVenus.sol";
 
 /**
@@ -35,7 +36,7 @@ import "./SafeVenus.sol";
  * If Venus's markets get compromised the 1:1 Dinero peg will suffer. So we need to monitor Venus activity to use {emergencyRecovery} in case we feel a new feature is not properly audited. The contract then can be upgraded to properly give the underlying to depositors.
  */
 //solhint-disable-next-line max-states-count
-contract DineroVenusVault is
+contract DineroLeveragedVenusVault is
     Initializable,
     PausableUpgradeable,
     OwnableUpgradeable,
@@ -88,6 +89,8 @@ contract DineroVenusVault is
 
     event RepayAndRedeem(IVToken, uint256 amount);
 
+    event DineroLTV(uint256 indexed previousValue, uint256 indexed newValue);
+
     /*///////////////////////////////////////////////////////////////
                                 STRUCT
     //////////////////////////////////////////////////////////////*/
@@ -104,19 +107,24 @@ contract DineroVenusVault is
     //////////////////////////////////////////////////////////////*/
 
     // Compound and by extension Venus return 0 on successful calls.
-    uint256 private constant NO_ERROR = 0;
+    uint256 internal constant NO_ERROR = 0;
+
+    // Precision Factor to calculate losses and rewards
+    uint256 internal constant PRECISION = 1e10;
 
     // solhint-disable-next-line var-name-mixedcase
-    address public XVS; // 0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63 18 decimals
+    address internal constant XVS = 0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63;
 
     // solhint-disable-next-line var-name-mixedcase
-    address public WBNB; // 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c 18 decimals
+    address internal constant WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c; // 18 decimals
 
     // solhint-disable-next-line var-name-mixedcase
-    IPancakeRouter02 public ROUTER; // PCS router 0x10ED43C718714eb63d5aA57B78B54704E256024E
+    IPancakeRouter02 internal constant ROUTER =
+        IPancakeRouter02(0x10ED43C718714eb63d5aA57B78B54704E256024E); // PCS router
 
     // solhint-disable-next-line var-name-mixedcase
-    IVenusController public VENUS_CONTROLLER; // 0xfD36E2c2a6789Db23113685031d7F16329158384
+    IVenusController internal constant VENUS_CONTROLLER =
+        IVenusController(0xfD36E2c2a6789Db23113685031d7F16329158384); //
 
     //solhint-disable-next-line var-name-mixedcase
     Dinero public DINERO; // 18 decimals
@@ -157,15 +165,14 @@ contract DineroVenusVault is
     // Percentage with a mantissa of 18.
     uint256 public collateralLimit;
 
+    // % of Dinero lent to the user based on principal deposited free of charge
+    uint256 public dineroLTV;
+
     /*///////////////////////////////////////////////////////////////
                             INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @param xvs The contract of th Venus Token
-     * @param wbnb The contract for Wrapped BNB token
-     * @param router The contract of PCS router v2
-     * @param venusController The contract of the Venus Controller
      * @param dinero The contract of the dinero stable coin
      * @param safeVenus The helper contract address to interact with Venus
      * @param feeTo The address that will collect the fee
@@ -175,10 +182,6 @@ contract DineroVenusVault is
      * - Can only be called at once and should be called during creation to prevent front running.
      */
     function initialize(
-        address xvs,
-        address wbnb,
-        IPancakeRouter02 router,
-        IVenusController venusController,
         Dinero dinero,
         SafeVenus safeVenus,
         address feeTo
@@ -186,16 +189,17 @@ contract DineroVenusVault is
         __Ownable_init();
         __Pausable_init();
 
-        XVS = xvs;
-        WBNB = wbnb;
-        ROUTER = router;
-        VENUS_CONTROLLER = venusController;
         DINERO = dinero;
         SAFE_VENUS = safeVenus;
         FEE_TO = feeTo;
 
+        compoundDepth = 3;
+        collateralLimit = 0.5e18;
+        dineroLTV = 0.7e18;
+
         // We trust `router` so we can fully approve because we need to sell it.
-        IERC20Upgradeable(XVS).safeApprove(address(router), type(uint256).max);
+        // Venus has infinite allowance if given max uint256
+        IERC20Upgradeable(XVS).safeApprove(address(ROUTER), type(uint256).max);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -270,17 +274,6 @@ contract DineroVenusVault is
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev Increases the {ROUTER} allowance to the maximum uint256 value
-     */
-    function approveXVS() external {
-        IERC20Upgradeable(XVS).safeIncreaseAllowance(
-            address(ROUTER),
-            type(uint256).max -
-                IERC20Upgradeable(XVS).allowance(address(this), address(ROUTER))
-        );
-    }
-
-    /**
      * @dev It accepts an `amount` of `underlyinng` from a depositor and mints an equivalent amount of `DINERO` to `msg.sender`.
      *
      * @notice `msg.sender` has to approve this contract to use the `underlying`.
@@ -342,11 +335,12 @@ contract DineroVenusVault is
 
             // If there was a loss, we need to charge the user.
             if (lossInVTokens != 0) {
+                uint256 _lossInVTokens = lossInVTokens / PRECISION;
                 // Fairly calculate how much to charge the user, based on his balance and deposit length.
                 // Charge the user.
-                userAccount.vTokens -= lossInVTokens.toUint128();
+                userAccount.vTokens -= _lossInVTokens.toUint128();
                 // Tokens were used to cover the debt.
-                totalFreeVTokens -= lossInVTokens;
+                totalFreeVTokens -= _lossInVTokens;
             }
 
             uint256 rewards = uint256(userAccount.vTokens).mulDiv(
@@ -356,13 +350,13 @@ contract DineroVenusVault is
 
             // No point to calculate if there are no rewards;
             if (rewards != 0) {
+                uint256 _rewards = rewards / PRECISION;
                 // We calculate the rewards based on the VToken rewards and give to the user.
-                userAccount.vTokens += rewards.toUint128();
+                userAccount.vTokens += _rewards.toUint128();
                 // They will be given to the user so they became free.
-                totalFreeVTokens += rewards;
+                totalFreeVTokens += _rewards;
             }
         }
-
         // We need to get the underlying from the `msg.sender` before we mint V Tokens.
         // Get the underlying from the user.
         IERC20Upgradeable(underlying).safeTransferFrom(
@@ -373,11 +367,16 @@ contract DineroVenusVault is
 
         // Supply underlying to Venus right away to start earning.
         // It returns the new VTokens minted.
-        uint256 vTokensMinted = _mintVToken(vToken);
+        uint256 vTokensMinted = _mintVToken(vToken, amount);
+
+        // Charge a 0.5% fee on deposit
+        uint256 fee = vTokensMinted.bmul(0.005e18);
+        vTokensMinted -= fee;
+        accountOf[underlying][FEE_TO].vTokens += fee.toUint128();
 
         // Update the data
         totalFreeVTokens += vTokensMinted;
-        userAccount.principal += amount.toUint128();
+        userAccount.principal += amount.bmul(dineroLTV).toUint128();
         userAccount.vTokens += vTokensMinted.toUint128();
 
         // Consider all rewards fairly paid to the user up to this point.
@@ -395,10 +394,12 @@ contract DineroVenusVault is
         // Update global state
         accountOf[underlying][_msgSender()] = userAccount;
         totalFreeVTokenOf[vToken] = totalFreeVTokens;
+
+        // Needs to be done after ALL Mutions in exceptions of Dinero.
         totalFreeUnderlying[underlying] = _getTotalFreeUnderlying(vToken);
 
-        // Give the same amount of `DINERO` to the `msg.sender`; essentially giving them liquidity to employ more strategies.
-        DINERO.mint(_msgSender(), amount);
+        // Give them `DINERO` to the `msg.sender`; essentially giving them liquidity to employ more strategies.
+        DINERO.mint(_msgSender(), amount.bmul(dineroLTV));
 
         emit Deposit(_msgSender(), underlying, amount, vTokensMinted);
     }
@@ -438,7 +439,6 @@ contract DineroVenusVault is
 
         // Find the vToken of the underlying.
         IVToken vToken = vTokenOf[underlying];
-
         // Update the rewards before any state mutation, to fairly distribute them.
         _investXVS(vToken);
 
@@ -464,7 +464,6 @@ contract DineroVenusVault is
             lossPerVToken = _updateLoss(underlying, vToken);
 
             // If there was a loss, we need to charge the user.
-
             // Fairly calculate how much to charge the user, based on his balance and deposit length.
             uint256 lossInVTokens = uint256(userAccount.vTokens).mulDiv(
                 lossPerVToken,
@@ -472,20 +471,20 @@ contract DineroVenusVault is
             ) - userAccount.lossVTokensAccrued;
 
             if (lossInVTokens != 0) {
+                uint256 _lossInVTokens = lossInVTokens / PRECISION;
                 // Charge the user.
-                userAccount.vTokens -= lossInVTokens.toUint128();
+                userAccount.vTokens -= _lossInVTokens.toUint128();
                 // They are no longer free because they need were used to cover the loss.
-                totalFreeVTokens -= lossInVTokens;
+                totalFreeVTokens -= _lossInVTokens;
             }
-
             // Calculate the rewards the user is entitled to based on the current VTokens he holds and rewards per VTokens.
             // We do not need to update the {totalFreeVTokens} because we will give these rewards to the user.
             rewards =
-                uint256(userAccount.vTokens).mulDiv(
+                (uint256(userAccount.vTokens).mulDiv(
                     rewardPerVToken,
                     decimalsFactor
-                ) -
-                userAccount.rewardsPaid;
+                ) - userAccount.rewardsPaid) /
+                PRECISION;
         }
 
         // Uniswap style, block scoping, to prevent stack too deep local variable errors.
@@ -509,7 +508,6 @@ contract DineroVenusVault is
             // We need to update the userAccount.vTokens before updating the {lossVTokensAccrued and rewardsPaid}
             // Otherwise, the calculations for rewards and losses will be off in the next call for this user.
             userAccount.vTokens -= vTokenAmount.toUint128();
-
             // Consider all rewards fairly paid.
             userAccount.rewardsPaid = uint256(userAccount.vTokens).mulDiv(
                 rewardPerVToken,
@@ -524,6 +522,7 @@ contract DineroVenusVault is
         accountOf[underlying][_msgSender()] = userAccount;
         totalFreeVTokenOf[vToken] = totalFreeVTokens;
 
+        // Remove DUST
         uint256 amountOfUnderlyingToRedeem = (rewards + vTokenAmount).bmul(
             vToken.exchangeRateCurrent()
         );
@@ -535,57 +534,68 @@ contract DineroVenusVault is
 
             // Get a safe redeemable amount to prevent liquidation.
             uint256 safeAmount = safeVenus.safeRedeem(this, vToken);
+            uint256 balance = underlying.contractBalanceOf();
 
             // Upper bound to prevent infinite loops.
             uint256 maxTries;
 
             // If we cannot redeem enough to cover the `amountOfUnderlyingToRedeem`. We will start to deleverage; up to 10x.
             // The less we are borrowing, the more we can redeem because the loans are overcollaterized.
-            // Vault needs good liquidity and moderate leverage to avoid this lofic.
-            while (amountOfUnderlyingToRedeem > safeAmount && maxTries <= 10) {
+            // Vault needs good liquidity and moderate leverage to avoid this logic.
+            while (
+                amountOfUnderlyingToRedeem > safeAmount &&
+                amountOfUnderlyingToRedeem > balance &&
+                maxTries <= 10
+            ) {
+                if (1 ether > safeAmount) break;
+
                 _redeemAndRepay(vToken, safeAmount);
                 // update the safeAmout for the next iteration.
                 safeAmount = safeVenus.safeRedeem(this, vToken);
+                // Add some room to compensate for DUST. SafeVenus has a large enough room to accomodate for one dollar.
+                balance = underlying.contractBalanceOf() + 1 ether;
                 maxTries += 1;
             }
 
             // Make sure we can safely withdraw the `amountOfUnderlyingToRedeem`.
             require(
-                safeAmount >= amountOfUnderlyingToRedeem,
+                safeAmount >= amountOfUnderlyingToRedeem ||
+                    balance >= amountOfUnderlyingToRedeem,
                 "DV: failed to withdraw"
             );
 
-            // Redeem the underlying. It will revert if we are unable to withdraw.
-            // For dust we need to withdraw the min amount.
-            _invariant(
-                vToken.redeemUnderlying(
-                    amountOfUnderlyingToRedeem.min(
-                        vToken.balanceOfUnderlying(address(this))
-                    )
-                ),
-                "DV: failed to redeem"
-            );
+            // If the balance cannot cover, we need to redeem
+            if (amountOfUnderlyingToRedeem > balance) {
+                // Redeem the underlying. It will revert if we are unable to withdraw.
+                // For dust we need to withdraw the min amount.
+                _invariant(
+                    vToken.redeemUnderlying(
+                        amountOfUnderlyingToRedeem.min(
+                            vToken.balanceOfUnderlying(address(this))
+                        )
+                    ),
+                    "DV: failed to redeem"
+                );
+            }
         }
 
         // Uniswap style ,block scoping, to prevent stack too deep local variable errors.
         {
-            // Update current free underlying after all mutations in underlying.
-            totalFreeUnderlying[underlying] = _getTotalFreeUnderlying(vToken);
-
-            // Protocol charges a 0.5% fee on withdrawls.
-            uint256 fee = amountOfUnderlyingToRedeem.bmul(0.005e18);
-            uint256 amountToSend = amountOfUnderlyingToRedeem - fee;
-
             // Send underlying to user.
-            IERC20Upgradeable(underlying).safeTransfer(
+            underlying.safeERC20Transfer(
                 _msgSender(),
-                amountToSend
+                amountOfUnderlyingToRedeem
             );
 
-            // Send fee to the protocol treasury.
-            IERC20Upgradeable(underlying).safeTransfer(FEE_TO, fee);
+            // Update current free underlying after ALL mutations in underlying.
+            totalFreeUnderlying[underlying] = _getTotalFreeUnderlying(vToken);
 
-            emit Withdraw(_msgSender(), underlying, amountToSend, vTokenAmount);
+            emit Withdraw(
+                _msgSender(),
+                underlying,
+                amountOfUnderlyingToRedeem,
+                vTokenAmount
+            );
         }
     }
 
@@ -598,7 +608,109 @@ contract DineroVenusVault is
      *
      * - The contract must be unpaused.
      */
-    function leverage(IVToken vToken) public whenNotPaused {
+    function leverage(IVToken vToken)
+        external
+        whenNotPaused
+        isWhitelisted(vToken.underlying())
+    {
+        _leverage(vToken);
+    }
+
+    /**
+     * @dev Leverages all VTokens. Explanation of leverage above.
+     *
+     * Requirements:
+     *
+     * - The contract must be unpaused.
+     */
+    function leverageAll() external whenNotPaused {
+        // Get all underlyings.
+        address[] memory underlyingArray = _underlyingWhitelist.values();
+
+        // Get total number of underlyings.
+        uint256 len = underlyingArray.length;
+
+        // Leverage each VToken.
+        for (uint256 i = 0; i < len; i++) {
+            _leverage(vTokenOf[underlyingArray[i]]);
+        }
+    }
+
+    /**
+     * @dev It reduces the loan size to stay within a safe margin to avoid liquidations.
+     *
+     * @param vToken The contract of the VToken that we wish to reduce our open loan on them.
+     *
+     * Requirements:
+     *
+     * - The contract must be unpaused.
+     */
+    function deleverage(IVToken vToken)
+        external
+        whenNotPaused
+        isWhitelisted(vToken.underlying())
+    {
+        _deleverage(vToken);
+    }
+
+    /**
+     * @dev Deleverages all current VTokens positions from this vault.
+     */
+    function deleverageAll() external whenNotPaused {
+        // Get all underlyings.
+        address[] memory underlyingArray = _underlyingWhitelist.values();
+
+        // Get total number of underlyings.
+        uint256 len = underlyingArray.length;
+
+        // Deleverage all positions in all vTokens.
+        for (uint256 i = 0; i < len; i++) {
+            _deleverage(vTokenOf[underlyingArray[i]]);
+        }
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                         PRIVATE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @dev It reduces the loan size to stay within a safe margin to avoid liquidations.
+     *
+     * @param vToken The contract of the VToken that we wish to reduce our open loan on them.
+     */
+    function _deleverage(IVToken vToken) private {
+        // Save gas
+        SafeVenus safeVenus = SAFE_VENUS;
+
+        // We check if we are above our safety threshold.
+        uint256 amount = safeVenus.deleverage(this, vToken);
+
+        // Safety mechanism
+        uint256 maxTries;
+
+        // Stop either when deleverage returns 0 or if we are not above the max tries threshold.
+        // Deleverage function from safeVenus returns 0 when we are within a safe limit.
+        while (amount > 0 && maxTries < 5) {
+            if (1 ether > amount) break;
+
+            _redeemAndRepay(vToken, amount);
+            // Update the amount for the next iteration.
+            amount = safeVenus.deleverage(this, vToken);
+            maxTries += 1;
+        }
+
+        // Keep the data fresh
+        totalFreeUnderlying[vToken.underlying()] = _getTotalFreeUnderlying(
+            vToken
+        );
+    }
+
+    /**
+     * @dev It leverages the vault position in Venus. By using the current supply as collateral to borrow same token. Supply and borrow {compoundDepth} times.
+     *
+     * @param vToken The contract of the vToken we wish to leverage.
+     */
+    function _leverage(IVToken vToken) private {
         // Save Gas
         uint256 depth = compoundDepth;
 
@@ -614,80 +726,6 @@ contract DineroVenusVault is
             vToken
         );
     }
-
-    /**
-     * @dev Leverages all VTokens. Explanation of leverage above.
-     *
-     * Requirements:
-     *
-     * - The contract must be unpaused.
-     */
-    function leverageAll() external {
-        // Get all underlyings.
-        address[] memory underlyingArray = _underlyingWhitelist.values();
-
-        // Get total number of underlyings.
-        uint256 len = underlyingArray.length;
-
-        // Leverage each VToken.
-        for (uint256 i = 0; i < len; i++) {
-            leverage(vTokenOf[underlyingArray[i]]);
-        }
-    }
-
-    /**
-     * @dev It reduces the loan size to stay within a safe margin to avoid liquidations.
-     *
-     * @param vToken The contract of the VToken that we wish to reduce our open loan on them.
-     *
-     * Requirements:
-     *
-     * - The contract must be unpaused.
-     */
-    function deleverage(IVToken vToken) public whenNotPaused {
-        // Save gas
-        SafeVenus safeVenus = SAFE_VENUS;
-
-        // We check if we are above our safety threshold.
-        uint256 amount = safeVenus.deleverage(this, vToken);
-
-        // Safety mechanism
-        uint256 maxTries;
-
-        // Stop either when deleverage returns 0 or if we are not above the max tries threshold.
-        // Deleverage function from safeVenus returns 0 when we are within a safe limit.
-        while (amount > 0 && maxTries < 5) {
-            _redeemAndRepay(vToken, amount);
-            // Update the amount for the next iteration.
-            amount = safeVenus.deleverage(this, vToken);
-            maxTries += 1;
-        }
-
-        // Keep the data fresh
-        totalFreeUnderlying[vToken.underlying()] = _getTotalFreeUnderlying(
-            vToken
-        );
-    }
-
-    /**
-     * @dev Deleverages all current VTokens positions from this vault.
-     */
-    function deleverageAll() external {
-        // Get all underlyings.
-        address[] memory underlyingArray = _underlyingWhitelist.values();
-
-        // Get total number of underlyings.
-        uint256 len = underlyingArray.length;
-
-        // Deleverage all positions in all vTokens.
-        for (uint256 i = 0; i < len; i++) {
-            deleverage(vTokenOf[underlyingArray[i]]);
-        }
-    }
-
-    /*///////////////////////////////////////////////////////////////
-                         PRIVATE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
 
     /**
      * @dev It checks if there was a loss in non-debt backed underlying. In the case there is one, it updates the global state accordingly.
@@ -712,13 +750,13 @@ contract DineroVenusVault is
         if (prevFreeUnderlying > currentFreeUnderlying) {
             // Need to find the difference, then convert to vTokens by multiplying by the {vToken.exchangeRateCurrent}. Lastly, we need to devide by the total free vTokens.
             // Important to note the mantissa of exchangeRateCurrent is 18 while vTokens usually have a mantissa of 8.
-            uint256 loss = (prevFreeUnderlying - currentFreeUnderlying)
-                .bdiv(vToken.exchangeRateCurrent())
-                .mulDiv(
+
+            uint256 loss = ((prevFreeUnderlying - currentFreeUnderlying).bdiv(
+                vToken.exchangeRateCurrent()
+            ) * PRECISION).mulDiv(
                     10**address(vToken).safeDecimals(),
                     totalFreeVTokenOf[vToken]
                 );
-
             // Update the loss
             uint256 newTotalLoss = totalLoss + loss;
             totalLossOf[vToken] = newTotalLoss;
@@ -740,8 +778,10 @@ contract DineroVenusVault is
     function _getTotalFreeUnderlying(IVToken vToken) private returns (uint256) {
         (uint256 borrowBalance, uint256 supplyBalance) = SAFE_VENUS
             .borrowAndSupply(this, vToken);
-
-        return supplyBalance - borrowBalance;
+        return
+            supplyBalance -
+            borrowBalance +
+            vToken.underlying().contractBalanceOf();
     }
 
     /**
@@ -750,9 +790,6 @@ contract DineroVenusVault is
      * @param vToken The VToken market, which we wish to claim the XVS and swap to the underlying.
      */
     function _investXVS(IVToken vToken) private {
-        // Save Gas
-        address xvs = XVS;
-
         address[] memory vTokenArray = new address[](1);
 
         vTokenArray[0] = address(vToken);
@@ -760,8 +797,7 @@ contract DineroVenusVault is
         // Claim XVS in the `vToken`.
         VENUS_CONTROLLER.claimVenus(address(this), vTokenArray);
 
-        uint256 xvsBalance = _contractBalanceOf(xvs);
-
+        uint256 xvsBalance = XVS.contractBalanceOf();
         // There is no point to continue if there are no XVS rewards.
         if (xvsBalance == 0) return;
 
@@ -775,12 +811,12 @@ contract DineroVenusVault is
         // WBNB/DAI Pair - 0xc7c3cCCE4FA25700fD5574DA7E200ae28BBd36A3 ~ 130k USDC liquidity - 19/02/2022
         // DAI support will be done only if community agrees.
         address[] memory path = new address[](3);
-        path[0] = xvs;
+        path[0] = XVS;
         path[1] = WBNB; // WBNB is the bridge token in BSC
         path[2] = underlying;
 
         // Sell XVS to `underlying` to reinvest back to Venus, as this is a stable vault. We do not want volatile assets.
-        ROUTER.swapExactTokensForTokens(
+        uint256[] memory amounts = ROUTER.swapExactTokensForTokens(
             // Assume all XVS in the contract are rewards.
             xvsBalance,
             // We do not care about slippage
@@ -799,7 +835,7 @@ contract DineroVenusVault is
         // It should never happen, but since we will use it as a denominator, we need to consider it.
         assert(totalFreeVTokens != 0);
 
-        uint256 minted = _mintVToken(vToken);
+        uint256 minted = _mintVToken(vToken, amounts[2]) * PRECISION;
 
         // Assume sall current underlying are from the XVS swap.
         // This contract should never have underlyings as they should always be converted to VTokens, unless it is paused and the owner calls {emergencyRecovery}.
@@ -823,14 +859,14 @@ contract DineroVenusVault is
         uint256 safeBorrowAmount = SAFE_VENUS.safeBorrow(this, vToken);
 
         // We will not compound if we can only borrow 500 USD or less. This vault only supports USD stable coins with 18 decimal.
-        if (safeBorrowAmount <= 500 ether) return;
+        if (500 ether >= safeBorrowAmount) return;
 
         // Borrow from the vToken. We will throw if it fails.
         _invariant(vToken.borrow(safeBorrowAmount), "DV: failed to borrow");
 
         // Supply the underlying we got from the loan on the same market.
         // We do not care how many VTokens are minted.
-        _mintVToken(vToken);
+        _mintVToken(vToken, vToken.underlying().contractBalanceOf());
     }
 
     /**
@@ -865,32 +901,18 @@ contract DineroVenusVault is
      *
      * @param vToken The vToken market we wish to mint.
      */
-    function _mintVToken(IVToken vToken)
+    function _mintVToken(IVToken vToken, uint256 amount)
         private
         returns (uint256 mintedAmount)
     {
         // Find how many VTokens we currently have.
-        uint256 balanceBefore = _contractBalanceOf(address(vToken));
+        uint256 balanceBefore = address(vToken).contractBalanceOf();
 
         // Supply ALL underlyings present in the contract even lost tokens to mint VTokens. It will revert if it fails.
-        _invariant(
-            vToken.mint(_contractBalanceOf(vToken.underlying())),
-            "DV: failed to mint"
-        );
+        _invariant(vToken.mint(amount), "DV: failed to mint");
 
         // Subtract the new balance from the previous one, to find out how many VTokens we minted.
-        mintedAmount = _contractBalanceOf(address(vToken)) - balanceBefore;
-    }
-
-    /**
-     * @dev Helper function to check the balance of a `token` this contract has.
-     *
-     * @param token An ERC20 token.
-     * @return uint256 The number of `token` in this contract.
-     */
-    function _contractBalanceOf(address token) private view returns (uint256) {
-        // Find how many ERC20 tokens this contract has.
-        return IERC20Upgradeable(token).balanceOf(address(this));
+        mintedAmount = address(vToken).contractBalanceOf() - balanceBefore;
     }
 
     /**
@@ -906,9 +928,39 @@ contract DineroVenusVault is
         revert(message);
     }
 
-    /*///////////////////////////////////////////////////////////////
-                           ONLY OWNER FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
+    /**
+     * @dev Function repays all loans. Essentially removes all leverage.
+     * Leverage can be called once the strategy is profitable again.
+     *
+     * @param vToken The VToken market we wish to remove all leverage.
+     */
+    function _repayAll(IVToken vToken) private {
+        // Save gas.
+        SafeVenus safeVenus = SAFE_VENUS;
+        // We will keep repaying as long as we have enough redeemable amount in our supply.
+        uint256 redeemAmount = safeVenus.safeRedeem(this, vToken);
+
+        (uint256 borrowAmount, ) = safeVenus.borrowAndSupply(this, vToken);
+
+        // Value to store the maximum amount we want to loop in a single call
+        uint256 maxTries;
+
+        // Keep redeeming and repaying as long as we have an open loan position, have enough redeemable amount or have done it 10x in this call.
+        // We intend to only have a compound depth of 3. So an upperbound of 10 is more than enough.
+
+        while (redeemAmount > 0 && borrowAmount > 0 && maxTries <= 15) {
+            // redeem and repay
+            _redeemAndRepay(vToken, redeemAmount);
+
+            emit RepayAndRedeem(vToken, redeemAmount);
+
+            // Update the redeem and borrow amount to see if we can get to net iteration
+            redeemAmount = safeVenus.safeRedeem(this, vToken);
+            (borrowAmount, ) = safeVenus.borrowAndSupply(this, vToken);
+            // Update the maximum numbers we can iterate
+            maxTries += 1;
+        }
+    }
 
     /**
      * @dev Enters a Venus market to enable the Vtokens to be used as collateral
@@ -927,6 +979,10 @@ contract DineroVenusVault is
         _invariant(results[0], "DV: failed to enter market");
     }
 
+    /*///////////////////////////////////////////////////////////////
+                           ONLY OWNER FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     /**
      * @dev Adds support for an underlying/VToken to this contract.
      *
@@ -941,9 +997,13 @@ contract DineroVenusVault is
         address underlying = vToken.underlying();
 
         // Give full approval to `vToken` so we can mint on deposits.
-        IERC20Upgradeable(underlying).safeApprove(
+        IERC20Upgradeable(underlying).safeIncreaseAllowance(
             address(vToken),
-            type(uint256).max
+            type(uint256).max -
+                IERC20Upgradeable(underlying).allowance(
+                    address(this),
+                    address(vToken)
+                )
         );
 
         // Give permission to use the assets as collateral
@@ -1003,31 +1063,9 @@ contract DineroVenusVault is
      * - Only the owner can call to avoid investment losses.
      */
     function repayAll(IVToken vToken) public onlyOwner {
-        // Save gas.
-        SafeVenus safeVenus = SAFE_VENUS;
-        // We will keep repaying as long as we have enough redeemable amount in our supply.
-        uint256 redeemAmount = safeVenus.safeRedeem(this, vToken);
+        _repayAll(vToken);
 
-        (uint256 borrowAmount, ) = safeVenus.borrowAndSupply(this, vToken);
-
-        // Value to store the maximum amount we want to loop in a single call
-        uint256 maxTries;
-
-        // Keep redeeming and repaying as long as we have an open loan position, have enough redeemable amount or have done it 10x in this call.
-        // We intend to only have a compound depth of 3. So an upperbound of 10 is more than enough.
-
-        while (redeemAmount > 0 && borrowAmount > 0 && maxTries <= 15) {
-            // redeem and repay
-            _redeemAndRepay(vToken, redeemAmount);
-
-            emit RepayAndRedeem(vToken, redeemAmount);
-
-            // Update the redeem and borrow amount to see if we can get to net iteration
-            redeemAmount = safeVenus.safeRedeem(this, vToken);
-            (borrowAmount, ) = safeVenus.borrowAndSupply(this, vToken);
-            // Update the maximum numbers we can iterate
-            maxTries += 1;
-        }
+        _mintVToken(vToken, vToken.underlying().contractBalanceOf());
     }
 
     /**
@@ -1049,9 +1087,9 @@ contract DineroVenusVault is
         for (uint256 i = 0; i < len; i++) {
             IVToken vToken = vTokenOf[underlyingArray[i]];
 
-            repayAll(vToken);
+            _repayAll(vToken);
 
-            uint256 vTokenBalance = _contractBalanceOf(address(vToken));
+            uint256 vTokenBalance = address(vToken).contractBalanceOf();
             // we do not want to try to redeem if we have no vToken
             if (vTokenBalance == 0) continue;
             _invariant(
@@ -1119,6 +1157,134 @@ contract DineroVenusVault is
         compoundDepth = _compoundDepth;
 
         emit CompoundDepth(previousValue, _compoundDepth);
+    }
+
+    /**
+     * @dev A value of 0.9e18 means that for every 1_000 USD deposit, the vault will lend 900 DNR
+     *
+     * @param newDineroLTV The new % of DNR emitted based on deposit
+     *
+     * Requirements:
+     *
+     * - Only the Int Governor can update this value.
+     */
+    function setDineroLTV(uint256 newDineroLTV) external onlyOwner {
+        require(0.9e18 >= newDineroLTV, "DV: must be lower than 90%");
+        uint256 previousValue = dineroLTV;
+        dineroLTV = newDineroLTV;
+
+        emit DineroLTV(previousValue, newDineroLTV);
+    }
+
+    /**
+     * @dev It allows he owner to withdraw the reserves tokens to the treasury
+     *
+     * @notice The reserves do not incur losses nor rewards.
+     *
+     * @param underlying The underlying market, which vTokens will be removed
+     * @param vTokenAmount The number of vTokens to withdraw
+     *
+     * Requirements:
+     *
+     * - Only the owner can call this function
+     * - Market must be unpaused
+     * - The underlying must be supported by this market
+     * - The reserves must have enough `vTokenAmount`
+     * - The `vTokenAmount` must be greater than 0
+     */
+    function withdrawReserves(address underlying, uint256 vTokenAmount)
+        external
+        onlyOwner
+        whenNotPaused
+        isWhitelisted(underlying)
+    {
+        // We do not support the concept of harvesting the rewards as they are "auto compounded".
+        // `msg.sender` must always withdraw some VTokens.
+        // Rewards will be given on top of every withdrawl.
+        require(vTokenAmount > 0, "DV: no zero amount");
+
+        // Get User Account data
+        UserAccount memory userAccount = accountOf[underlying][FEE_TO];
+
+        require(userAccount.vTokens >= vTokenAmount, "DV: not enough balance");
+
+        // Find the vToken of the underlying.
+        IVToken vToken = vTokenOf[underlying];
+
+        // Update State
+        userAccount.vTokens -= vTokenAmount.toUint128();
+
+        // Update Global State
+        accountOf[underlying][FEE_TO] = userAccount;
+
+        // Remove DUST
+        uint256 amountOfUnderlyingToRedeem = vTokenAmount.bmul(
+            vToken.exchangeRateCurrent()
+        );
+
+        // Uniswap style, block scoping, to prevent stack too deep local variable errors.
+        {
+            // Save gas
+            SafeVenus safeVenus = SAFE_VENUS;
+
+            // Get a safe redeemable amount to prevent liquidation.
+            uint256 safeAmount = safeVenus.safeRedeem(this, vToken);
+            uint256 balance = underlying.contractBalanceOf();
+            // Upper bound to prevent infinite loops.
+            uint256 maxTries;
+
+            // If we cannot redeem enough to cover the `amountOfUnderlyingToRedeem`. We will start to deleverage; up to 10x.
+            // The less we are borrowing, the more we can redeem because the loans are overcollaterized.
+            // Vault needs good liquidity and moderate leverage to avoid this logic.
+            while (
+                amountOfUnderlyingToRedeem > safeAmount &&
+                amountOfUnderlyingToRedeem > balance &&
+                maxTries <= 10
+            ) {
+                if (1 ether > safeAmount) break;
+
+                _redeemAndRepay(vToken, safeAmount);
+                // update the safeAmout for the next iteration.
+                safeAmount = safeVenus.safeRedeem(this, vToken);
+                // Add some room to compensate for DUST. SafeVenus has a large enough room to accomodate for one dollar.
+                balance = underlying.contractBalanceOf() + 1 ether;
+                maxTries += 1;
+            }
+
+            // Make sure we can safely withdraw the `amountOfUnderlyingToRedeem`.
+            require(
+                safeAmount >= amountOfUnderlyingToRedeem ||
+                    balance >= amountOfUnderlyingToRedeem,
+                "DV: failed to withdraw"
+            );
+
+            // If the balance cannot cover, we need to redeem
+            if (amountOfUnderlyingToRedeem > balance) {
+                // Redeem the underlying. It will revert if we are unable to withdraw.
+                // For dust we need to withdraw the min amount.
+                _invariant(
+                    vToken.redeemUnderlying(
+                        amountOfUnderlyingToRedeem.min(
+                            vToken.balanceOfUnderlying(address(this))
+                        )
+                    ),
+                    "DV: failed to redeem"
+                );
+            }
+        }
+
+        // Send underlying to user.
+        underlying.safeERC20Transfer(FEE_TO, amountOfUnderlyingToRedeem);
+
+        // Update current free underlying after all mutations in underlying.
+        totalFreeUnderlying[underlying] = _getTotalFreeUnderlying(vToken);
+
+        emit Withdraw(
+            FEE_TO,
+            underlying,
+            amountOfUnderlyingToRedeem,
+            vTokenAmount
+        );
     }
 
     /**

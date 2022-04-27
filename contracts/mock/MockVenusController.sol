@@ -92,7 +92,7 @@ contract MockVenusController is IVenusController {
     //solhint-disable-next-line no-empty-blocks
     function claimVenus(address account, address[] calldata) external {
         if (_claimVenusAmount == 0) return;
-        XVS.mint(account, _claimVenusAmount);
+        XVS.transfer(account, _claimVenusAmount);
         emit Claim(account, _claimVenusAmount);
     }
 
@@ -136,4 +136,8 @@ contract MockVenusController is IVenusController {
     function __setExitMarketReturn(uint256 value) external {
         _exitMarketValueReturn = value;
     }
+}
+
+contract MockVenusControllerClaimVenus {
+    function claimVenus(address, address[] calldata) external {}
 }

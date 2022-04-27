@@ -2,21 +2,27 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
+import ERC20ABI from '../abi/erc20.json';
+import PCSRouterABI from '../abi/pcs-router.json';
 import {
-  LiquidityRouter,
-  MockERC20,
-  MockLibraryWrapper,
-  PancakeFactory,
+  ERC20,
   PancakeOracle,
-  PancakeRouter,
   TestPancakeOracleV2,
-  WETH9,
+  TestTPCSLibrary,
 } from '../typechain';
+import {
+  CAKE,
+  CAKE_WHALE_ONE,
+  PCS_ROUTER,
+  WBNB,
+  WBNB_CAKE_PAIR_LP_TOKEN,
+} from './lib/constants';
 import {
   advanceBlockAndTime,
   deploy,
   deployUUPS,
-  multiDeploy,
+  impersonate,
+  sortTokens,
   upgrade,
 } from './lib/test-utils';
 
@@ -30,119 +36,52 @@ const PERIOD_SIZE = WINDOW / GRANULARITY; // 6 hours
 
 describe('PancakeOracle', () => {
   let oracle: PancakeOracle;
-  let factory: PancakeFactory;
-  let libraryWrapper: MockLibraryWrapper;
-  let router: PancakeRouter;
-  let liquidityRouter: LiquidityRouter;
-  let weth: WETH9;
-  let btc: MockERC20;
-  let usdc: MockERC20;
+  const router = new ethers.Contract(PCS_ROUTER, PCSRouterABI, ethers.provider);
+  const CakeContract = new ethers.Contract(
+    CAKE,
+    ERC20ABI,
+    ethers.provider
+  ) as ERC20;
+  const WBNBContract = new ethers.Contract(
+    WBNB,
+    ERC20ABI,
+    ethers.provider
+  ) as ERC20;
+
+  let testLibrary: TestTPCSLibrary;
 
   let owner: SignerWithAddress;
-  let btcUSDCPair: string;
-  let feeTo: SignerWithAddress;
   beforeEach(async () => {
-    [[owner, feeTo], [libraryWrapper, weth, btc, usdc]] = await Promise.all([
-      ethers.getSigners(),
-      multiDeploy(
-        ['MockLibraryWrapper', 'WETH9', 'MockERC20', 'MockERC20'],
-        [
-          [],
-          [],
-          ['Bitcoin', 'BTC', parseEther('1500')],
-          ['USDC', 'USDC', parseEther('60000000')],
-        ]
-      ),
-    ]);
+    [owner] = await ethers.getSigners();
 
-    factory = await deploy('PancakeFactory', [feeTo.address]);
-    [oracle, [liquidityRouter, router]] = await Promise.all([
-      deployUUPS('PancakeOracle', [
-        factory.address,
-        WINDOW,
-        GRANULARITY,
-        libraryWrapper.address,
-      ]),
-      multiDeploy(
-        ['LiquidityRouter', 'PancakeRouter'],
-        [
-          [factory.address, weth.address],
-          [factory.address, weth.address],
-        ]
-      ),
-    ]);
+    testLibrary = await deploy('TestTPCSLibrary', []);
 
-    await Promise.all([
-      btc.connect(owner).approve(router.address, ethers.constants.MaxUint256),
-      btc
-        .connect(owner)
-        .approve(liquidityRouter.address, ethers.constants.MaxUint256),
-      usdc.connect(owner).approve(router.address, ethers.constants.MaxUint256),
-      usdc
-        .connect(owner)
-        .approve(liquidityRouter.address, ethers.constants.MaxUint256),
-    ]);
-
-    // 1 BTC = 50_000 USDC
-    await liquidityRouter.addLiquidity(
-      btc.address,
-      usdc.address,
-      parseEther('1000'),
-      parseEther('50000000'),
-      parseEther('1000'),
-      parseEther('50000000'),
-      feeTo.address,
-      0
-    );
-
-    btcUSDCPair = await factory.allPairs(0);
-
-    await libraryWrapper.setPair(btcUSDCPair);
+    oracle = await deployUUPS('PancakeOracle', [WINDOW, GRANULARITY]);
   });
 
   describe('function: initialize', () => {
     it('reverts if you call after deployment', async () => {
-      expect(
-        oracle.initialize(
-          factory.address,
-          WINDOW,
-          GRANULARITY,
-          libraryWrapper.address
-        )
-      ).to.revertedWith('Initializable: contract is already initialized');
+      expect(oracle.initialize(WINDOW, GRANULARITY)).to.revertedWith(
+        'Initializable: contract is already initialized'
+      );
     });
     it('reverts if you granularity or period size is incorrect', async () => {
-      await expect(
-        deployUUPS('PancakeOracle', [
-          factory.address,
-          WINDOW,
-          0,
-          libraryWrapper.address,
-        ])
-      ).to.revertedWith('PO: granularity > 1');
+      await expect(deployUUPS('PancakeOracle', [WINDOW, 0])).to.revertedWith(
+        'PO: granularity > 1'
+      );
     });
     it('sets the initial state correctly', async () => {
-      const [
-        _owner,
-        _factory,
-        _windowSize,
-        _granularity,
-        _libraryWrapper,
-        _periodSize,
-      ] = await Promise.all([
-        oracle.owner(),
-        oracle.FACTORY(),
-        oracle.WINDOW_SIZE(),
-        oracle.GRANULARITY(),
-        oracle.LIBRARY_WRAPPER(),
-        oracle.PERIOD_SIZE(),
-      ]);
+      const [_owner, _windowSize, _granularity, _periodSize] =
+        await Promise.all([
+          oracle.owner(),
+          oracle.WINDOW_SIZE(),
+          oracle.GRANULARITY(),
+          oracle.PERIOD_SIZE(),
+        ]);
 
       expect(_owner).to.be.equal(owner.address);
-      expect(_factory).to.be.equal(factory.address);
       expect(_windowSize).to.be.equal(WINDOW);
       expect(_granularity).to.be.equal(GRANULARITY);
-      expect(_libraryWrapper).to.be.equal(libraryWrapper.address);
       expect(_periodSize).to.be.equal(PERIOD_SIZE);
     });
   });
@@ -150,7 +89,7 @@ describe('PancakeOracle', () => {
   it('calculates an index between 0 to 3 for any timestamp', async () => {
     // Feb 1st 2022 - 07:49 GMT unix timestamp seconds
     const timestamp = 1_643_701_705;
-    const epoch = PERIOD_SIZE + 50; // 6 hours We add some dust for rounding.
+    const epoch = PERIOD_SIZE; // 6 hours We add some dust for rounding.
 
     // Was taken by running the test once. With it we can calculate the next ones.
     expect(await oracle.observationIndexOf(timestamp)).to.be.equal(1);
@@ -165,26 +104,22 @@ describe('PancakeOracle', () => {
 
   describe('function: update', () => {
     it('reverts if the pair does not exist', async () => {
-      await expect(oracle.update(owner.address, btc.address)).to.revertedWith(
+      await expect(oracle.update(owner.address, CAKE)).to.revertedWith(
         'PO: pair does not exist'
       );
     });
 
     it(`only updates every ${PERIOD_SIZE}`, async () => {
-      await expect(oracle.update(btc.address, usdc.address)).to.emit(
-        oracle,
-        'Update'
-      );
-      await expect(oracle.update(btc.address, usdc.address)).to.not.emit(
-        oracle,
-        'Update'
-      );
+      await expect(oracle.update(CAKE, WBNB)).to.emit(oracle, 'Update');
+      await expect(oracle.update(CAKE, WBNB)).to.not.emit(oracle, 'Update');
+      await expect(oracle.update(CAKE, WBNB)).to.not.emit(oracle, 'Update');
+      await expect(oracle.update(CAKE, WBNB)).to.not.emit(oracle, 'Update');
 
       const observations = await Promise.all([
-        oracle.pairObservations(btcUSDCPair, 0),
-        oracle.pairObservations(btcUSDCPair, 1),
-        oracle.pairObservations(btcUSDCPair, 2),
-        oracle.pairObservations(btcUSDCPair, 3),
+        oracle.pairObservations(WBNB_CAKE_PAIR_LP_TOKEN, 0),
+        oracle.pairObservations(WBNB_CAKE_PAIR_LP_TOKEN, 1),
+        oracle.pairObservations(WBNB_CAKE_PAIR_LP_TOKEN, 2),
+        oracle.pairObservations(WBNB_CAKE_PAIR_LP_TOKEN, 3),
       ]);
 
       expect(
@@ -193,37 +128,25 @@ describe('PancakeOracle', () => {
     });
 
     it('updates every period size', async () => {
-      await expect(oracle.update(btc.address, usdc.address)).to.emit(
-        oracle,
-        'Update'
-      );
+      await expect(oracle.update(CAKE, WBNB)).to.emit(oracle, 'Update');
 
       await advanceBlockAndTime(PERIOD_SIZE, ethers);
 
-      await expect(oracle.update(btc.address, usdc.address)).to.emit(
-        oracle,
-        'Update'
-      );
+      await expect(oracle.update(CAKE, WBNB)).to.emit(oracle, 'Update');
 
       await advanceBlockAndTime(PERIOD_SIZE, ethers);
 
-      await expect(oracle.update(btc.address, usdc.address)).to.emit(
-        oracle,
-        'Update'
-      );
+      await expect(oracle.update(CAKE, WBNB)).to.emit(oracle, 'Update');
 
       await advanceBlockAndTime(PERIOD_SIZE, ethers);
 
-      await expect(oracle.update(btc.address, usdc.address)).to.emit(
-        oracle,
-        'Update'
-      );
+      await expect(oracle.update(CAKE, WBNB)).to.emit(oracle, 'Update');
 
       const observations = await Promise.all([
-        oracle.pairObservations(btcUSDCPair, 0),
-        oracle.pairObservations(btcUSDCPair, 1),
-        oracle.pairObservations(btcUSDCPair, 2),
-        oracle.pairObservations(btcUSDCPair, 3),
+        oracle.pairObservations(WBNB_CAKE_PAIR_LP_TOKEN, 0),
+        oracle.pairObservations(WBNB_CAKE_PAIR_LP_TOKEN, 1),
+        oracle.pairObservations(WBNB_CAKE_PAIR_LP_TOKEN, 2),
+        oracle.pairObservations(WBNB_CAKE_PAIR_LP_TOKEN, 3),
       ]);
 
       const currentIndex = await oracle.observationIndexOf(
@@ -259,15 +182,15 @@ describe('PancakeOracle', () => {
 
   describe('function: consult', () => {
     it('reverts if we are missing observations', async () => {
-      await oracle.update(btc.address, usdc.address);
+      await oracle.update(CAKE, WBNB);
 
       // Miss one observation
       await advanceBlockAndTime(PERIOD_SIZE + PERIOD_SIZE, ethers);
 
-      await oracle.update(btc.address, usdc.address);
+      await oracle.update(CAKE, WBNB);
       await advanceBlockAndTime(PERIOD_SIZE, ethers);
 
-      await oracle.update(btc.address, usdc.address);
+      await oracle.update(CAKE, WBNB);
 
       await advanceBlockAndTime(PERIOD_SIZE, ethers);
 
@@ -284,9 +207,9 @@ describe('PancakeOracle', () => {
       // 3 - set
 
       // The index is missing because we skipped a period.
-      await expect(
-        oracle.consult(btc.address, parseEther('1'), usdc.address)
-      ).to.revertedWith('PO: missing observation');
+      await expect(oracle.consult(CAKE, parseEther('1'), WBNB)).to.revertedWith(
+        'PO: missing observation'
+      );
 
       await advanceBlockAndTime(
         PERIOD_SIZE + PERIOD_SIZE + PERIOD_SIZE + 50,
@@ -294,111 +217,129 @@ describe('PancakeOracle', () => {
       );
 
       // It has been over 24 hours since the last update.
-      await expect(
-        oracle.consult(btc.address, parseEther('1'), usdc.address)
-      ).to.revertedWith('PO: missing observation');
+      await expect(oracle.consult(CAKE, parseEther('1'), WBNB)).to.revertedWith(
+        'PO: missing observation'
+      );
     });
     it('returns the price of an asset', async () => {
-      await oracle.update(btc.address, usdc.address);
+      await oracle.update(CAKE, WBNB);
 
       await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
 
-      await oracle.update(btc.address, usdc.address);
+      await oracle.update(CAKE, WBNB);
 
       await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
 
-      await oracle.update(btc.address, usdc.address);
+      await oracle.update(CAKE, WBNB);
 
       await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
 
-      await oracle.update(btc.address, usdc.address);
+      await oracle.update(CAKE, WBNB);
 
       await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
 
-      const btcUSDCPrice = await oracle.consult(
-        btc.address,
-        parseEther('1'),
-        usdc.address
-      );
-      const usdcBTCPrice = await oracle.consult(
-        usdc.address,
-        parseEther('50000'),
-        btc.address
-      );
+      const cakeBNBPrice = await oracle.consult(CAKE, parseEther('100'), WBNB);
+      const bnbCakePrice = await oracle.consult(WBNB, parseEther('1'), CAKE);
 
-      expect(btcUSDCPrice).to.be.equal(parseEther('50000'));
       // Taken after the fact
-      expect(usdcBTCPrice).to.be.equal(
-        ethers.BigNumber.from('999999999999999999')
+      expect(cakeBNBPrice).to.be.closeTo(
+        parseEther('2.164'),
+        parseEther('0.001')
       );
+      // Taken after the fact
+      expect(bnbCakePrice).to.be.closeTo(parseEther('46.199'), parseEther('1'));
 
-      // Gonna keep selling BTC
-      await router
-        .connect(owner)
-        .swapExactTokensForTokens(
-          parseEther('100'),
-          0,
-          [btc.address, usdc.address],
-          owner.address,
-          0
-        );
+      const cakeWhale = await impersonate(CAKE_WHALE_ONE);
 
-      await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
-
-      await oracle.update(btc.address, usdc.address);
-
-      // Gonna keep selling BTC
-      await router
-        .connect(owner)
-        .swapExactTokensForTokens(
-          parseEther('100'),
-          0,
-          [btc.address, usdc.address],
-          owner.address,
-          0
-        );
-
-      await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
-
-      await oracle.update(btc.address, usdc.address);
+      await Promise.all([
+        owner.sendTransaction({
+          value: parseEther('10'),
+          to: CAKE_WHALE_ONE,
+        }),
+        WBNBContract.connect(cakeWhale).approve(
+          router.address,
+          ethers.constants.MaxUint256
+        ),
+        CakeContract.connect(cakeWhale).approve(
+          router.address,
+          ethers.constants.MaxUint256
+        ),
+      ]);
 
       const timestamp = (
         await ethers.provider.getBlock(await ethers.provider.getBlockNumber())
       ).timestamp;
 
-      const index = await oracle.observationIndexOf(timestamp);
+      // Gonna keep selling BTC
+      await router
+        .connect(cakeWhale)
+        .swapExactTokensForTokens(
+          parseEther('100'),
+          0,
+          [CAKE, WBNB],
+          owner.address,
+          timestamp * 10
+        );
 
-      const [
-        btcUSDCPrice1,
-        usdcBTCPrice1,
-        firstObservation,
-        currentPrices,
-        sortedTokens,
-      ] = await Promise.all([
-        oracle.consult(btc.address, parseEther('1'), usdc.address),
-        oracle.consult(usdc.address, parseEther('1000'), btc.address),
-        oracle.pairObservations(btcUSDCPair, (index + 1) % GRANULARITY),
-        libraryWrapper.currentCumulativePrices(btcUSDCPair),
-        libraryWrapper.sortTokens(btc.address, usdc.address),
-      ]);
+      await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
 
-      const isBTC = sortedTokens[0] === btc.address;
+      await oracle.update(CAKE, WBNB);
 
-      // BTC is token0
-      expect(isBTC ? btcUSDCPrice1 : usdcBTCPrice1).to.be.equal(
+      // Gonna keep selling BTC
+      await router
+        .connect(cakeWhale)
+        .swapExactTokensForTokens(
+          parseEther('100'),
+          0,
+          [CAKE, WBNB],
+          owner.address,
+          timestamp * 10
+        );
+
+      await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
+
+      await oracle.update(CAKE, WBNB);
+
+      const timestamp2 = (
+        await ethers.provider.getBlock(await ethers.provider.getBlockNumber())
+      ).timestamp;
+
+      const index = await oracle.observationIndexOf(timestamp2);
+
+      const [cakeBNBPrice1, bnbCakePrice1, firstObservation, currentPrices] =
+        await Promise.all([
+          oracle.consult(CAKE, parseEther('100'), WBNB),
+          oracle.consult(WBNB, parseEther('1'), CAKE),
+          oracle.pairObservations(
+            WBNB_CAKE_PAIR_LP_TOKEN,
+            (index + 1) % GRANULARITY
+          ),
+          testLibrary.currentCumulativePrices(WBNB_CAKE_PAIR_LP_TOKEN),
+        ]);
+
+      const sortedTokens = sortTokens(CAKE, WBNB);
+
+      const isCake = sortedTokens[0] === CAKE;
+
+      // Cake is token0
+      expect(isCake ? cakeBNBPrice1 : bnbCakePrice1).to.be.equal(
         currentPrices[0]
           .sub(firstObservation.price0Cumulative)
-          .div(ethers.BigNumber.from(timestamp).sub(firstObservation.timestamp))
-          .mul(parseEther(isBTC ? '1' : '1000'))
+          .div(
+            ethers.BigNumber.from(timestamp2).sub(firstObservation.timestamp)
+          )
+          .mul(parseEther(isCake ? '100' : '1'))
           .shr(112)
       );
 
-      // USDC is token1
-      expect(isBTC ? usdcBTCPrice1 : btcUSDCPrice1).to.be.equal(
+      // BNB is token1
+      expect(isCake ? bnbCakePrice1 : cakeBNBPrice1).to.be.equal(
         currentPrices[1]
           .sub(firstObservation.price1Cumulative)
-          .div(ethers.BigNumber.from(timestamp).sub(firstObservation.timestamp))
-          .mul(parseEther(isBTC ? '1000' : '1'))
+          .div(
+            ethers.BigNumber.from(timestamp2).sub(firstObservation.timestamp)
+          )
+          .mul(parseEther(isCake ? '1' : '100'))
           .shr(112)
       );
     });
@@ -414,19 +355,19 @@ describe('PancakeOracle', () => {
     });
 
     it('upgrades to version 2', async () => {
-      await oracle.update(btc.address, usdc.address);
+      await oracle.update(CAKE, WBNB);
 
       await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
 
-      await oracle.update(btc.address, usdc.address);
+      await oracle.update(CAKE, WBNB);
 
       await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
 
-      await oracle.update(btc.address, usdc.address);
+      await oracle.update(CAKE, WBNB);
 
       await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
 
-      await oracle.update(btc.address, usdc.address);
+      await oracle.update(CAKE, WBNB);
 
       await advanceBlockAndTime(PERIOD_SIZE + 1, ethers);
 
@@ -435,16 +376,21 @@ describe('PancakeOracle', () => {
         'TestPancakeOracleV2'
       );
 
-      const [btcUSDCPrice, usdcBTCPrice, version] = await Promise.all([
-        oracleV2.consult(btc.address, parseEther('1'), usdc.address),
-        oracleV2.consult(usdc.address, parseEther('50000'), btc.address),
+      const [cakeBNBPrice, bnbCakePrice, version] = await Promise.all([
+        oracleV2.consult(CAKE, parseEther('100'), WBNB),
+        oracleV2.consult(WBNB, parseEther('1'), CAKE),
         oracleV2.version(),
       ]);
 
-      expect(btcUSDCPrice).to.be.equal(parseEther('50000'));
       // Taken after the fact
-      expect(usdcBTCPrice).to.be.equal(
-        ethers.BigNumber.from('999999999999999999')
+      expect(cakeBNBPrice).to.be.closeTo(
+        parseEther('2.16444'),
+        parseEther('0.001')
+      );
+      // Taken after the fact
+      expect(bnbCakePrice).to.be.closeTo(
+        parseEther('46.20115'),
+        parseEther('0.001')
       );
       expect(version).to.be.equal('V2');
     });

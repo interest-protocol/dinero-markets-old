@@ -7,7 +7,7 @@ module.exports = {
     node: true,
   },
   parser: '@typescript-eslint/parser',
-  plugins: ['@typescript-eslint', 'unicorn', 'simple-import-sort'],
+  plugins: ['@typescript-eslint', 'unicorn', 'simple-import-sort', 'prettier'],
   extends: [
     'standard',
     'plugin:prettier/recommended',
@@ -123,7 +123,7 @@ module.exports = {
     'unicorn/template-indent': 'warn',
     'unicorn/throw-new-error': 'error',
     // Override the double quote rule to single quote
-    'prettier/prettier': ['error', { singleQuote: true, parser: 'flow' }],
+    'prettier/prettier': ['error', { singleQuote: true }],
     'node/no-missing-import': [
       'error',
       {

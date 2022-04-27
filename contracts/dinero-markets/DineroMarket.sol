@@ -23,8 +23,7 @@ import "../lib/IntMath.sol";
 
 import "../tokens/Dinero.sol";
 
-import "../OracleV1.sol";
-import "hardhat/console.sol";
+import "../Oracle.sol";
 
 /**
  * @dev It is an overcollaterized isolated lending market that accepts BNB as coollateral to back a loan in a synthetic stable coin called Dinero.
@@ -108,12 +107,28 @@ abstract contract DineroMarket is
 
     event GetEarnings(address indexed treasury, uint256 amount);
 
+    event LiquidationFee(uint256 fee);
+
+    event MaxTVLRatio(uint256 ltv);
+
+    event InterestRate(uint256 rate);
+
     /*///////////////////////////////////////////////////////////////
                                 STATE
     //////////////////////////////////////////////////////////////*/
 
+    // Requests
+    uint8 internal constant ADD_COLLATERAL_REQUEST = 0;
+
+    uint8 internal constant WITHDRAW_COLLATERAL_REQUEST = 1;
+
+    uint8 internal constant BORROW_REQUEST = 2;
+
+    uint8 internal constant REPAY_REQUEST = 3;
+
     // solhint-disable-next-line var-name-mixedcase
-    IPancakeRouter02 public ROUTER; // PCS router
+    IPancakeRouter02 internal constant ROUTER =
+        IPancakeRouter02(0x10ED43C718714eb63d5aA57B78B54704E256024E); // PCS router
 
     // solhint-disable-next-line var-name-mixedcase
     Dinero public DINERO; // Dinero stable coin
@@ -122,7 +137,7 @@ abstract contract DineroMarket is
     address public FEE_TO; // treasury address
 
     // solhint-disable-next-line var-name-mixedcase
-    OracleV1 public ORACLE; // Oracle contract
+    Oracle public ORACLE; // Oracle contract
 
     // Total amount of princicpal borrowed in Dinero.
     Rebase public totalLoan;
@@ -402,6 +417,33 @@ abstract contract DineroMarket is
             _totalLoan.toElastic(principal, true);
     }
 
+    /**
+     * @dev Helper function to check if we should check for solvency in the request functions
+     *
+     * @param _request The request action
+     * @return bool if true the function should check for solvency
+     */
+    function _checkForSolvency(uint8 _request) internal pure returns (bool) {
+        if (_request == WITHDRAW_COLLATERAL_REQUEST) return true;
+        if (_request == BORROW_REQUEST) return true;
+
+        return false;
+    }
+
+    /**
+     * @dev Helper function to check if we should accrue for the request functions
+     *
+     * @param _request The request action
+     * @return bool if true the function should accrue
+     */
+    function _checkIfAccrue(uint8 _request) internal pure returns (bool) {
+        if (_request == WITHDRAW_COLLATERAL_REQUEST) return true;
+        if (_request == REPAY_REQUEST) return true;
+        if (_request == BORROW_REQUEST) return true;
+
+        return false;
+    }
+
     /*///////////////////////////////////////////////////////////////
                          OWNER ONLY
     //////////////////////////////////////////////////////////////*/
@@ -420,6 +462,7 @@ abstract contract DineroMarket is
     function setMaxLTVRatio(uint256 amount) external onlyOwner {
         require(0.9e18 >= amount, "MKT: too high");
         maxLTVRatio = amount;
+        emit MaxTVLRatio(amount);
     }
 
     /**
@@ -436,6 +479,7 @@ abstract contract DineroMarket is
     function setLiquidationFee(uint256 amount) external onlyOwner {
         require(0.15e18 >= amount, "MKT: too high");
         liquidationFee = amount;
+        emit LiquidationFee(amount);
     }
 
     /**
@@ -455,6 +499,7 @@ abstract contract DineroMarket is
         // 13e8 * 60 * 60 * 24 * 365 / 1e18 = ~ 0.0409968
         require(13e8 >= amount, "MKT: too high");
         loan.INTEREST_RATE = amount;
+        emit InterestRate(amount);
     }
 
     /**
