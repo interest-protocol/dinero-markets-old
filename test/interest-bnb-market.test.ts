@@ -1442,7 +1442,7 @@ describe('InterestBNBMarket', () => {
               ),
             ]
           )
-      ).to.revertedWith('MKT: no zero address');
+      ).to.revertedWith('DM: no zero address');
     });
     it('reverts if the user is insolvent', async () => {
       await market
