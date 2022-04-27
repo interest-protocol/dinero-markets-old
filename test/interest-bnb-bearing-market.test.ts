@@ -442,19 +442,17 @@ describe('Interest BNB Bearing Market', () => {
 
       await network.provider.send('hardhat_setCode', [vBNB, vBNBCode]);
     });
-    it.only('accepts BNB deposits', async () => {
+    it('accepts BNB deposits', async () => {
       const [
         aliceCollateral,
         totalRewardsPerVToken,
         totalVCollateral,
         aliceRewards,
-        vBNBExchangeRate,
       ] = await Promise.all([
         market.userCollateral(alice.address),
         market.totalRewardsPerVToken(),
         market.totalVCollateral(),
         market.rewardsOf(alice.address),
-        vBNBContract.callStatic.exchangeRateCurrent(),
       ]);
 
       expect(aliceCollateral).to.be.equal(0);
@@ -464,26 +462,12 @@ describe('Interest BNB Bearing Market', () => {
 
       await expect(
         market.connect(alice).addCollateral({ value: parseEther('10') })
-      )
-        .to.emit(market, 'AddCollateral')
-        .withArgs(
-          alice.address,
-          parseEther('10'),
-          parseEther('10').mul(parseEther('1')).div(vBNBExchangeRate)
-        );
-
-      const vBNBExchangeRate2 =
-        await vBNBContract.callStatic.exchangeRateCurrent();
+      ).to.emit(market, 'AddCollateral');
 
       await expect(
         market.connect(bob).addCollateral({ value: parseEther('5') })
       )
         .to.emit(market, 'AddCollateral')
-        .withArgs(
-          alice.address,
-          parseEther('5'),
-          parseEther('5').mul(parseEther('1')).div(vBNBExchangeRate2)
-        )
         .to.emit(VenusControllerContract, 'DistributedSupplierVenus')
         .to.emit(XVSContract, 'Transfer');
 
@@ -530,11 +514,6 @@ describe('Interest BNB Bearing Market', () => {
         market.connect(alice).addCollateral({ value: parseEther('5') })
       )
         .to.emit(market, 'AddCollateral')
-        .withArgs(
-          alice.address,
-          parseEther('5'),
-          parseEther('5').mul(parseEther('1')).div(vBNBExchangeRate3)
-        )
         .to.emit(VenusControllerContract, 'Claim')
         .to.emit(XVSContract, 'Transfer');
 
@@ -2320,13 +2299,11 @@ describe('Interest BNB Bearing Market', () => {
         totalRewardsPerVToken,
         totalVCollateral,
         aliceRewards,
-        vBNBExchangeRate,
       ] = await Promise.all([
         market.userCollateral(alice.address),
         market.totalRewardsPerVToken(),
         market.totalVCollateral(),
         market.rewardsOf(alice.address),
-        vBNBContract.callStatic.exchangeRateCurrent(),
       ]);
 
       expect(aliceCollateral).to.be.equal(0);
@@ -2342,13 +2319,7 @@ describe('Interest BNB Bearing Market', () => {
             [defaultAbiCoder.encode(['uint256'], [parseEther('10')])],
             { value: parseEther('10') }
           )
-      )
-        .to.emit(market, 'AddCollateral')
-        .withArgs(
-          alice.address,
-          parseEther('10'),
-          parseEther('10').mul(parseEther('1')).div(vBNBExchangeRate)
-        );
+      ).to.emit(market, 'AddCollateral');
 
       const vBNBExchangeRate2 =
         await vBNBContract.callStatic.exchangeRateCurrent();
