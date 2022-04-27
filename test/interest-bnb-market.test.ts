@@ -1241,7 +1241,7 @@ describe('InterestBNBMarket', () => {
     });
   });
 
-  describe('function: request deposit', () => {
+  describe('function: request addCollateral', () => {
     it('reverts if the to address is the zero address', async () => {
       await expect(
         market
@@ -1257,6 +1257,20 @@ describe('InterestBNBMarket', () => {
             { value: 10 }
           )
       ).to.revertedWith('DM: no zero address');
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [ADD_COLLATERAL_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [alice.address, 0]
+              ),
+            ],
+            { value: 10 }
+          )
+      ).to.revertedWith('DM: no zero amount');
     });
 
     it('allows an account to add collateral', async () => {
@@ -1313,6 +1327,30 @@ describe('InterestBNBMarket', () => {
   });
 
   describe('function: request withdraw', () => {
+    it('reverts if the arguments are invalid', async () => {
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [WITHDRAW_COLLATERAL_REQUEST],
+            [
+              defaultAbiCoder.encode(
+                ['address', 'uint256'],
+                [ethers.constants.AddressZero, parseEther('2')]
+              ),
+            ]
+          )
+      ).to.revertedWith('DM: no zero address');
+
+      await expect(
+        market
+          .connect(alice)
+          .request(
+            [WITHDRAW_COLLATERAL_REQUEST],
+            [defaultAbiCoder.encode(['address', 'uint256'], [alice.address, 0])]
+          )
+      ).to.revertedWith('DM: no zero amount');
+    });
     it('reverts if the caller is insolvent', async () => {
       await market
         .connect(alice)
