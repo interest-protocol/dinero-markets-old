@@ -2493,7 +2493,10 @@ describe('Dinero Leverage Venus Vault', () => {
         safeVenus.callStatic.borrowAndSupply(dineroVenusVault.address, vUSDC),
       ]);
 
-      expect(feeToUSDCAccount2.vTokens).to.be.equal(0);
+      expect(feeToUSDCAccount2.vTokens).to.be.closeTo(
+        BigNumber.from(0),
+        ONE_V_TOKEN
+      );
       expect(feeToUSDCBalance2).to.be.closeTo(
         calculateFee(parseEther('100000')).add(feeToUSDCBalance),
         parseEther('0.01')
