@@ -184,6 +184,7 @@ describe('Interest ERC20 Bearing Market', () => {
       INTEREST_RATE,
       ethers.utils.parseEther('0.5'),
       LIQUIDATION_FEE,
+      ethers.constants.MaxUint256,
     ]);
 
     await Promise.all([
@@ -214,7 +215,8 @@ describe('Interest ERC20 Bearing Market', () => {
             vBTC,
             INTEREST_RATE,
             ethers.utils.parseEther('0.5'),
-            LIQUIDATION_FEE
+            LIQUIDATION_FEE,
+            ethers.constants.MaxUint256
           )
       ).to.revertedWith('Initializable: contract is already initialized');
     });
@@ -229,6 +231,7 @@ describe('Interest ERC20 Bearing Market', () => {
           INTEREST_RATE,
           ethers.utils.parseEther('0.91'),
           LIQUIDATION_FEE,
+          ethers.constants.MaxUint256,
         ])
       ).to.revertedWith('MKT: ltc ratio out of bounds');
       await expect(
@@ -241,6 +244,7 @@ describe('Interest ERC20 Bearing Market', () => {
           INTEREST_RATE,
           ethers.utils.parseEther('0.49'),
           LIQUIDATION_FEE,
+          ethers.constants.MaxUint256,
         ])
       ).to.revertedWith('MKT: ltc ratio out of bounds');
     });
@@ -257,6 +261,7 @@ describe('Interest ERC20 Bearing Market', () => {
         _maxLTVRatio,
         _liquidationFee,
         _owner,
+        maxBorrowAmount,
       ] = await Promise.all([
         BTCContract.allowance(market.address, PCS_ROUTER),
         BTCContract.allowance(market.address, vBTCContract.address),
@@ -269,6 +274,7 @@ describe('Interest ERC20 Bearing Market', () => {
         market.maxLTVRatio(),
         market.liquidationFee(),
         market.owner(),
+        market.maxBorrowAmount(),
       ]);
 
       expect(erc20RouterAllowance).to.be.equal(ethers.constants.MaxUint256);
@@ -284,6 +290,7 @@ describe('Interest ERC20 Bearing Market', () => {
       );
       expect(_liquidationFee).to.be.equal(LIQUIDATION_FEE);
       expect(_owner).to.be.equal(owner.address);
+      expect(maxBorrowAmount).to.be.equal(ethers.constants.MaxUint256);
     });
   });
 
@@ -297,6 +304,7 @@ describe('Interest ERC20 Bearing Market', () => {
       INTEREST_RATE,
       ethers.utils.parseEther('0.5'),
       LIQUIDATION_FEE,
+      ethers.constants.MaxUint256,
     ])) as InterestERC20BearingMarket;
 
     await Promise.all([
@@ -489,6 +497,7 @@ describe('Interest ERC20 Bearing Market', () => {
         INTEREST_RATE,
         ethers.utils.parseEther('0.5'),
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ])) as InterestERC20BearingMarket;
 
       await mockOracle.__setERC20Price(BTC, 0);
@@ -507,6 +516,7 @@ describe('Interest ERC20 Bearing Market', () => {
         INTEREST_RATE,
         ethers.utils.parseEther('0.5'),
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ])) as InterestERC20BearingMarket;
 
       await mockOracle.__setERC20Price(BTC, parseEther('50000'));
@@ -1268,6 +1278,7 @@ describe('Interest ERC20 Bearing Market', () => {
         INTEREST_RATE,
         ethers.utils.parseEther('0.5'),
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ])) as InterestERC20BearingMarket;
 
       await mockOracle.__setERC20Price(BTC, parseEther('50000'));
@@ -1340,6 +1351,7 @@ describe('Interest ERC20 Bearing Market', () => {
         INTEREST_RATE,
         ethers.utils.parseEther('0.5'),
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ])) as InterestERC20BearingMarket;
 
       await mockOracle.__setERC20Price(BTC, parseEther('50000'));
@@ -1398,6 +1410,7 @@ describe('Interest ERC20 Bearing Market', () => {
         INTEREST_RATE,
         ethers.utils.parseEther('0.5'),
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ])) as InterestERC20BearingMarket;
 
       await mockOracle.__setERC20Price(BTC, parseEther('50000'));
@@ -1692,6 +1705,7 @@ describe('Interest ERC20 Bearing Market', () => {
         INTEREST_RATE,
         ethers.utils.parseEther('0.5'),
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ])) as InterestERC20BearingMarket;
 
       await mockOracle.__setERC20Price(BTC, parseEther('50000'));
@@ -2027,6 +2041,7 @@ describe('Interest ERC20 Bearing Market', () => {
         INTEREST_RATE,
         ethers.utils.parseEther('0.5'),
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ])) as InterestERC20BearingMarket;
 
       await mockOracle.__setERC20Price(BTC, parseEther('50000'));
