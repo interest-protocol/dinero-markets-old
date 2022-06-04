@@ -127,7 +127,8 @@ contract InterestERC20Market is Initializable, DineroMarket {
         MasterChefVault vault,
         uint64 interestRate,
         uint256 _maxLTVRatio,
-        uint256 _liquidationFee
+        uint256 _liquidationFee,
+        uint256 _maxBorrowAmount
     ) external initializer {
         // Collateral must not be zero address.
         require(address(collateral) != address(0), "DM: no zero address");
@@ -147,6 +148,7 @@ contract InterestERC20Market is Initializable, DineroMarket {
         loan.INTEREST_RATE = interestRate;
         maxLTVRatio = _maxLTVRatio;
         liquidationFee = _liquidationFee;
+        maxBorrowAmount = _maxBorrowAmount;
 
         // Also make sure that {COLLATERAL} is a deployed ERC20.
         // Approve the router to trade the collateral.

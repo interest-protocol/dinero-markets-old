@@ -99,7 +99,8 @@ contract InterestBNBMarket is
         Oracle oracle,
         uint64 interestRate,
         uint256 _maxLTVRatio,
-        uint256 _liquidationFee
+        uint256 _liquidationFee,
+        uint256 _maxBorrowAmount
     ) external initializer {
         __DineroMarket_init();
         __ReentrancyGuard_init();
@@ -110,6 +111,7 @@ contract InterestBNBMarket is
         loan.INTEREST_RATE = interestRate;
         maxLTVRatio = _maxLTVRatio;
         liquidationFee = _liquidationFee;
+        maxBorrowAmount = _maxBorrowAmount;
     }
 
     /*///////////////////////////////////////////////////////////////

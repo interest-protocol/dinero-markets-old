@@ -154,6 +154,7 @@ describe('Interest BNB Bearing Market', () => {
       INTEREST_RATE,
       ethers.BigNumber.from('500000000000000000'),
       ethers.BigNumber.from('100000000000000000'),
+      ethers.constants.MaxUint256,
     ]);
 
     await Promise.all([
@@ -174,7 +175,8 @@ describe('Interest BNB Bearing Market', () => {
             oracle.address,
             INTEREST_RATE,
             ethers.BigNumber.from('500000000000000000'),
-            LIQUIDATION_FEE
+            LIQUIDATION_FEE,
+            ethers.constants.MaxUint256
           )
       ).to.revertedWith('Initializable: contract is already initialized');
     });
@@ -187,6 +189,7 @@ describe('Interest BNB Bearing Market', () => {
           INTEREST_RATE,
           ethers.BigNumber.from('900000000000000001'),
           LIQUIDATION_FEE,
+          ethers.constants.MaxUint256,
         ])
       ).to.revertedWith('DM: ltc ratio out of bounds');
       await expect(
@@ -197,6 +200,7 @@ describe('Interest BNB Bearing Market', () => {
           INTEREST_RATE,
           ethers.BigNumber.from('490000000000000000'),
           LIQUIDATION_FEE,
+          ethers.constants.MaxUint256,
         ])
       ).to.revertedWith('DM: ltc ratio out of bounds');
     });
@@ -209,6 +213,7 @@ describe('Interest BNB Bearing Market', () => {
         _maxLTVRatio,
         _liquidationFee,
         _owner,
+        maxBorrowAmount,
       ] = await Promise.all([
         market.DINERO(),
         market.FEE_TO(),
@@ -217,6 +222,7 @@ describe('Interest BNB Bearing Market', () => {
         market.maxLTVRatio(),
         market.liquidationFee(),
         market.owner(),
+        market.maxBorrowAmount(),
       ]);
 
       expect(_dinero).to.be.equal(dinero.address);
@@ -230,6 +236,7 @@ describe('Interest BNB Bearing Market', () => {
         ethers.BigNumber.from('100000000000000000')
       );
       expect(_owner).to.be.equal(owner.address);
+      expect(maxBorrowAmount).to.be.equal(ethers.constants.MaxUint256);
     });
   });
 
@@ -367,6 +374,7 @@ describe('Interest BNB Bearing Market', () => {
         INTEREST_RATE,
         ethers.BigNumber.from('500000000000000000'),
         ethers.BigNumber.from('100000000000000000'),
+        ethers.constants.MaxUint256,
       ]);
 
       await expect(market.updateExchangeRate()).to.revertedWith(
@@ -381,6 +389,7 @@ describe('Interest BNB Bearing Market', () => {
         INTEREST_RATE,
         ethers.BigNumber.from('500000000000000000'),
         ethers.BigNumber.from('100000000000000000'),
+        ethers.constants.MaxUint256,
       ]);
 
       advanceBlock(ethers);
@@ -1205,6 +1214,7 @@ describe('Interest BNB Bearing Market', () => {
           INTEREST_RATE,
           ethers.BigNumber.from('500000000000000000'),
           ethers.BigNumber.from('100000000000000000'),
+          ethers.constants.MaxUint256,
         ]
       );
 
@@ -1260,6 +1270,7 @@ describe('Interest BNB Bearing Market', () => {
           INTEREST_RATE,
           ethers.BigNumber.from('500000000000000000'),
           ethers.BigNumber.from('100000000000000000'),
+          ethers.constants.MaxUint256,
         ]
       );
 
@@ -1303,6 +1314,7 @@ describe('Interest BNB Bearing Market', () => {
           INTEREST_RATE,
           ethers.BigNumber.from('500000000000000000'),
           ethers.BigNumber.from('100000000000000000'),
+          ethers.constants.MaxUint256,
         ]
       );
 
@@ -1562,6 +1574,7 @@ describe('Interest BNB Bearing Market', () => {
           INTEREST_RATE,
           ethers.BigNumber.from('500000000000000000'),
           ethers.BigNumber.from('100000000000000000'),
+          ethers.constants.MaxUint256,
         ]
       );
 
@@ -1706,6 +1719,7 @@ describe('Interest BNB Bearing Market', () => {
         recipientVBNBBalance2,
         exchangeRate2,
         totalRewards,
+        maxBorrowAmount,
       ] = await Promise.all([
         market.userLoan(alice.address),
         market.userLoan(bob.address),
@@ -1729,7 +1743,10 @@ describe('Interest BNB Bearing Market', () => {
         vBNBContract.balanceOf(recipient.address),
         vBNBContract.callStatic.exchangeRateCurrent(),
         market.totalRewardsPerVToken(),
+        market.maxBorrowAmount(),
       ]);
+
+      expect(maxBorrowAmount).to.be.equal(ethers.constants.MaxUint256);
 
       expect(ownerDineroBalance2).to.be.closeTo(
         ownerDineroBalance.sub(
@@ -1882,6 +1899,7 @@ describe('Interest BNB Bearing Market', () => {
           INTEREST_RATE,
           ethers.BigNumber.from('500000000000000000'),
           ethers.BigNumber.from('100000000000000000'),
+          ethers.constants.MaxUint256,
         ]
       );
 
@@ -2850,6 +2868,7 @@ describe('Interest BNB Bearing Market', () => {
           INTEREST_RATE,
           ethers.BigNumber.from('500000000000000000'),
           ethers.BigNumber.from('100000000000000000'),
+          ethers.constants.MaxUint256,
         ]
       );
 

@@ -118,6 +118,7 @@ describe('InterestBNBMarket', () => {
       INTEREST_RATE,
       MAX_LTV,
       LIQUIDATION_FEE,
+      ethers.constants.MaxUint256,
     ]);
 
     await Promise.all([
@@ -138,7 +139,8 @@ describe('InterestBNBMarket', () => {
             oracle.address,
             INTEREST_RATE,
             MAX_LTV,
-            LIQUIDATION_FEE
+            LIQUIDATION_FEE,
+            ethers.constants.MaxUint256
           )
       ).to.revertedWith('Initializable: contract is already initialized');
     });
@@ -152,6 +154,7 @@ describe('InterestBNBMarket', () => {
         _loan,
         _maxLTVRatio,
         _liquidationFee,
+        maxBorrowAmount,
       ] = await Promise.all([
         market.owner(),
         market.DINERO(),
@@ -160,6 +163,7 @@ describe('InterestBNBMarket', () => {
         market.loan(),
         market.maxLTVRatio(),
         market.liquidationFee(),
+        market.maxBorrowAmount(),
       ]);
 
       expect(_owner).to.be.equal(owner.address);
@@ -169,6 +173,7 @@ describe('InterestBNBMarket', () => {
       expect(_loan.INTEREST_RATE).to.be.equal(INTEREST_RATE);
       expect(_maxLTVRatio).to.be.equal(MAX_LTV);
       expect(_liquidationFee).to.be.equal(LIQUIDATION_FEE);
+      expect(maxBorrowAmount).to.be.equal(maxBorrowAmount);
     });
   });
 
@@ -314,6 +319,7 @@ describe('InterestBNBMarket', () => {
         INTEREST_RATE,
         MAX_LTV,
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ]);
 
       await expect(market.updateExchangeRate()).to.revertedWith(
@@ -328,6 +334,7 @@ describe('InterestBNBMarket', () => {
         INTEREST_RATE,
         MAX_LTV,
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ]);
 
       await mockOracle.__setBNBUSDPrice(parseEther('500'));
@@ -349,6 +356,7 @@ describe('InterestBNBMarket', () => {
         INTEREST_RATE,
         MAX_LTV,
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ]);
 
       await mockOracle.__setBNBUSDPrice(parseEther('500'));
@@ -445,6 +453,7 @@ describe('InterestBNBMarket', () => {
         INTEREST_RATE,
         MAX_LTV,
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ]);
 
       await mockOracle.__setBNBUSDPrice(parseEther('500'));
@@ -736,6 +745,7 @@ describe('InterestBNBMarket', () => {
         INTEREST_RATE,
         MAX_LTV,
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ]);
 
       await mockOracle.__setBNBUSDPrice(parseEther('500'));
@@ -828,6 +838,7 @@ describe('InterestBNBMarket', () => {
         INTEREST_RATE,
         MAX_LTV,
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ]);
 
       await mockOracle.__setBNBUSDPrice(parseEther('500'));
@@ -1017,6 +1028,7 @@ describe('InterestBNBMarket', () => {
         INTEREST_RATE,
         MAX_LTV,
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ]);
 
       await mockOracle.__setBNBUSDPrice(parseEther('500'));
@@ -1205,6 +1217,7 @@ describe('InterestBNBMarket', () => {
         INTEREST_RATE,
         MAX_LTV,
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ]);
 
       await mockOracle.__setBNBUSDPrice(parseEther('500'));
@@ -1386,6 +1399,7 @@ describe('InterestBNBMarket', () => {
         INTEREST_RATE,
         MAX_LTV,
         LIQUIDATION_FEE,
+        ethers.constants.MaxUint256,
       ]);
 
       await mockOracle.__setBNBUSDPrice(parseEther('500'));

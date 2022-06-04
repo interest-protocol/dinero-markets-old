@@ -152,6 +152,7 @@ describe('InterestERC20Market', () => {
       INTEREST_RATE,
       parseEther('0.5'),
       parseEther('0.1'),
+      ethers.constants.MaxUint256,
     ]);
 
     await Promise.all([
@@ -185,6 +186,7 @@ describe('InterestERC20Market', () => {
       INTEREST_RATE,
       parseEther('0.5'),
       parseEther('0.1'),
+      ethers.constants.MaxUint256,
     ]);
 
     await Promise.all([
@@ -221,6 +223,7 @@ describe('InterestERC20Market', () => {
       INTEREST_RATE,
       parseEther('0.5'),
       parseEther('0.1'),
+      ethers.constants.MaxUint256,
     ]);
 
     await mockOracle.__setERC20Price(CAKE, MOCK_ORACLE_PRICE);
@@ -257,6 +260,7 @@ describe('InterestERC20Market', () => {
       INTEREST_RATE,
       parseEther('0.5'),
       parseEther('0.1'),
+      ethers.constants.MaxUint256,
     ]);
 
     await mockOracle.__setERC20Price(CAKE, MOCK_ORACLE_PRICE);
@@ -298,7 +302,8 @@ describe('InterestERC20Market', () => {
           ethers.constants.AddressZero,
           INTEREST_RATE,
           parseEther('0.5'),
-          parseEther('0.1')
+          parseEther('0.1'),
+          ethers.constants.MaxUint256
         )
       ).to.revertedWith('Initializable: contract is already initialized');
     });
@@ -313,6 +318,7 @@ describe('InterestERC20Market', () => {
           INTEREST_RATE,
           parseEther('0.5'),
           parseEther('0.1'),
+          ethers.constants.MaxUint256,
         ])
       ).to.revertedWith('DM: no zero address');
     });
@@ -327,6 +333,7 @@ describe('InterestERC20Market', () => {
           INTEREST_RATE,
           parseEther('0.49'),
           parseEther('0.1'),
+          ethers.constants.MaxUint256,
         ])
       ).to.revertedWith('DM: ltc ratio out of bounds');
       await expect(
@@ -339,6 +346,7 @@ describe('InterestERC20Market', () => {
           INTEREST_RATE,
           parseEther('0.91'),
           parseEther('0.1'),
+          ethers.constants.MaxUint256,
         ])
       ).to.revertedWith('DM: ltc ratio out of bounds');
     });
@@ -356,6 +364,7 @@ describe('InterestERC20Market', () => {
         _maxLTVRatio,
         _liquidationFee,
         _vault2,
+        maxBorrowAmount,
       ] = await Promise.all([
         market.DINERO(),
         market.owner(),
@@ -367,6 +376,7 @@ describe('InterestERC20Market', () => {
         market.maxLTVRatio(),
         market.liquidationFee(),
         marketWithVault.VAULT(),
+        market.maxBorrowAmount(),
       ]);
       expect(_dinero).to.be.equal(dinero.address);
       expect(_owner).to.be.equal(owner.address);
@@ -382,6 +392,7 @@ describe('InterestERC20Market', () => {
         ethers.BigNumber.from('100000000000000000')
       );
       expect(_vault2).to.be.equal(cakeVault.address);
+      expect(maxBorrowAmount).to.be.equal(ethers.constants.MaxUint256);
     });
   });
 
@@ -1166,6 +1177,31 @@ describe('InterestERC20Market', () => {
       expect(totalLoan3.base).to.be.equal(0);
       expect(totalLoan3.elastic).to.be.equal(0);
     });
+  });
+
+  it('allows the owner to update the max borrow amount', async () => {
+    expect(await market.maxBorrowAmount()).to.be.equal(
+      ethers.constants.MaxUint256
+    );
+
+    await expect(
+      market.connect(alice).setMaxBorrowAmount(parseEther('100000'))
+    ).to.be.revertedWith('Ownable: caller is not the owner');
+
+    await expect(market.connect(owner).setMaxBorrowAmount(parseEther('10')))
+      .to.emit(market, 'MaxBorrowAmount')
+      .withArgs(parseEther('10'));
+
+    expect(await market.maxBorrowAmount()).to.be.equal(parseEther('10'));
+
+    await market.connect(alice).addCollateral(alice.address, parseEther('10'));
+
+    await expect(market.connect(alice).borrow(alice.address, parseEther('10')))
+      .to.not.reverted;
+
+    await expect(
+      market.connect(alice).borrow(alice.address, parseEther('0.1'))
+    ).to.revertedWith('MKT: max borrow amount reached');
   });
 
   describe('function: liquidate', () => {

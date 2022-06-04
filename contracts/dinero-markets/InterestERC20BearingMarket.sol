@@ -142,7 +142,8 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         IVToken vToken,
         uint64 interestRate,
         uint256 _maxLTVRatio,
-        uint256 _liquidationFee
+        uint256 _liquidationFee,
+        uint256 _maxBorrowAmount
     ) external initializer {
         // {maxLTVRatio} must be within the acceptable bounds.
         require(
@@ -160,6 +161,7 @@ contract InterestERC20BearingMarket is Initializable, DineroMarket {
         loan.INTEREST_RATE = interestRate;
         maxLTVRatio = _maxLTVRatio;
         liquidationFee = _liquidationFee;
+        maxBorrowAmount = _maxBorrowAmount;
 
         // Approve the router to trade the collateral in case of liquidations.
         COLLATERAL.safeApprove(address(ROUTER), type(uint256).max);

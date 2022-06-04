@@ -161,6 +161,7 @@ describe('InterestERC20Market', () => {
       INTEREST_RATE,
       parseEther('0.5'),
       parseEther('0.1'),
+      ethers.constants.MaxUint256,
     ]);
 
     await Promise.all([
@@ -194,6 +195,7 @@ describe('InterestERC20Market', () => {
       INTEREST_RATE,
       parseEther('0.5'),
       parseEther('0.1'),
+      ethers.constants.MaxUint256,
     ]);
 
     await mockOracle.__setERC20Price(

@@ -113,6 +113,8 @@ abstract contract DineroMarket is
 
     event InterestRate(uint256 rate);
 
+    event MaxBorrowAmount(uint256 maxBorrowAmount);
+
     /*///////////////////////////////////////////////////////////////
                                 STATE
     //////////////////////////////////////////////////////////////*/
@@ -159,6 +161,9 @@ abstract contract DineroMarket is
 
     // A fee that will be charged as a penalty of being liquidated.
     uint256 public liquidationFee;
+
+    // Dinero Markets must have a max of how much DNR they can create to prevent liquidity issues during liquidations.
+    uint256 public maxBorrowAmount;
 
     /**
      * @dev This empty reserved space is put in place to allow future versions to add new
@@ -305,6 +310,10 @@ abstract contract DineroMarket is
      * - `msg.sender` must remain solvent after borrowing Dinero.
      */
     function borrow(address to, uint256 amount) external isSolvent {
+        require(
+            maxBorrowAmount >= totalLoan.elastic + amount,
+            "MKT: max borrow amount reached"
+        );
         // To prevent loss of funds.
         require(to != address(0), "MKT: no zero address");
         // Update how much is owed to the protocol before allowing collateral to be removed
@@ -500,6 +509,22 @@ abstract contract DineroMarket is
         require(13e8 >= amount, "MKT: too high");
         loan.INTEREST_RATE = amount;
         emit InterestRate(amount);
+    }
+
+    /**
+     * @dev Sets a new value to the {maxBorrowAmount}.
+     *
+     * @notice Allows the {owner} to set a limit on how DNR can be created by this market.
+     *
+     * @param amount The new maximum amount that can be borrowed.
+     *
+     * Requirements:
+     *
+     * - Function can only be called by the {owner}
+     */
+    function setMaxBorrowAmount(uint256 amount) external onlyOwner {
+        maxBorrowAmount = amount;
+        emit MaxBorrowAmount(amount);
     }
 
     /**
