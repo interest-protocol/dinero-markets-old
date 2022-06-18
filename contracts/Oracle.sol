@@ -21,7 +21,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20Metadat
 import "./interfaces/AggregatorV3Interface.sol";
 import "./interfaces/IPancakePair.sol";
 
-import "./lib/IntMath.sol";
+import "./lib/Math.sol";
 import "./lib/IntERC20.sol";
 import "./lib/SafeCastLib.sol";
 
@@ -45,7 +45,7 @@ contract Oracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
     using SafeCastLib for *;
-    using IntMath for uint256;
+    using Math for uint256;
     using IntERC20 for address;
 
     /*///////////////////////////////////////////////////////////////
@@ -181,7 +181,7 @@ contract Oracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             uint256,
             uint80
         ) {
-            price = _scaleDecimals(answer.toUint256(), feed.decimals()).bmul(
+            price = _scaleDecimals(answer.toUint256(), feed.decimals()).wadMul(
                 amount
             );
         } catch Error(string memory) {
@@ -193,7 +193,7 @@ contract Oracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
             // Then get BNB price in
             // We just need price for 1BNB because we already computed the amount above
-            price = bnbPrice.bmul(getBNBUSDPrice(1 ether));
+            price = bnbPrice.wadMul(getBNBUSDPrice(1 ether));
         } catch (bytes memory) {
             // Get the token price in BNB as token/BUSD pairs are rare
             uint256 bnbPrice = _scaleDecimals(
@@ -203,7 +203,7 @@ contract Oracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
             // Then get BNB price in
             // We just need price for 1BNB because we already computed the amount above
-            price = bnbPrice.bmul(getBNBUSDPrice(1 ether));
+            price = bnbPrice.wadMul(getBNBUSDPrice(1 ether));
         }
     }
 
@@ -221,9 +221,9 @@ contract Oracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     {
         uint256 fairBNBValue = getLPTokenBNBPrice(pair);
         // Since amount and price both have a mantissa of 1e18, we need to divide by 1e18.
-        valueInBNB = fairBNBValue.bmul(amount);
+        valueInBNB = fairBNBValue.wadMul(amount);
         // Since bnb and usd both have a mantissa of 1e18, we need to divide by 1e18.
-        valueInUSD = valueInBNB.bmul(getBNBUSDPrice(1 ether));
+        valueInUSD = valueInBNB.wadMul(getBNBUSDPrice(1 ether));
     }
 
     /**
@@ -252,15 +252,14 @@ contract Oracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         (uint256 reserve0, uint256 reserve1, ) = pair.getReserves();
 
         // Get square root of K
-        uint256 sqrtK = IntMath.sqrt(reserve0 * (reserve1)) / totalSupply;
+        uint256 sqrtK = Math.sqrt(reserve0 * (reserve1)) / totalSupply;
 
         // Relies on chainlink to get the token value in BNB
         uint256 price0 = getTokenBNBPrice(token0, 1 ether);
         uint256 price1 = getTokenBNBPrice(token1, 1 ether);
 
         // Get fair price of LP token in BNB by re-engineering the K formula.
-        return (((sqrtK * 2 * (IntMath.sqrt(price0)))) *
-            (IntMath.sqrt(price1)));
+        return (((sqrtK * 2 * (Math.sqrt(price0)))) * (Math.sqrt(price1)));
     }
 
     /**
@@ -291,7 +290,7 @@ contract Oracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             uint256,
             uint80
         ) {
-            price = _scaleDecimals(answer.toUint256(), feed.decimals()).bmul(
+            price = _scaleDecimals(answer.toUint256(), feed.decimals()).wadMul(
                 amount
             );
         } catch Error(string memory) {
@@ -322,7 +321,7 @@ contract Oracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             uint80
         ) {
             return
-                (_scaleDecimals(answer.toUint256(), BNB_USD.decimals())).bmul(
+                (_scaleDecimals(answer.toUint256(), BNB_USD.decimals())).wadMul(
                     amount
                 );
         } catch Error(string memory) {

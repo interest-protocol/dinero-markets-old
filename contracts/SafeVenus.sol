@@ -11,7 +11,7 @@ import "./interfaces/IVToken.sol";
 import "./interfaces/IVenusVault.sol";
 import "./interfaces/IVenusInterestRateModel.sol";
 
-import "./lib/IntMath.sol";
+import "./lib/Math.sol";
 
 import "./Oracle.sol";
 
@@ -28,8 +28,8 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
 
-    // We need the {bdiv} and {bmul} functions to safely multiply and divide with values with a 1e18 mantissa.
-    using IntMath for uint256;
+    // We need the {wadDiv} and {wadMul} functions to safely multiply and divide with values with a 1e18 mantissa.
+    using Math for uint256;
 
     /*///////////////////////////////////////////////////////////////
                                 STATE
@@ -37,6 +37,8 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     // solhint-disable-next-line var-name-mixedcase
     address internal constant XVS = 0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63;
+
+    uint256 internal constant BORROW_RATE_MAX_MANTISSA = 0.0005e16;
 
     // solhint-disable-next-line var-name-mixedcase
     IVenusController internal constant VENUS_CONTROLLER =
@@ -88,7 +90,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         );
 
         // We give a safe margin by lowering based on the `vault` collateral limit.
-        uint256 enforcedLimit = venusCollateralFactor.bmul(
+        uint256 enforcedLimit = venusCollateralFactor.wadMul(
             vault.collateralLimit()
         );
 
@@ -97,7 +99,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         if (borrowRate == 0) return enforcedLimit;
 
         // We calculate a percentage on based profit/cost
-        uint256 optimalLimit = vToken.supplyRatePerBlock().bdiv(borrowRate);
+        uint256 optimalLimit = vToken.supplyRatePerBlock().wadDiv(borrowRate);
 
         // To make sure we stay within the protocol limit we take the minimum between the optimal and enforced limit.
         return enforcedLimit.min(optimalLimit);
@@ -108,7 +110,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev It returns the current borrow and supply amount the `vault` has in the `vToken` market.
+     * @dev It returns the current borrow and supply amount the `vault` has in the `vToken` market. This uses the stored values
      *
      * @param vault A vault contract
      * @param vToken A Venus vToken contract
@@ -117,10 +119,11 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function borrowAndSupply(IVenusVault vault, IVToken vToken)
         public
+        view
         returns (uint256 borrow, uint256 supply)
     {
-        borrow = vToken.borrowBalanceCurrent(address(vault));
-        supply = vToken.balanceOfUnderlying(address(vault));
+        borrow = vToken.borrowBalanceStored(address(vault));
+        supply = viewUnderlyingBalanceOf(vToken, address(vault));
     }
 
     /**
@@ -137,7 +140,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         IVenusVault vault,
         IVToken vToken,
         uint256 amount
-    ) external returns (bool) {
+    ) external view returns (bool) {
         // Get the current cost and profit of borrowing in `vToken`.
         (
             uint256 borrowInterestUSD, // Cost of borrowing underlying
@@ -161,6 +164,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function safeBorrow(IVenusVault vault, IVToken vToken)
         external
+        view
         returns (uint256)
     {
         // Get a safe ratio between borrow amount and collateral required.
@@ -172,7 +176,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(supply > 0, "SV: no supply");
 
         // Maximum amount we can borrow based on our supply.
-        uint256 maxBorrowAmount = supply.bmul(_collateralLimit);
+        uint256 maxBorrowAmount = supply.wadMul(_collateralLimit);
 
         // If we are borrowing more than the recommended amount. We return 0;
         if (borrow >= maxBorrowAmount) return 0;
@@ -188,7 +192,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // Take a ratio between our current borrow amount and what
         uint256 newBorrowAmountRatio = borrow > 0
-            ? newBorrowAmount.bdiv(borrow)
+            ? newBorrowAmount.wadDiv(borrow)
             : 0;
 
         // We ignore borrowing less than 5% of the current borrow.
@@ -212,7 +216,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // 0 represents do not borrow.
         return
             supplyInterestUSD + rewardInterestUSD > borrowInterestUSD
-                ? newBorrowAmount.bmul(0.95e18)
+                ? newBorrowAmount.wadMul(0.95e18)
                 : 0;
     }
 
@@ -224,6 +228,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function safeRedeem(IVenusVault vault, IVToken vToken)
         public
+        view
         returns (uint256)
     {
         // Get current `vault` borrow and supply balances in `vToken`
@@ -234,7 +239,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // If we are not borrowing, we can redeem as much as the liquidity allows
         if (borrowBalance == 0) return supplyBalance.min(vToken.getCash());
         // borrowBalance / collateralLimitRatio will give us a safe supply value that we need to maintain to avoid liquidation.
-        uint256 safeCollateral = borrowBalance.bdiv(
+        uint256 safeCollateral = borrowBalance.wadDiv(
             // Should never be 0. As Venus uses the overcollaterized loan model. Cannot borrow without having collatera.
             // If it is 0, it should throw to alert there is an issue with Venus.
             safeCollateralRatio(vault, vToken)
@@ -247,7 +252,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // We cannot redeem more than the current liquidity in the market.
         // This value can be used to safely redeem from the supply or borrow.
         // C
-        return redeemAmount.min(vToken.getCash()).bmul(0.95e18);
+        return redeemAmount.min(vToken.getCash()).wadMul(0.95e18);
     }
 
     /**
@@ -265,11 +270,11 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         IVenusVault vault,
         IVToken vToken,
         uint256 amount
-    ) public returns (uint256, uint256) {
+    ) public view returns (uint256, uint256) {
         // Get current total amount being borrowed in the `vToken` plus adding `amount`.
-        uint256 totalBorrow = vToken.totalBorrowsCurrent() + amount;
+        uint256 totalBorrow = viewTotalBorrowsCurrent(vToken) + amount;
         // Get current borrow of the `vault` in the `vToken` market assuming it borrows an additional `amount`.
-        uint256 vaultBorrow = vToken.borrowBalanceCurrent(address(vault)) +
+        uint256 vaultBorrow = vToken.borrowBalanceStored(address(vault)) +
             amount;
 
         // Edge case for a market to have no loans. But since we use it as a denominator, we need to address it.
@@ -289,7 +294,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // Get current borrow interest rate times the amount in `vault`.
         uint256 borrowInterestRatePerBlock = predictBorrowRate(vToken, amount)
-            .bmul(vaultBorrow);
+            .wadMul(vaultBorrow);
 
         // Get the cost of borrowing per block in USD
         uint256 underlyingInUSDPerBlock = ORACLE.getTokenUSDPrice(
@@ -315,14 +320,15 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         IVenusVault vault,
         IVToken vToken,
         uint256 borrowAmount
-    ) public returns (uint256) {
+    ) public view returns (uint256) {
         // Total amount of supply amount in the `vToken`.
         uint256 totalSupplyAmount = IERC20Upgradeable(address(vToken))
             .totalSupply()
-            .bmul(vToken.exchangeRateCurrent());
+            .wadMul(viewExchangeRate(vToken));
 
         // Current amount of underlying the `vault` is supplying in the `vToken` market.
-        uint256 vaultUnderlyingBalance = IVToken(vToken).balanceOfUnderlying(
+        uint256 vaultUnderlyingBalance = viewUnderlyingBalanceOf(
+            IVToken(vToken),
             address(vault)
         );
 
@@ -342,7 +348,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 underlyingSupplyRate = predictSupplyRate(
             IVToken(vToken),
             borrowAmount
-        ).bmul(vaultUnderlyingBalance);
+        ).wadMul(vaultUnderlyingBalance);
 
         // Calculate the supply rate considering an additional borrow `amount` per block in USD and add the current XVS rewards in USD per block
         return
@@ -359,6 +365,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function predictBorrowRate(IVToken vToken, uint256 amount)
         public
+        view
         returns (uint256)
     {
         // Get current market liquidity (supply - borrow in underlying)
@@ -376,7 +383,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         return
             interestRateModel.getBorrowRate(
                 cash - amount,
-                vToken.totalBorrowsCurrent() + amount,
+                viewTotalBorrowsCurrent(vToken) + amount,
                 vToken.totalReserves()
             );
     }
@@ -390,6 +397,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function predictSupplyRate(IVToken vToken, uint256 amount)
         public
+        view
         returns (uint256)
     {
         // Current market liquidity
@@ -407,7 +415,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         return
             interestRateModel.getSupplyRate(
                 cash - amount,
-                vToken.totalBorrowsCurrent() + amount,
+                viewTotalBorrowsCurrent(vToken) + amount,
                 vToken.totalReserves(),
                 vToken.reserveFactorMantissa()
             );
@@ -423,6 +431,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      */
     function deleverage(IVenusVault vault, IVToken vToken)
         external
+        view
         returns (uint256)
     {
         // Get a safe ratio between borrow amount and collateral required.
@@ -432,7 +441,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
 
         // Maximum amount we can borrow based on our supply.
-        uint256 maxSafeBorrowAmount = supply.bmul(_collateralLimit);
+        uint256 maxSafeBorrowAmount = supply.wadMul(_collateralLimit);
 
         // If we are not above the maximum amount. We do not need to deleverage and return 0.
         if (maxSafeBorrowAmount >= borrow) return 0;
@@ -447,12 +456,14 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // We add 15% safety room to the {venusCollateralFactor} to avoid liquidation.
         // We assume vaults are using values below 0.8e18 for their collateral ratio
-        uint256 safeSupply = borrow.bdiv(venusCollateralFactor.bmul(0.85e18));
+        uint256 safeSupply = borrow.wadDiv(
+            venusCollateralFactor.wadMul(0.85e18)
+        );
 
         if (safeSupply > supply) {
             // if the supply is still lower, then it should throw
             uint256 amount = supply -
-                borrow.bdiv(venusCollateralFactor.bmul(0.95e18));
+                borrow.wadDiv(venusCollateralFactor.wadMul(0.95e18));
 
             // Cannot withdraw more than liquidity
             return amount.min(cash);
@@ -460,6 +471,102 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // Cannot withdraw more than liquidity
         return (supply - safeSupply).min(cash);
+    }
+
+    /**
+     * @dev Calculate the total borrows current by using view functions to reduce the cost
+     *
+     * @param vToken The vToken we wish to calculate it's current total borrows.
+     * @return uint256 The current borrows
+     */
+    function viewTotalBorrowsCurrent(IVToken vToken)
+        public
+        view
+        returns (uint256)
+    {
+        uint256 currentBlockNumber = block.number;
+        uint256 accrualBlockNumberPrior = vToken.accrualBlockNumber();
+
+        uint256 borrowsPrior = vToken.totalBorrows();
+
+        // If no blocks have passed, the total borrows stored is up to date.
+        if (accrualBlockNumberPrior == currentBlockNumber) {
+            return borrowsPrior;
+        }
+
+        uint256 cashPrior = vToken.getCash();
+        uint256 reservesPrior = vToken.totalReserves();
+
+        uint256 borrowRateMantissa = IVenusInterestRateModel(
+            vToken.interestRateModel()
+        ).getBorrowRate(cashPrior, borrowsPrior, reservesPrior);
+
+        // Borrow rate should never be higher than this value
+        require(
+            borrowRateMantissa <= BORROW_RATE_MAX_MANTISSA,
+            "borrow rate is absurdly high"
+        );
+
+        uint256 blockDelta = currentBlockNumber - accrualBlockNumberPrior;
+
+        uint256 simpleInterestFactor = borrowRateMantissa * blockDelta;
+
+        uint256 interestAccumulated = simpleInterestFactor.wadMul(borrowsPrior);
+
+        return interestAccumulated + borrowsPrior;
+    }
+
+    /**
+     * @dev Use view functions to find out how much a user has in underlying in a vToken.
+     *
+     * @param vToken The vToken market, that the user has supplied some underlying
+     * @param user The underlying balance of this address will be returned
+     * @return uint256 Current underlying balance
+     */
+    function viewUnderlyingBalanceOf(IVToken vToken, address user)
+        public
+        view
+        returns (uint256)
+    {
+        return vToken.balanceOf(user).wadMul(viewExchangeRate(vToken));
+    }
+
+    /**
+     * @dev We calculate the current exchange rate by using view variables to reduce the gas cost.
+     *
+     * @param vToken The current exchange rate will be returned for this market.
+     * @return uint256 exchange rate current
+     */
+    function viewExchangeRate(IVToken vToken) public view returns (uint256) {
+        uint256 accrualBlockNumberPrior = vToken.accrualBlockNumber();
+
+        if (accrualBlockNumberPrior == block.number)
+            return vToken.exchangeRateStored();
+
+        uint256 totalCash = IERC20Upgradeable(vToken.underlying()).balanceOf(
+            address(vToken)
+        );
+        uint256 borrowsPrior = vToken.totalBorrows();
+        uint256 reservesPrior = vToken.totalReserves();
+
+        uint256 borrowRateMantissa = IVenusInterestRateModel(
+            vToken.interestRateModel()
+        ).getBorrowRate(totalCash, borrowsPrior, reservesPrior);
+
+        require(borrowRateMantissa <= 0.0005e16, "RATE_TOO_HIGH"); // Same as borrowRateMaxMantissa in vTokenInterfaces.sol
+
+        uint256 interestAccumulated = (borrowRateMantissa *
+            (block.number - accrualBlockNumberPrior)).wadMul(borrowsPrior);
+
+        uint256 totalReserves = vToken.reserveFactorMantissa().wadMul(
+            interestAccumulated
+        ) + reservesPrior;
+        uint256 totalBorrows = interestAccumulated + borrowsPrior;
+        uint256 totalSupply = IERC20Upgradeable(address(vToken)).totalSupply();
+
+        require(totalSupply > 0, "SV: wrong rate");
+
+        return (totalCash + totalBorrows - totalReserves).wadDiv(totalSupply);
     }
 
     /*///////////////////////////////////////////////////////////////

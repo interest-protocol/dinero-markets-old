@@ -17,7 +17,7 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "../interfaces/IPancakeRouter02.sol";
 
 import "../lib/Rebase.sol";
-import "../lib/IntMath.sol";
+import "../lib/Math.sol";
 import "../lib/SafeCastLib.sol";
 
 import "../tokens/Dinero.sol";
@@ -55,7 +55,7 @@ abstract contract DineroMarket is
 
     using RebaseLibrary for Rebase;
     using SafeCastLib for uint256;
-    using IntMath for uint256;
+    using Math for uint256;
 
     /*///////////////////////////////////////////////////////////////
                                   STRUCTS

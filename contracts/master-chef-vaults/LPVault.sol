@@ -18,7 +18,7 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
-import "../lib/IntMath.sol";
+import "../lib/Math.sol";
 
 import "./MasterChefVault.sol";
 
@@ -139,10 +139,10 @@ contract LPVault is
 
         // Calculate the fee to reward the `msg.sender`.
         // The fee amounts to 2% of all the rewards harvested in this block.
-        uint256 fee = cakeRewards.bmul(0.02e18);
+        uint256 fee = cakeRewards.wadMul(0.02e18);
 
         // Update the state
-        _totalRewardsPerAmount += (cakeRewards - fee).bdiv(_totalAmount);
+        _totalRewardsPerAmount += (cakeRewards - fee).wadDiv(_totalAmount);
 
         // Pay the `msg.sender` the fee.
         _safeCakeTransfer(_msgSender(), fee);
@@ -227,17 +227,17 @@ contract LPVault is
         // If there are no tokens deposited, we do not have to update the current rewards.
         if (_totalAmount > 0) {
             // Get rewards currently in the {STAKING_TOKEN} pool.
-            _totalRewardsPerAmount += _depositFarm(0).bdiv(_totalAmount);
+            _totalRewardsPerAmount += _depositFarm(0).wadDiv(_totalAmount);
             // Reinvest all {CAKE} rewards into the CAKE pool.
             // The functions on this block send pending {CAKE} to this contract. Therefore, we need to update the {_totalRewardsPerAccount}.
-            _totalRewardsPerAmount += _stakeCake().bdiv(_totalAmount);
+            _totalRewardsPerAmount += _stakeCake().wadDiv(_totalAmount);
         }
 
         // We do not need to calculate rewards if the user has no open deposits in this contract.
         if (user.amount > 0) {
             // Calculate and add how many rewards the user accrued.
             user.rewards +=
-                _totalRewardsPerAmount.bmul(user.amount) -
+                _totalRewardsPerAmount.wadMul(user.amount) -
                 user.rewardDebt;
         }
 
@@ -257,7 +257,7 @@ contract LPVault is
         CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
 
         // Update State to tell us that user has been completed paid up to this point.
-        user.rewardDebt = _totalRewardsPerAmount.bmul(user.amount);
+        user.rewardDebt = _totalRewardsPerAmount.wadMul(user.amount);
 
         // Update Global state
         userInfo[to] = user;
@@ -300,12 +300,12 @@ contract LPVault is
         // The {Vault} contract ensures that the `amount` is greater than 0.
         // It also ensured that the {totalAmount} is greater than 0.
         // We withdraw from the {CAKE_MASTER_CHEF} the desired `amount`.
-        _totalRewardsPerAmount += _withdrawFarm(amount).bdiv(_totalAmount);
+        _totalRewardsPerAmount += _withdrawFarm(amount).wadDiv(_totalAmount);
         // Collect the current rewards in the {CAKE} pool to properly update {_totalRewardsPerAmount}.
-        _totalRewardsPerAmount += _unStakeCake(0).bdiv(_totalAmount);
+        _totalRewardsPerAmount += _unStakeCake(0).wadDiv(_totalAmount);
 
         // Calculate how many rewards the user is entitled before this deposit
-        uint256 rewards = _totalRewardsPerAmount.bmul(user.amount) -
+        uint256 rewards = _totalRewardsPerAmount.wadMul(user.amount) -
             user.rewardDebt;
 
         // Update the state
@@ -340,7 +340,7 @@ contract LPVault is
         if (_totalAmount > 0) {
             // Reset totalRewardsPerAmount if the pool is totally empty
             totalRewardsPerAmount = _totalRewardsPerAmount;
-            user.rewardDebt = _totalRewardsPerAmount.bmul(user.amount);
+            user.rewardDebt = _totalRewardsPerAmount.wadMul(user.amount);
             totalAmount = _totalAmount;
         } else {
             // If the Vault does not have any {STAKING_TOKEN}, reset the global state.

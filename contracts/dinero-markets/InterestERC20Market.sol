@@ -21,7 +21,7 @@ import "../interfaces/IPancakePair.sol";
 import "../tokens/Dinero.sol";
 
 import "../lib/Rebase.sol";
-import "../lib/IntMath.sol";
+import "../lib/Math.sol";
 import "../lib/IntERC20.sol";
 import "../lib/SafeCastLib.sol";
 
@@ -68,7 +68,7 @@ contract InterestERC20Market is Initializable, DineroMarket {
     using RebaseLibrary for Rebase;
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using SafeCastLib for uint256;
-    using IntMath for uint256;
+    using Math for uint256;
     using IntERC20 for address;
 
     /*///////////////////////////////////////////////////////////////
@@ -341,11 +341,11 @@ contract InterestERC20Market is Initializable, DineroMarket {
             uint256 debt = _totalLoan.toElastic(principal, false);
 
             // Calculate the collateralFee (for the liquidator and the protocol)
-            uint256 fee = debt.bmul(_liquidationFee);
+            uint256 fee = debt.wadMul(_liquidationFee);
 
             // How much collateral is needed to cover the loan + fees.
             // Since Dinero is always USD we can calculate this way.
-            uint256 collateralToCover = (debt + fee).bdiv(_exchangeRate);
+            uint256 collateralToCover = (debt + fee).wadDiv(_exchangeRate);
 
             // Remove the collateral from the account. We can consider the debt paid.
             userCollateral[account] -= collateralToCover;
@@ -388,7 +388,7 @@ contract InterestERC20Market is Initializable, DineroMarket {
         totalCollateral -= liquidationInfo.allCollateral;
 
         // 10% of the liquidation fee to be given to the protocol.
-        uint256 protocolFee = uint256(liquidationInfo.allFee).bmul(0.1e18);
+        uint256 protocolFee = uint256(liquidationInfo.allFee).wadMul(0.1e18);
 
         unchecked {
             // Should not overflow.

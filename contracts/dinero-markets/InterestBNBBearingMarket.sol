@@ -25,7 +25,7 @@ import "../interfaces/IVenusController.sol";
 import "../tokens/Dinero.sol";
 
 import "../lib/Rebase.sol";
-import "../lib/IntMath.sol";
+import "../lib/Math.sol";
 import "../lib/IntERC20.sol";
 import "../lib/SafeCastLib.sol";
 
@@ -66,7 +66,7 @@ contract InterestBNBBearingMarket is
     using RebaseLibrary for Rebase;
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using SafeCastLib for uint256;
-    using IntMath for uint256;
+    using Math for uint256;
     using IntERC20 for address;
 
     /*///////////////////////////////////////////////////////////////

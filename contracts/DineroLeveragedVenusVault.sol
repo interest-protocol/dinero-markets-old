@@ -14,7 +14,7 @@ import "./interfaces/IVToken.sol";
 import "./interfaces/IVenusVault.sol";
 import "./interfaces/IPancakeRouter02.sol";
 
-import "./lib/IntMath.sol";
+import "./lib/Math.sol";
 import "./lib/IntERC20.sol";
 import "./lib/SafeCastLib.sol";
 
@@ -49,7 +49,7 @@ contract DineroLeveragedVenusVault is
 
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.AddressSet;
     using SafeERC20Upgradeable for IERC20Upgradeable;
-    using IntMath for uint256;
+    using Math for uint256;
     using SafeCastLib for uint256;
     using IntERC20 for address;
 
@@ -367,16 +367,17 @@ contract DineroLeveragedVenusVault is
 
         // Supply underlying to Venus right away to start earning.
         // It returns the new VTokens minted.
+        // This calls {accrueInterest} on VToken, so we can use _getTotalFreeUnderlying.
         uint256 vTokensMinted = _mintVToken(vToken, amount);
 
         // Charge a 0.5% fee on deposit
-        uint256 fee = vTokensMinted.bmul(0.005e18);
+        uint256 fee = vTokensMinted.wadMul(0.005e18);
         vTokensMinted -= fee;
         accountOf[underlying][FEE_TO].vTokens += fee.toUint128();
 
         // Update the data
         totalFreeVTokens += vTokensMinted;
-        userAccount.principal += amount.bmul(dineroLTV).toUint128();
+        userAccount.principal += amount.wadMul(dineroLTV).toUint128();
         userAccount.vTokens += vTokensMinted.toUint128();
 
         // Consider all rewards fairly paid to the user up to this point.
@@ -399,7 +400,7 @@ contract DineroLeveragedVenusVault is
         totalFreeUnderlying[underlying] = _getTotalFreeUnderlying(vToken);
 
         // Give them `DINERO` to the `msg.sender`; essentially giving them liquidity to employ more strategies.
-        DINERO.mint(_msgSender(), amount.bmul(dineroLTV));
+        DINERO.mint(_msgSender(), amount.wadMul(dineroLTV));
 
         emit Deposit(_msgSender(), underlying, amount, vTokensMinted);
     }
@@ -523,8 +524,8 @@ contract DineroLeveragedVenusVault is
         totalFreeVTokenOf[vToken] = totalFreeVTokens;
 
         // Remove DUST
-        uint256 amountOfUnderlyingToRedeem = (rewards + vTokenAmount).bmul(
-            vToken.exchangeRateCurrent()
+        uint256 amountOfUnderlyingToRedeem = (rewards + vTokenAmount).wadMul(
+            SAFE_VENUS.viewExchangeRate(vToken)
         );
 
         // Uniswap style, block scoping, to prevent stack too deep local variable errors.
@@ -549,6 +550,7 @@ contract DineroLeveragedVenusVault is
             ) {
                 if (1 ether > safeAmount) break;
 
+                // This calls {accrueInterest} on VToken, so we can use _getTotalFreeUnderlying.
                 _redeemAndRepay(vToken, safeAmount);
                 // update the safeAmout for the next iteration.
                 safeAmount = safeVenus.safeRedeem(this, vToken);
@@ -568,6 +570,7 @@ contract DineroLeveragedVenusVault is
             if (amountOfUnderlyingToRedeem > balance) {
                 // Redeem the underlying. It will revert if we are unable to withdraw.
                 // For dust we need to withdraw the min amount.
+                // This calls {accrueInterest} on VToken, so we can use _getTotalFreeUnderlying.
                 _invariant(
                     vToken.redeemUnderlying(
                         amountOfUnderlyingToRedeem.min(
@@ -693,6 +696,7 @@ contract DineroLeveragedVenusVault is
         while (amount > 0 && maxTries < 5) {
             if (1 ether > amount) break;
 
+            // This calls {accrueInterest} on VToken, so we can use _getTotalFreeUnderlying.
             _redeemAndRepay(vToken, amount);
             // Update the amount for the next iteration.
             amount = safeVenus.deleverage(this, vToken);
@@ -740,8 +744,18 @@ contract DineroLeveragedVenusVault is
     {
         // Get previous recorded total non-debt underlying.
         uint256 prevFreeUnderlying = totalFreeUnderlying[underlying];
+
+        SafeVenus safeVenus = SAFE_VENUS;
+
+        uint256 supplyBalance = safeVenus.viewUnderlyingBalanceOf(
+            vToken,
+            address(this)
+        );
+
         // Get current recorded total non-debt underlying.
-        uint256 currentFreeUnderlying = _getTotalFreeUnderlying(vToken);
+        uint256 currentFreeUnderlying = supplyBalance +
+            vToken.underlying().contractBalanceOf() -
+            vToken.borrowBalanceCurrent(address(this));
 
         // Get previous recorded total loss per vToken
         uint256 totalLoss = totalLossOf[vToken];
@@ -751,8 +765,8 @@ contract DineroLeveragedVenusVault is
             // Need to find the difference, then convert to vTokens by multiplying by the {vToken.exchangeRateCurrent}. Lastly, we need to devide by the total free vTokens.
             // Important to note the mantissa of exchangeRateCurrent is 18 while vTokens usually have a mantissa of 8.
 
-            uint256 loss = ((prevFreeUnderlying - currentFreeUnderlying).bdiv(
-                vToken.exchangeRateCurrent()
+            uint256 loss = ((prevFreeUnderlying - currentFreeUnderlying).wadDiv(
+                safeVenus.viewExchangeRate(vToken)
             ) * PRECISION).mulDiv(
                     10**address(vToken).safeDecimals(),
                     totalFreeVTokenOf[vToken]
@@ -775,13 +789,17 @@ contract DineroLeveragedVenusVault is
      * @param vToken The market, which we want to check how much non-debt underlying we have.
      * @return uint256 The total non-debt backed underlying.
      */
-    function _getTotalFreeUnderlying(IVToken vToken) private returns (uint256) {
+    function _getTotalFreeUnderlying(IVToken vToken)
+        private
+        view
+        returns (uint256)
+    {
         (uint256 borrowBalance, uint256 supplyBalance) = SAFE_VENUS
             .borrowAndSupply(this, vToken);
         return
-            supplyBalance -
-            borrowBalance +
-            vToken.underlying().contractBalanceOf();
+            supplyBalance +
+            vToken.underlying().contractBalanceOf() -
+            borrowBalance;
     }
 
     /**
@@ -1218,8 +1236,8 @@ contract DineroLeveragedVenusVault is
         accountOf[underlying][FEE_TO] = userAccount;
 
         // Remove DUST
-        uint256 amountOfUnderlyingToRedeem = vTokenAmount.bmul(
-            vToken.exchangeRateCurrent()
+        uint256 amountOfUnderlyingToRedeem = vTokenAmount.wadMul(
+            SAFE_VENUS.viewExchangeRate(vToken)
         );
 
         // Uniswap style, block scoping, to prevent stack too deep local variable errors.

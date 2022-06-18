@@ -18,7 +18,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import "./lib/IntMath.sol";
+import "./lib/Math.sol";
 
 import "./tokens/InterestToken.sol";
 
@@ -41,7 +41,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     //////////////////////////////////////////////////////////////*/
 
     using SafeERC20Upgradeable for IERC20Upgradeable;
-    using IntMath for uint256;
+    using Math for uint256;
 
     /*///////////////////////////////////////////////////////////////
                                 EVENTS

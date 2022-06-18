@@ -18,7 +18,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeab
 import "../interfaces/IMasterChef.sol";
 import "../interfaces/IMasterChefVault.sol";
 
-import "../lib/IntMath.sol";
+import "../lib/Math.sol";
 
 /**
  * @dev It provides the events, state variables and an interface for the {InterestMarketV1} to interact with the Pancake Swap Master Chef.
@@ -36,7 +36,7 @@ abstract contract MasterChefVault {
     //////////////////////////////////////////////////////////////*/
 
     using SafeERC20Upgradeable for IERC20Upgradeable;
-    using IntMath for uint256;
+    using Math for uint256;
 
     /*///////////////////////////////////////////////////////////////
                                 EVENTS
@@ -133,13 +133,13 @@ abstract contract MasterChefVault {
         User memory user = userInfo[account];
 
         // Get all current pending rewards.
-        uint256 pendingRewardsPerAmount = getPendingRewards().bdiv(
+        uint256 pendingRewardsPerAmount = getPendingRewards().wadDiv(
             _totalAmount
         );
 
         // Calculates how many of {CAKE} rewards the user has accrued since his last deposit/withdraw.
         rewards +=
-            (_totalRewardsPerAmount + pendingRewardsPerAmount).bmul(
+            (_totalRewardsPerAmount + pendingRewardsPerAmount).wadMul(
                 user.amount
             ) -
             user.rewardDebt;

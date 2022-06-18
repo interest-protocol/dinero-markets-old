@@ -18,7 +18,7 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
-import "../lib/IntMath.sol";
+import "../lib/Math.sol";
 
 import "./MasterChefVault.sol";
 
@@ -42,7 +42,7 @@ contract CakeVault is
     //////////////////////////////////////////////////////////////*/
 
     using SafeERC20Upgradeable for IERC20Upgradeable;
-    using IntMath for uint256;
+    using Math for uint256;
 
     /*///////////////////////////////////////////////////////////////
                                  CONSTRUCTOR
