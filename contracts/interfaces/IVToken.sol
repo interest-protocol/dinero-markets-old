@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.13;
 
-struct BorrowSnapshot {
-    uint256 principal;
-    uint256 interestIndex;
-}
-
 interface IVToken {
     // VTokenInterface
     function transfer(address dst, uint256 amount) external returns (bool);
