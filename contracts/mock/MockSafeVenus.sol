@@ -4,7 +4,7 @@ pragma solidity 0.8.13;
 import "../interfaces/IVToken.sol";
 import "../interfaces/IVenusVault.sol";
 
-import "../lib/IntMath.sol";
+import "../lib/Math.sol";
 
 //solhint-disable
 
@@ -12,7 +12,7 @@ import "../lib/IntMath.sol";
  * @dev We simplify this contract for easier calculations, but try to keep the core logic similar enough for testing
  */
 contract MockSafeVenus {
-    using IntMath for uint256;
+    using Math for uint256;
 
     uint256 public constant DEFAULT = 1234;
 
@@ -44,7 +44,7 @@ contract MockSafeVenus {
         view
         returns (uint256)
     {
-        return vTokenCollateralFactor[vToken].bmul(vault.collateralLimit());
+        return vTokenCollateralFactor[vToken].wadMul(vault.collateralLimit());
     }
 
     function borrowAndSupply(IVenusVault vault, IVToken vToken)
@@ -75,7 +75,7 @@ contract MockSafeVenus {
     {
         (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
         uint256 collateralRatio = safeCollateralRatio(vault, vToken);
-        return supply.bmul(collateralRatio) - borrow;
+        return supply.wadMul(collateralRatio) - borrow;
     }
 
     function safeRedeem(IVenusVault vault, IVToken vToken)
@@ -89,7 +89,7 @@ contract MockSafeVenus {
         if (borrowBalance == 0) return supplyBalance;
 
         uint256 collateralRatio = safeCollateralRatio(vault, vToken);
-        uint256 result = supply - borrow.bdiv(collateralRatio);
+        uint256 result = supply - borrow.wadDiv(collateralRatio);
         safeRedeemReturn = result;
 
         return result;
@@ -138,7 +138,7 @@ contract MockSafeVenus {
         (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
 
         // Maximum amount we can borrow based on our supply.
-        uint256 maxSafeBorrowAmount = supply.bmul(_collateralLimit);
+        uint256 maxSafeBorrowAmount = supply.wadMul(_collateralLimit);
 
         // If we are not above the maximum amount. We do not need to deleverage and return 0.
         if (maxSafeBorrowAmount >= borrow) return 0;
@@ -148,12 +148,14 @@ contract MockSafeVenus {
 
         // We add 15% safety room to the {venusCollateralFactor} to avoid liquidation.
         // We assume vaults are using values below 0.8e18 for their collateral ratio
-        uint256 safeSupply = borrow.bdiv(venusCollateralFactor.bmul(0.9e18));
+        uint256 safeSupply = borrow.wadDiv(
+            venusCollateralFactor.wadMul(0.9e18)
+        );
 
         if (safeSupply > supply) {
             // if the supply is still lower, then it should throw
             uint256 amount = supply -
-                borrow.bdiv(venusCollateralFactor.bmul(0.95e18));
+                borrow.wadDiv(venusCollateralFactor.wadMul(0.95e18));
 
             // Cannot withdraw more than liquidity
             return amount;

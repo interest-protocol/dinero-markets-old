@@ -382,12 +382,12 @@ contract InterestBNBBearingMarket is
             // How much is owed in principal + accrued fees
             uint256 debt = _totalLoan.toElastic(principal, false);
             // Calculate the collateralFee (for the liquidator and the protocol)
-            uint256 fee = debt.bmul(_liquidationFee);
+            uint256 fee = debt.wadMul(_liquidationFee);
 
             // How much collateral is needed to cover the loan + fees.
             // Since Dinero is always USD we can calculate this way.
             // Need to normalize the rate
-            uint256 collateralToCover = (debt + fee).bdiv(_exchangeRate);
+            uint256 collateralToCover = (debt + fee).wadDiv(_exchangeRate);
 
             // on very low values due to math restrictions this can be 0.
             require(collateralToCover > 0, "DM: principal too low");
@@ -453,7 +453,7 @@ contract InterestBNBBearingMarket is
         totalVCollateral -= liquidationInfo.allCollateral;
 
         // 10% of the liquidation fee to be given to the protocol.
-        uint256 protocolFee = uint256(liquidationInfo.allFee).bmul(0.1e18);
+        uint256 protocolFee = uint256(liquidationInfo.allFee).wadMul(0.1e18);
 
         unchecked {
             // Should not overflow.

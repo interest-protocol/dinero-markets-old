@@ -43,7 +43,7 @@ contract LPVault is
     //////////////////////////////////////////////////////////////*/
 
     using SafeERC20Upgradeable for IERC20Upgradeable;
-    using IntMath for uint256;
+    using Math for uint256;
 
     /*///////////////////////////////////////////////////////////////
                                  CONSTANTS

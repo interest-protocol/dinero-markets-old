@@ -5,13 +5,13 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "../lib/IntMath.sol";
+import "../lib/Math.sol";
 
 import "./ERC20/MockERC20.sol";
 
 //solhint-disable
 contract MockVenusToken is ERC20 {
-    using IntMath for uint256;
+    using Math for uint256;
     using SafeERC20 for IERC20;
 
     event RedeemUnderlying(uint256 amount);
@@ -127,7 +127,7 @@ contract MockVenusToken is ERC20 {
 
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
 
-        _mint(_msgSender(), amount.bdiv(exchangeRateCurrent));
+        _mint(_msgSender(), amount.wadDiv(exchangeRateCurrent));
 
         return 0;
     }
@@ -137,10 +137,10 @@ contract MockVenusToken is ERC20 {
 
         if (value > 0) return value;
 
-        uint256 underlyingAmount = amount.bmul(exchangeRateCurrent);
+        uint256 underlyingAmount = amount.wadMul(exchangeRateCurrent);
 
         if (
-            (balanceOfUnderlying[msg.sender] - underlyingAmount).bdiv(
+            (balanceOfUnderlying[msg.sender] - underlyingAmount).wadDiv(
                 _collateralFactor
             ) >= borrowBalanceCurrent[msg.sender]
         ) {
@@ -159,13 +159,13 @@ contract MockVenusToken is ERC20 {
         if (value > 0) return value;
 
         if (
-            (balanceOfUnderlying[msg.sender] - amount).bmul(
+            (balanceOfUnderlying[msg.sender] - amount).wadMul(
                 _collateralFactor
             ) >= borrowBalanceCurrent[msg.sender]
         ) {
             balanceOfUnderlying[msg.sender] -= amount;
             IERC20(underlying).safeTransfer(msg.sender, amount);
-            _burn(msg.sender, amount.bdiv(exchangeRateCurrent));
+            _burn(msg.sender, amount.wadDiv(exchangeRateCurrent));
             emit RedeemUnderlying(amount);
             return 0;
         }
@@ -179,7 +179,7 @@ contract MockVenusToken is ERC20 {
         if (value > 0) return value;
 
         if (
-            (balanceOfUnderlying[msg.sender]).bmul(_collateralFactor) >=
+            (balanceOfUnderlying[msg.sender]).wadMul(_collateralFactor) >=
             borrowBalanceCurrent[msg.sender] + amount
         ) {
             borrowBalanceCurrent[msg.sender] += amount;
