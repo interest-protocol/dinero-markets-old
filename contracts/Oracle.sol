@@ -17,13 +17,13 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20MetadataUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
 
 import "./interfaces/AggregatorV3Interface.sol";
 import "./interfaces/IPancakePair.sol";
 
 import "./lib/IntMath.sol";
 import "./lib/IntERC20.sol";
+import "./lib/SafeCastLib.sol";
 
 import "./PancakeOracle.sol";
 
@@ -44,7 +44,7 @@ contract Oracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
-    using SafeCastUpgradeable for *;
+    using SafeCastLib for *;
     using IntMath for uint256;
     using IntERC20 for address;
 

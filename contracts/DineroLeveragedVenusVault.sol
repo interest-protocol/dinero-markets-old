@@ -4,7 +4,6 @@ pragma solidity 0.8.13;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
@@ -17,6 +16,7 @@ import "./interfaces/IPancakeRouter02.sol";
 
 import "./lib/IntMath.sol";
 import "./lib/IntERC20.sol";
+import "./lib/SafeCastLib.sol";
 
 import "./tokens/Dinero.sol";
 
@@ -50,7 +50,7 @@ contract DineroLeveragedVenusVault is
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.AddressSet;
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using IntMath for uint256;
-    using SafeCastUpgradeable for uint256;
+    using SafeCastLib for uint256;
     using IntERC20 for address;
 
     /*///////////////////////////////////////////////////////////////
