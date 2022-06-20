@@ -178,3 +178,5 @@ export const REPAY_REQUEST = 3;
 // POOL IDs
 
 export const WBNB_CAKE_LP_TOKEN_POOL_ID = 251;
+
+export const BLOCKS_PER_YEAR = 28_685 * 365;

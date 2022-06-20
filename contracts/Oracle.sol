@@ -20,6 +20,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20Metadat
 
 import "./interfaces/AggregatorV3Interface.sol";
 import "./interfaces/IPancakePair.sol";
+import "./interfaces/IOracle.sol";
 
 import "./lib/Math.sol";
 import "./lib/IntERC20.sol";
@@ -40,7 +41,7 @@ import "./PancakeOracle.sol";
  * @notice Only supports tokens supported by Chainlink  https://docs.chain.link/docs/binance-smart-chain-addresses/.
  * @notice We assume that BUSD is USD - 0x4Fabb145d64652a948d72533023f6E7A623C7C53
  */
-contract Oracle is Initializable, OwnableUpgradeable, UUPSUpgradeable {
+contract Oracle is Initializable, OwnableUpgradeable, UUPSUpgradeable, IOracle {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/

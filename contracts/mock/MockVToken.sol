@@ -60,7 +60,7 @@ contract MockVenusToken is ERC20 {
 
     uint256 public totalBorrowsCurrent;
 
-    uint256 public totalBorrows = 70171150351097307235014135;
+    uint256 public totalBorrows;
 
     // Because we do not want to add complexity by mocking the Venus Controller
     uint256 public _collateralFactor;
@@ -309,6 +309,10 @@ contract MockVenusToken is ERC20 {
 
     function __setTotalBorrowsCurrent(uint256 amount) external {
         totalBorrowsCurrent = amount;
+    }
+
+    function __setTotalBorrows(uint256 amount) external {
+        totalBorrows = amount;
     }
 
     function __setBorrowReturn(uint128 amount) external {

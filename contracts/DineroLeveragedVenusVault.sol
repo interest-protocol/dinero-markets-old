@@ -13,14 +13,14 @@ import "./interfaces/IVenusController.sol";
 import "./interfaces/IVToken.sol";
 import "./interfaces/IVenusVault.sol";
 import "./interfaces/IPancakeRouter02.sol";
+import "./interfaces/IOracle.sol";
 
 import "./lib/Math.sol";
 import "./lib/IntERC20.sol";
 import "./lib/SafeCastLib.sol";
+import "./lib/SafeVenus.sol";
 
 import "./tokens/Dinero.sol";
-
-import "./SafeVenus.sol";
 
 /**
  * @dev This is a Vault to mint Dinero. The idea is to always keep the vault assets 1:1 to Dinero minted.
@@ -52,6 +52,7 @@ contract DineroLeveragedVenusVault is
     using Math for uint256;
     using SafeCastLib for uint256;
     using IntERC20 for address;
+    using SafeVenus for IVToken;
 
     /*///////////////////////////////////////////////////////////////
                             EVENTS
@@ -130,10 +131,10 @@ contract DineroLeveragedVenusVault is
     Dinero public DINERO; // 18 decimals
 
     //solhint-disable-next-line var-name-mixedcase
-    SafeVenus public SAFE_VENUS;
+    address public FEE_TO;
 
     //solhint-disable-next-line var-name-mixedcase
-    address public FEE_TO;
+    IOracle public Oracle;
 
     // How many times the contract is allowed to open loans backed by previous loans.
     uint8 public compoundDepth; // No more than 5
@@ -174,7 +175,6 @@ contract DineroLeveragedVenusVault is
 
     /**
      * @param dinero The contract of the dinero stable coin
-     * @param safeVenus The helper contract address to interact with Venus
      * @param feeTo The address that will collect the fee
      *
      * Requirements:
@@ -183,19 +183,19 @@ contract DineroLeveragedVenusVault is
      */
     function initialize(
         Dinero dinero,
-        SafeVenus safeVenus,
+        IOracle oracle,
         address feeTo
     ) external initializer {
         __Ownable_init();
         __Pausable_init();
 
         DINERO = dinero;
-        SAFE_VENUS = safeVenus;
         FEE_TO = feeTo;
+        Oracle = oracle;
 
         compoundDepth = 3;
         collateralLimit = 0.5e18;
-        dineroLTV = 0.7e18;
+        dineroLTV = 0.95e18;
 
         // We trust `router` so we can fully approve because we need to sell it.
         // Venus has infinite allowance if given max uint256
@@ -525,16 +525,16 @@ contract DineroLeveragedVenusVault is
 
         // Remove DUST
         uint256 amountOfUnderlyingToRedeem = (rewards + vTokenAmount).wadMul(
-            SAFE_VENUS.viewExchangeRate(vToken)
+            vToken.viewExchangeRate()
         );
 
         // Uniswap style, block scoping, to prevent stack too deep local variable errors.
         {
-            // Save gas
-            SafeVenus safeVenus = SAFE_VENUS;
-
             // Get a safe redeemable amount to prevent liquidation.
-            uint256 safeAmount = safeVenus.safeRedeem(this, vToken);
+            uint256 safeAmount = vToken.safeRedeem(
+                address(this),
+                collateralLimit
+            );
             uint256 balance = underlying.contractBalanceOf();
 
             // Upper bound to prevent infinite loops.
@@ -553,7 +553,7 @@ contract DineroLeveragedVenusVault is
                 // This calls {accrueInterest} on VToken, so we can use _getTotalFreeUnderlying.
                 _redeemAndRepay(vToken, safeAmount);
                 // update the safeAmout for the next iteration.
-                safeAmount = safeVenus.safeRedeem(this, vToken);
+                safeAmount = vToken.safeRedeem(address(this), collateralLimit);
                 // Add some room to compensate for DUST. SafeVenus has a large enough room to accomodate for one dollar.
                 balance = underlying.contractBalanceOf() + 1 ether;
                 maxTries += 1;
@@ -682,11 +682,10 @@ contract DineroLeveragedVenusVault is
      * @param vToken The contract of the VToken that we wish to reduce our open loan on them.
      */
     function _deleverage(IVToken vToken) private {
-        // Save gas
-        SafeVenus safeVenus = SAFE_VENUS;
+        uint256 _collateralLimit = collateralLimit;
 
         // We check if we are above our safety threshold.
-        uint256 amount = safeVenus.deleverage(this, vToken);
+        uint256 amount = vToken.deleverage(address(this), _collateralLimit);
 
         // Safety mechanism
         uint256 maxTries;
@@ -699,7 +698,7 @@ contract DineroLeveragedVenusVault is
             // This calls {accrueInterest} on VToken, so we can use _getTotalFreeUnderlying.
             _redeemAndRepay(vToken, amount);
             // Update the amount for the next iteration.
-            amount = safeVenus.deleverage(this, vToken);
+            amount = vToken.deleverage(address(this), _collateralLimit);
             maxTries += 1;
         }
 
@@ -745,12 +744,7 @@ contract DineroLeveragedVenusVault is
         // Get previous recorded total non-debt underlying.
         uint256 prevFreeUnderlying = totalFreeUnderlying[underlying];
 
-        SafeVenus safeVenus = SAFE_VENUS;
-
-        uint256 supplyBalance = safeVenus.viewUnderlyingBalanceOf(
-            vToken,
-            address(this)
-        );
+        uint256 supplyBalance = vToken.viewUnderlyingBalanceOf(address(this));
 
         // Get current recorded total non-debt underlying.
         uint256 currentFreeUnderlying = supplyBalance +
@@ -766,7 +760,7 @@ contract DineroLeveragedVenusVault is
             // Important to note the mantissa of exchangeRateCurrent is 18 while vTokens usually have a mantissa of 8.
 
             uint256 loss = ((prevFreeUnderlying - currentFreeUnderlying).wadDiv(
-                safeVenus.viewExchangeRate(vToken)
+                vToken.viewExchangeRate()
             ) * PRECISION).mulDiv(
                     10**address(vToken).safeDecimals(),
                     totalFreeVTokenOf[vToken]
@@ -794,8 +788,9 @@ contract DineroLeveragedVenusVault is
         view
         returns (uint256)
     {
-        (uint256 borrowBalance, uint256 supplyBalance) = SAFE_VENUS
-            .borrowAndSupply(this, vToken);
+        (uint256 borrowBalance, uint256 supplyBalance) = vToken.borrowAndSupply(
+            address(this)
+        );
         return
             supplyBalance +
             vToken.underlying().contractBalanceOf() -
@@ -874,7 +869,11 @@ contract DineroLeveragedVenusVault is
      */
     function _borrowAndSupply(IVToken vToken) private {
         // Calculate a safe borrow amount to avoid liquidation
-        uint256 safeBorrowAmount = SAFE_VENUS.safeBorrow(this, vToken);
+        uint256 safeBorrowAmount = vToken.safeBorrow(
+            Oracle,
+            address(this),
+            collateralLimit
+        );
 
         // We will not compound if we can only borrow 500 USD or less. This vault only supports USD stable coins with 18 decimal.
         if (500 ether >= safeBorrowAmount) return;
@@ -953,12 +952,13 @@ contract DineroLeveragedVenusVault is
      * @param vToken The VToken market we wish to remove all leverage.
      */
     function _repayAll(IVToken vToken) private {
-        // Save gas.
-        SafeVenus safeVenus = SAFE_VENUS;
         // We will keep repaying as long as we have enough redeemable amount in our supply.
-        uint256 redeemAmount = safeVenus.safeRedeem(this, vToken);
+        uint256 redeemAmount = vToken.safeRedeem(
+            address(this),
+            collateralLimit
+        );
 
-        (uint256 borrowAmount, ) = safeVenus.borrowAndSupply(this, vToken);
+        (uint256 borrowAmount, ) = vToken.borrowAndSupply(address(this));
 
         // Value to store the maximum amount we want to loop in a single call
         uint256 maxTries;
@@ -973,8 +973,8 @@ contract DineroLeveragedVenusVault is
             emit RepayAndRedeem(vToken, redeemAmount);
 
             // Update the redeem and borrow amount to see if we can get to net iteration
-            redeemAmount = safeVenus.safeRedeem(this, vToken);
-            (borrowAmount, ) = safeVenus.borrowAndSupply(this, vToken);
+            redeemAmount = vToken.safeRedeem(address(this), collateralLimit);
+            (borrowAmount, ) = vToken.borrowAndSupply(address(this));
             // Update the maximum numbers we can iterate
             maxTries += 1;
         }
@@ -1187,7 +1187,7 @@ contract DineroLeveragedVenusVault is
      * - Only the Int Governor can update this value.
      */
     function setDineroLTV(uint256 newDineroLTV) external onlyOwner {
-        require(0.9e18 >= newDineroLTV, "DV: must be lower than 90%");
+        require(0.99e18 >= newDineroLTV, "DV: must be lower than 90%");
         uint256 previousValue = dineroLTV;
         dineroLTV = newDineroLTV;
 
@@ -1237,16 +1237,16 @@ contract DineroLeveragedVenusVault is
 
         // Remove DUST
         uint256 amountOfUnderlyingToRedeem = vTokenAmount.wadMul(
-            SAFE_VENUS.viewExchangeRate(vToken)
+            vToken.viewExchangeRate()
         );
 
         // Uniswap style, block scoping, to prevent stack too deep local variable errors.
         {
-            // Save gas
-            SafeVenus safeVenus = SAFE_VENUS;
-
             // Get a safe redeemable amount to prevent liquidation.
-            uint256 safeAmount = safeVenus.safeRedeem(this, vToken);
+            uint256 safeAmount = vToken.safeRedeem(
+                address(this),
+                collateralLimit
+            );
             uint256 balance = underlying.contractBalanceOf();
             // Upper bound to prevent infinite loops.
             uint256 maxTries;
@@ -1263,7 +1263,7 @@ contract DineroLeveragedVenusVault is
 
                 _redeemAndRepay(vToken, safeAmount);
                 // update the safeAmout for the next iteration.
-                safeAmount = safeVenus.safeRedeem(this, vToken);
+                safeAmount = vToken.safeRedeem(address(this), collateralLimit);
                 // Add some room to compensate for DUST. SafeVenus has a large enough room to accomodate for one dollar.
                 balance = underlying.contractBalanceOf() + 1 ether;
                 maxTries += 1;

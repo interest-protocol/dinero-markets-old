@@ -1,19 +1,17 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.13;
 
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 
-import "./interfaces/IVenusController.sol";
-import "./interfaces/IVToken.sol";
-import "./interfaces/IVenusVault.sol";
-import "./interfaces/IVenusInterestRateModel.sol";
+import "../interfaces/IVenusController.sol";
+import "../interfaces/IVToken.sol";
+import "../interfaces/IVenusVault.sol";
+import "../interfaces/IVenusInterestRateModel.sol";
+import "../interfaces/IOracle.sol";
 
-import "./lib/Math.sol";
+import "./Math.sol";
 
-import "./Oracle.sol";
+// Oracle internal ORACLE;
 
 /**
  * @dev This is a helper contract, similarly to a library, to calculate "safe" values. Safe in the essence that they give enough room to avoid liquidation.
@@ -23,7 +21,7 @@ import "./Oracle.sol";
  * The functions in this contract assume a very safe strategy of supplying and borrowing the same asset within 1 vToken contract.
  * It requires chainlink feeds to convert all amounts in USD.
  */
-contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
+library SafeVenus {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -36,37 +34,13 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line var-name-mixedcase
-    address internal constant XVS = 0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63;
+    address private constant XVS = 0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63;
 
-    uint256 internal constant BORROW_RATE_MAX_MANTISSA = 0.0005e16;
+    uint256 private constant BORROW_RATE_MAX_MANTISSA = 0.0005e16;
 
     // solhint-disable-next-line var-name-mixedcase
-    IVenusController internal constant VENUS_CONTROLLER =
+    IVenusController private constant VENUS_CONTROLLER =
         IVenusController(0xfD36E2c2a6789Db23113685031d7F16329158384);
-
-    /**
-     * @dev This is the oracle we use in the entire project. It uses Chainlink as the primary source.
-     * It uses PCS TWAP only when Chainlink fails.
-     */
-    // solhint-disable-next-line var-name-mixedcase
-    Oracle public ORACLE;
-
-    /*///////////////////////////////////////////////////////////////
-                            CONSTRUCTOR
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @param oracle The address of our maintained oracle address
-     *
-     * Requirements:
-     *
-     * - Can only be called at once and should be called during creation to prevent front running.
-     */
-    function initialize(Oracle oracle) external initializer {
-        __Ownable_init();
-
-        ORACLE = oracle;
-    }
 
     /*///////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
@@ -75,12 +49,12 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /**
      * @dev It returns a conservative collateral ratio required to back a loan.
      *
-     * @param vault A vault contract
      * @param vToken A Venus vToken contract
+     * @param collateralLimit A percentage that will be put on current TVL to reduce it further
      * @return uint256 The conservative collateral requirement
      */
-    function safeCollateralRatio(IVenusVault vault, IVToken vToken)
-        public
+    function safeCollateralRatio(IVToken vToken, uint256 collateralLimit)
+        internal
         view
         returns (uint256)
     {
@@ -90,9 +64,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         );
 
         // We give a safe margin by lowering based on the `vault` collateral limit.
-        uint256 enforcedLimit = venusCollateralFactor.wadMul(
-            vault.collateralLimit()
-        );
+        uint256 enforcedLimit = venusCollateralFactor.wadMul(collateralLimit);
 
         uint256 borrowRate = vToken.borrowRatePerBlock();
 
@@ -105,52 +77,21 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         return enforcedLimit.min(optimalLimit);
     }
 
-    /*///////////////////////////////////////////////////////////////
-                        MUTATIVE FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
     /**
      * @dev It returns the current borrow and supply amount the `vault` has in the `vToken` market. This uses the stored values
      *
-     * @param vault A vault contract
      * @param vToken A Venus vToken contract
+     * @param account The address that will have its borrow and supply returned
      * @return borrow The borrow amount
      * @return supply The supply amount
      */
-    function borrowAndSupply(IVenusVault vault, IVToken vToken)
-        public
+    function borrowAndSupply(IVToken vToken, address account)
+        internal
         view
         returns (uint256 borrow, uint256 supply)
     {
-        borrow = vToken.borrowBalanceStored(address(vault));
-        supply = viewUnderlyingBalanceOf(vToken, address(vault));
-    }
-
-    /**
-     * @dev It checks if it is profitable to borrow `amount` in a `vToken` market. It assumes supplying and borrowing the same token.
-     *
-     * @notice It does not have a safety margin.
-     *
-     * @param vault A vault contract
-     * @param vToken A Venus vToken contract
-     * @param amount The new borrow amount to calculate the interest rates
-     * @return bool True if it is profitable
-     */
-    function isProfitable(
-        IVenusVault vault,
-        IVToken vToken,
-        uint256 amount
-    ) external view returns (bool) {
-        // Get the current cost and profit of borrowing in `vToken`.
-        (
-            uint256 borrowInterestUSD, // Cost of borrowing underlying
-            uint256 rewardInterestUSD // This is the XVS profit.
-        ) = borrowInterestPerBlock(vault, vToken, amount);
-
-        // Get the current profit of supplying.
-        uint256 supplyInterestUSD = supplyRewardPerBlock(vault, vToken, amount);
-
-        return supplyInterestUSD + rewardInterestUSD > borrowInterestUSD;
+        borrow = vToken.borrowBalanceStored(account);
+        supply = viewUnderlyingBalanceOf(vToken, account);
     }
 
     /**
@@ -158,22 +99,25 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      *
      * @notice This function assumes, that we are borrowing the same asset we are using as collateral.
      *
-     * @param vault A vault contract
      * @param vToken A Venus vToken contract
+     * @param oracle Interest Protocol Oracle to read USD prices
+     * @param account Address that is asking how much it can borrow
+     * @param collateralLimit A percentage that will be put on current TVL to reduce it further
      * @return uint256 The safe borrow amount.
      */
-    function safeBorrow(IVenusVault vault, IVToken vToken)
-        external
-        view
-        returns (uint256)
-    {
+    function safeBorrow(
+        IVToken vToken,
+        IOracle oracle,
+        address account,
+        uint256 collateralLimit
+    ) external view returns (uint256) {
         // Get a safe ratio between borrow amount and collateral required.
-        uint256 _collateralLimit = safeCollateralRatio(vault, vToken);
+        uint256 _collateralLimit = safeCollateralRatio(vToken, collateralLimit);
 
         // Get the current positions of the `vault` in the `vToken` market.
-        (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
+        (uint256 borrow, uint256 supply) = borrowAndSupply(vToken, account);
 
-        require(supply > 0, "SV: no supply");
+        if (supply == 0) return 0;
 
         // Maximum amount we can borrow based on our supply.
         uint256 maxBorrowAmount = supply.wadMul(_collateralLimit);
@@ -203,12 +147,13 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         (
             uint256 borrowInterestUSD, // Cost of borrowing underlying
             uint256 rewardInterestUSD // This is the XVS profit.
-        ) = borrowInterestPerBlock(vault, vToken, newBorrowAmount);
+        ) = borrowInterestPerBlock(vToken, oracle, account, newBorrowAmount);
 
         // Get the current profit of supplying.
         uint256 supplyInterestUSD = supplyRewardPerBlock(
-            vault,
             vToken,
+            oracle,
+            account,
             newBorrowAmount
         );
 
@@ -216,25 +161,27 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // 0 represents do not borrow.
         return
             supplyInterestUSD + rewardInterestUSD > borrowInterestUSD
-                ? newBorrowAmount.wadMul(0.95e18)
+                ? newBorrowAmount
                 : 0;
     }
 
     /**
      * @dev It calculas an amount that can be redeemed without being liquidated from both supply and borrow balances.
      *
-     * @param vault A vault contract
      * @param vToken A Venus vToken contract
+     * @param account Address that is asking how much it can redeem
+     * @param collateralLimit A percentage that will be put on current TVL to reduce it further
+     * @return uint256 the safe redeem amount
      */
-    function safeRedeem(IVenusVault vault, IVToken vToken)
-        public
-        view
-        returns (uint256)
-    {
+    function safeRedeem(
+        IVToken vToken,
+        address account,
+        uint256 collateralLimit
+    ) internal view returns (uint256) {
         // Get current `vault` borrow and supply balances in `vToken`
         (uint256 borrowBalance, uint256 supplyBalance) = borrowAndSupply(
-            vault,
-            vToken
+            vToken,
+            account
         );
         // If we are not borrowing, we can redeem as much as the liquidity allows
         if (borrowBalance == 0) return supplyBalance.min(vToken.getCash());
@@ -242,7 +189,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 safeCollateral = borrowBalance.wadDiv(
             // Should never be 0. As Venus uses the overcollaterized loan model. Cannot borrow without having collatera.
             // If it is 0, it should throw to alert there is an issue with Venus.
-            safeCollateralRatio(vault, vToken)
+            safeCollateralRatio(vToken, collateralLimit)
         );
         // If our supply is larger than the safe collateral, we can redeem the difference
         // If not, we should not redeem
@@ -252,7 +199,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // We cannot redeem more than the current liquidity in the market.
         // This value can be used to safely redeem from the supply or borrow.
         // C
-        return redeemAmount.min(vToken.getCash()).wadMul(0.95e18);
+        return redeemAmount.min(vToken.getCash());
     }
 
     /**
@@ -260,50 +207,43 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      *
      * @notice Use the function {predictBorrowRate} if you wish an `amount` of 0.
      *
-     * @param vault A vault contract
      * @param vToken A Venus vToken contract
+     * @param oracle Interest Protocol Oracle to read USD prices
+     * @param account Address that is asking for the borrow interest rate
      * @param amount The calculation will take into account if you intent to borrow an additional `amount` of the underlying token of `vToken`.
      * @return uint256 borrow interest rate per block in USD
      * @return uint256 reward interest rate per block in USD
      */
     function borrowInterestPerBlock(
-        IVenusVault vault,
         IVToken vToken,
+        IOracle oracle,
+        address account,
         uint256 amount
-    ) public view returns (uint256, uint256) {
-        // Get current total amount being borrowed in the `vToken` plus adding `amount`.
+    ) internal view returns (uint256, uint256) {
         uint256 totalBorrow = viewTotalBorrowsCurrent(vToken) + amount;
-        // Get current borrow of the `vault` in the `vToken` market assuming it borrows an additional `amount`.
-        uint256 vaultBorrow = vToken.borrowBalanceStored(address(vault)) +
-            amount;
 
         // Edge case for a market to have no loans. But since we use it as a denominator, we need to address it.
         if (totalBorrow == 0)
             // It should never happen that we have no borrows and we want to know the cost of borrowing 0.
             return (0, 0);
 
-        // Get the current rewards given by borrowing in USD per block.
-        uint256 xvsInUSDPerBlock = ORACLE.getTokenUSDPrice(
-            XVS,
-            // Venus speed has 18 decimals
-            VENUS_CONTROLLER.venusSpeeds(address(vToken)).mulDiv(
-                vaultBorrow,
-                totalBorrow
+        // Return a tuple with 1st being the borrow interest rate (cost), and the second the rewards in XVS (profit)
+        return (
+            oracle.getTokenUSDPrice(
+                vToken.underlying(),
+                predictBorrowRate(vToken, amount).wadMul(
+                    vToken.borrowBalanceStored(account) + amount
+                )
+            ),
+            oracle.getTokenUSDPrice(
+                XVS,
+                // Venus speed has 18 decimals
+                VENUS_CONTROLLER.venusSpeeds(address(vToken)).mulDiv(
+                    vToken.borrowBalanceStored(account) + amount,
+                    totalBorrow
+                )
             )
         );
-
-        // Get current borrow interest rate times the amount in `vault`.
-        uint256 borrowInterestRatePerBlock = predictBorrowRate(vToken, amount)
-            .wadMul(vaultBorrow);
-
-        // Get the cost of borrowing per block in USD
-        uint256 underlyingInUSDPerBlock = ORACLE.getTokenUSDPrice(
-            vToken.underlying(),
-            borrowInterestRatePerBlock
-        );
-
-        // Return a tuple with 1st being the borrow interest rate (cost), and the second the rewards in XVS (profit)
-        return (underlyingInUSDPerBlock, xvsInUSDPerBlock);
     }
 
     /**
@@ -311,16 +251,18 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      *
      * @notice Use the function {predictSupplyRate} if you wish an `amount` of 0.
      *
-     * @param vault A vault contract
      * @param vToken A Venus vToken contract
+     * @param oracle Interest Protocol Oracle to read USD prices
+     * @param account Address that is asking for thesupply reward rate
      * @param borrowAmount An additional borrow amount to calculate the interest rate model for supplying
      * @return uint256 The supply reward rate in USD per block.
      */
     function supplyRewardPerBlock(
-        IVenusVault vault,
         IVToken vToken,
+        IOracle oracle,
+        address account,
         uint256 borrowAmount
-    ) public view returns (uint256) {
+    ) internal view returns (uint256) {
         // Total amount of supply amount in the `vToken`.
         uint256 totalSupplyAmount = IERC20Upgradeable(address(vToken))
             .totalSupply()
@@ -329,14 +271,14 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // Current amount of underlying the `vault` is supplying in the `vToken` market.
         uint256 vaultUnderlyingBalance = viewUnderlyingBalanceOf(
             IVToken(vToken),
-            address(vault)
+            account
         );
 
         // This is super edge case. And should not happen, but we need to address it because we use it as a denominator.
         if (totalSupplyAmount == 0) return 0;
 
         // Current amount of rewards being paid by supplying in `vToken` in XVS in USD terms per block
-        uint256 xvsAmountInUSD = ORACLE.getTokenUSDPrice(
+        uint256 xvsAmountInUSD = oracle.getTokenUSDPrice(
             XVS,
             VENUS_CONTROLLER.venusSpeeds(address(vToken)).mulDiv(
                 vaultUnderlyingBalance,
@@ -352,7 +294,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // Calculate the supply rate considering an additional borrow `amount` per block in USD and add the current XVS rewards in USD per block
         return
-            ORACLE.getTokenUSDPrice(vToken.underlying(), underlyingSupplyRate) +
+            oracle.getTokenUSDPrice(vToken.underlying(), underlyingSupplyRate) +
             xvsAmountInUSD;
     }
 
@@ -364,7 +306,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @return uint256 Borrow rate per block in underlying token
      */
     function predictBorrowRate(IVToken vToken, uint256 amount)
-        public
+        internal
         view
         returns (uint256)
     {
@@ -396,7 +338,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @return uint256 Supply rate per block in underlying token
      */
     function predictSupplyRate(IVToken vToken, uint256 amount)
-        public
+        internal
         view
         returns (uint256)
     {
@@ -426,19 +368,20 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * It returns the amount to deleverage.
      * A 0 means the vault should not deleverage and should probably borrow.
      *
-     * @param vault A vault contract
      * @param vToken A Venus vToken contract
+     * @param account Address that is asking how much it can redeem
+     * @param collateralLimit A percentage that will be put on current TVL to reduce it further
      */
-    function deleverage(IVenusVault vault, IVToken vToken)
-        external
-        view
-        returns (uint256)
-    {
+    function deleverage(
+        IVToken vToken,
+        address account,
+        uint256 collateralLimit
+    ) external view returns (uint256) {
         // Get a safe ratio between borrow amount and collateral required.
-        uint256 _collateralLimit = safeCollateralRatio(vault, vToken);
+        uint256 _collateralLimit = safeCollateralRatio(vToken, collateralLimit);
 
         // Get the current positions of the `vault` in the `vToken` market.
-        (uint256 borrow, uint256 supply) = borrowAndSupply(vault, vToken);
+        (uint256 borrow, uint256 supply) = borrowAndSupply(vToken, account);
 
         // Maximum amount we can borrow based on our supply.
         uint256 maxSafeBorrowAmount = supply.wadMul(_collateralLimit);
@@ -480,7 +423,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @return uint256 The current borrows
      */
     function viewTotalBorrowsCurrent(IVToken vToken)
-        public
+        internal
         view
         returns (uint256)
     {
@@ -524,7 +467,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @return uint256 Current underlying balance
      */
     function viewUnderlyingBalanceOf(IVToken vToken, address user)
-        public
+        internal
         view
         returns (uint256)
     {
@@ -537,15 +480,13 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @param vToken The current exchange rate will be returned for this market.
      * @return uint256 exchange rate current
      */
-    function viewExchangeRate(IVToken vToken) public view returns (uint256) {
+    function viewExchangeRate(IVToken vToken) internal view returns (uint256) {
         uint256 accrualBlockNumberPrior = vToken.accrualBlockNumber();
 
         if (accrualBlockNumberPrior == block.number)
             return vToken.exchangeRateStored();
 
-        uint256 totalCash = IERC20Upgradeable(vToken.underlying()).balanceOf(
-            address(vToken)
-        );
+        uint256 totalCash = vToken.getCash();
         uint256 borrowsPrior = vToken.totalBorrows();
         uint256 reservesPrior = vToken.totalReserves();
 
@@ -567,22 +508,5 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         require(totalSupply > 0, "SV: wrong rate");
 
         return (totalCash + totalBorrows - totalReserves).wadDiv(totalSupply);
-    }
-
-    /*///////////////////////////////////////////////////////////////
-                          OWNER ONLY FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @dev A hook to guard the address that can update the implementation of this contract. It must be the owner.
-     */
-    function _authorizeUpgrade(address)
-        internal
-        view
-        override
-        onlyOwner
-    //solhint-disable-next-line no-empty-blocks
-    {
-
     }
 }
