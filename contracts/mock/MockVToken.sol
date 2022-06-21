@@ -183,6 +183,8 @@ contract MockVenusToken is ERC20 {
             borrowBalanceCurrent[msg.sender] + amount
         ) {
             borrowBalanceCurrent[msg.sender] += amount;
+            borrowBalanceStored[msg.sender] += amount;
+
             IERC20(underlying).safeTransfer(msg.sender, amount);
             emit Borrow(amount);
             return 0;
@@ -199,6 +201,7 @@ contract MockVenusToken is ERC20 {
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), amount);
 
         borrowBalanceCurrent[msg.sender] -= amount;
+        borrowBalanceStored[msg.sender] -= amount;
 
         emit RepayBorrow(amount);
 
@@ -277,6 +280,7 @@ contract MockVenusToken is ERC20 {
 
     function __setExchangeRateCurrent(uint256 _exchangeRateCurrent) external {
         exchangeRateCurrent = _exchangeRateCurrent;
+        exchangeRateStored = _exchangeRateCurrent;
     }
 
     function __setExchangeRateStored(uint256 _exchangeRateStored) external {

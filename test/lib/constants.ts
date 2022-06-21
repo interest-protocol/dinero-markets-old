@@ -165,6 +165,10 @@ export const XVS_USD_PRICE_FEED = getAddress(
   '0xbf63f430a79d4036a5900c19818aff1fa710f206'
 );
 
+export const USDC_USD_PRICE_FEED = getAddress(
+  '0x51597f405303c4377e36123cbc172b13269ea163'
+);
+
 // Dinero Market Actions
 
 export const ADD_COLLATERAL_REQUEST = 0;

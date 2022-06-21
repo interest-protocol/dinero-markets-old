@@ -12,6 +12,8 @@ import "../../tokens/Dinero.sol";
 
 import "../../DineroLeveragedVenusVault.sol";
 
+import "../../SafeVenus.sol";
+
 //solhint-disable
 
 contract TestDineroVenusVault is DineroLeveragedVenusVault {
@@ -77,5 +79,9 @@ contract TestDineroVenusVault is DineroLeveragedVenusVault {
         mintedAmount =
             IERC20Upgradeable(address(vToken)).balanceOf(address(this)) -
             balanceBefore;
+    }
+
+    function setSafeVenus(SafeVenus safeVenus) external {
+        SAFE_VENUS = safeVenus;
     }
 }

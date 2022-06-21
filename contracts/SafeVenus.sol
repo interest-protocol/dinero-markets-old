@@ -1,15 +1,18 @@
 //SPDX-License-Identifier: MIT
 pragma solidity 0.8.13;
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 
-import "../interfaces/IVenusController.sol";
-import "../interfaces/IVToken.sol";
-import "../interfaces/IVenusVault.sol";
-import "../interfaces/IVenusInterestRateModel.sol";
-import "../interfaces/IOracle.sol";
+import "./interfaces/IVenusController.sol";
+import "./interfaces/IVToken.sol";
+import "./interfaces/IVenusVault.sol";
+import "./interfaces/IVenusInterestRateModel.sol";
+import "./interfaces/IOracle.sol";
 
-import "./Math.sol";
+import "./lib/Math.sol";
 
 // Oracle internal ORACLE;
 
@@ -21,7 +24,7 @@ import "./Math.sol";
  * The functions in this contract assume a very safe strategy of supplying and borrowing the same asset within 1 vToken contract.
  * It requires chainlink feeds to convert all amounts in USD.
  */
-library SafeVenus {
+contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /*///////////////////////////////////////////////////////////////
                             LIBRARIES
     //////////////////////////////////////////////////////////////*/
@@ -34,13 +37,33 @@ library SafeVenus {
     //////////////////////////////////////////////////////////////*/
 
     // solhint-disable-next-line var-name-mixedcase
-    address private constant XVS = 0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63;
+    address internal constant XVS = 0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63;
 
-    uint256 private constant BORROW_RATE_MAX_MANTISSA = 0.0005e16;
+    uint256 internal constant BORROW_RATE_MAX_MANTISSA = 0.0005e16;
 
     // solhint-disable-next-line var-name-mixedcase
-    IVenusController private constant VENUS_CONTROLLER =
+    IVenusController internal constant VENUS_CONTROLLER =
         IVenusController(0xfD36E2c2a6789Db23113685031d7F16329158384);
+
+    /**
+     * @dev This is the oracle we use in the entire project. It uses Chainlink as the primary source.
+     * It uses PCS TWAP only when Chainlink fails.
+     */
+    // solhint-disable-next-line var-name-mixedcase
+    IOracle public ORACLE;
+
+    /**
+     * @param oracle The address of our maintained oracle address
+     *
+     * Requirements:
+     *
+     * - Can only be called at once and should be called during creation to prevent front running.
+     */
+    function initialize(IOracle oracle) external initializer {
+        __Ownable_init();
+
+        ORACLE = oracle;
+    }
 
     /*///////////////////////////////////////////////////////////////
                             VIEW FUNCTIONS
@@ -78,7 +101,30 @@ library SafeVenus {
     }
 
     /**
-     * @dev It returns the current borrow and supply amount the `vault` has in the `vToken` market. This uses the stored values
+     * @dev It returns the current borrow the `account` has in the `vToken` market. This uses the stored values
+     *
+     * @param vToken A Venus vToken contract
+     * @param account The address that will have its borrow and supply returned
+     * @return uint256 The current borrow amount
+     */
+    function viewCurrentBorrow(IVToken vToken, address account)
+        public
+        view
+        returns (uint256)
+    {
+        uint256 priorBorrow = vToken.totalBorrows();
+        uint256 updatedBorrow = viewTotalBorrowsCurrent(vToken);
+        uint256 borrow = vToken.borrowBalanceStored(account);
+
+        if (priorBorrow == updatedBorrow) return borrow;
+
+        uint256 factor = borrow.wadDiv(priorBorrow);
+
+        return factor.wadMul(updatedBorrow);
+    }
+
+    /**
+     * @dev It returns the current borrow and supply amount the `account` has in the `vToken` market. This uses the stored values
      *
      * @param vToken A Venus vToken contract
      * @param account The address that will have its borrow and supply returned
@@ -86,11 +132,11 @@ library SafeVenus {
      * @return supply The supply amount
      */
     function borrowAndSupply(IVToken vToken, address account)
-        internal
+        public
         view
         returns (uint256 borrow, uint256 supply)
     {
-        borrow = vToken.borrowBalanceStored(account);
+        borrow = viewCurrentBorrow(vToken, account);
         supply = viewUnderlyingBalanceOf(vToken, account);
     }
 
@@ -100,14 +146,12 @@ library SafeVenus {
      * @notice This function assumes, that we are borrowing the same asset we are using as collateral.
      *
      * @param vToken A Venus vToken contract
-     * @param oracle Interest Protocol Oracle to read USD prices
      * @param account Address that is asking how much it can borrow
      * @param collateralLimit A percentage that will be put on current TVL to reduce it further
      * @return uint256 The safe borrow amount.
      */
     function safeBorrow(
         IVToken vToken,
-        IOracle oracle,
         address account,
         uint256 collateralLimit
     ) external view returns (uint256) {
@@ -147,12 +191,11 @@ library SafeVenus {
         (
             uint256 borrowInterestUSD, // Cost of borrowing underlying
             uint256 rewardInterestUSD // This is the XVS profit.
-        ) = borrowInterestPerBlock(vToken, oracle, account, newBorrowAmount);
+        ) = borrowInterestPerBlock(vToken, account, newBorrowAmount);
 
         // Get the current profit of supplying.
         uint256 supplyInterestUSD = supplyRewardPerBlock(
             vToken,
-            oracle,
             account,
             newBorrowAmount
         );
@@ -177,7 +220,7 @@ library SafeVenus {
         IVToken vToken,
         address account,
         uint256 collateralLimit
-    ) internal view returns (uint256) {
+    ) external view returns (uint256) {
         // Get current `vault` borrow and supply balances in `vToken`
         (uint256 borrowBalance, uint256 supplyBalance) = borrowAndSupply(
             vToken,
@@ -208,7 +251,6 @@ library SafeVenus {
      * @notice Use the function {predictBorrowRate} if you wish an `amount` of 0.
      *
      * @param vToken A Venus vToken contract
-     * @param oracle Interest Protocol Oracle to read USD prices
      * @param account Address that is asking for the borrow interest rate
      * @param amount The calculation will take into account if you intent to borrow an additional `amount` of the underlying token of `vToken`.
      * @return uint256 borrow interest rate per block in USD
@@ -216,7 +258,6 @@ library SafeVenus {
      */
     function borrowInterestPerBlock(
         IVToken vToken,
-        IOracle oracle,
         address account,
         uint256 amount
     ) internal view returns (uint256, uint256) {
@@ -226,6 +267,8 @@ library SafeVenus {
         if (totalBorrow == 0)
             // It should never happen that we have no borrows and we want to know the cost of borrowing 0.
             return (0, 0);
+
+        IOracle oracle = ORACLE;
 
         // Return a tuple with 1st being the borrow interest rate (cost), and the second the rewards in XVS (profit)
         return (
@@ -252,14 +295,12 @@ library SafeVenus {
      * @notice Use the function {predictSupplyRate} if you wish an `amount` of 0.
      *
      * @param vToken A Venus vToken contract
-     * @param oracle Interest Protocol Oracle to read USD prices
      * @param account Address that is asking for thesupply reward rate
      * @param borrowAmount An additional borrow amount to calculate the interest rate model for supplying
      * @return uint256 The supply reward rate in USD per block.
      */
     function supplyRewardPerBlock(
         IVToken vToken,
-        IOracle oracle,
         address account,
         uint256 borrowAmount
     ) internal view returns (uint256) {
@@ -276,6 +317,8 @@ library SafeVenus {
 
         // This is super edge case. And should not happen, but we need to address it because we use it as a denominator.
         if (totalSupplyAmount == 0) return 0;
+
+        IOracle oracle = ORACLE;
 
         // Current amount of rewards being paid by supplying in `vToken` in XVS in USD terms per block
         uint256 xvsAmountInUSD = oracle.getTokenUSDPrice(
@@ -423,7 +466,7 @@ library SafeVenus {
      * @return uint256 The current borrows
      */
     function viewTotalBorrowsCurrent(IVToken vToken)
-        internal
+        public
         view
         returns (uint256)
     {
@@ -467,7 +510,7 @@ library SafeVenus {
      * @return uint256 Current underlying balance
      */
     function viewUnderlyingBalanceOf(IVToken vToken, address user)
-        internal
+        public
         view
         returns (uint256)
     {
@@ -480,7 +523,7 @@ library SafeVenus {
      * @param vToken The current exchange rate will be returned for this market.
      * @return uint256 exchange rate current
      */
-    function viewExchangeRate(IVToken vToken) internal view returns (uint256) {
+    function viewExchangeRate(IVToken vToken) public view returns (uint256) {
         uint256 accrualBlockNumberPrior = vToken.accrualBlockNumber();
 
         if (accrualBlockNumberPrior == block.number)
@@ -508,5 +551,18 @@ library SafeVenus {
         require(totalSupply > 0, "SV: wrong rate");
 
         return (totalCash + totalBorrows - totalReserves).wadDiv(totalSupply);
+    }
+
+    /**
+     * @dev A hook to guard the address that can update the implementation of this contract. It must be the owner.
+     */
+    function _authorizeUpgrade(address)
+        internal
+        view
+        override
+        onlyOwner
+    //solhint-disable-next-line no-empty-blocks
+    {
+
     }
 }
