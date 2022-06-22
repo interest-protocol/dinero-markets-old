@@ -933,8 +933,8 @@ describe('Dinero Leverage Venus Vault', () => {
 
       await mockSafeVenus.__setDeleverageAmount(parseEther('0.1'));
 
-      await expect(dineroVenusVault.deleverage(vUSDC)).to.not.emit(
-        vUSDCContract,
+      await expect(dineroVenusVault.deleverage(mockVUSDC.address)).to.not.emit(
+        mockVUSDC,
         'Redeem'
       );
     });
