@@ -4,7 +4,6 @@
 ▒█░ █░░█ ░░█░░ █▀▀ █▄▄▀ █▀▀ ▀▀█ ░░█░░ 　 ▒█▒█▒█ █▄▄█ █▄▄▀ █▀▄ █▀▀ ░░█░░ 　 ░▒█▒█░ ░█░ 
 ▄█▄ ▀░░▀ ░░▀░░ ▀▀▀ ▀░▀▀ ▀▀▀ ▀▀▀ ░░▀░░ 　 ▒█░░▒█ ▀░░▀ ▀░▀▀ ▀░▀ ▀▀▀ ░░▀░░ 　 ░░▀▄▀░ ▄█▄
 
-Copyright (c) 2021 Jose Cerqueira - All rights reserved
 
 */
 
@@ -14,12 +13,12 @@ pragma solidity 0.8.13;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/math/SafeCastUpgradeable.sol";
 
 import "../interfaces/IPancakeRouter02.sol";
 
 import "../lib/Rebase.sol";
-import "../lib/IntMath.sol";
+import "../lib/Math.sol";
+import "../lib/SafeCastLib.sol";
 
 import "../tokens/Dinero.sol";
 
@@ -55,8 +54,8 @@ abstract contract DineroMarket is
     //////////////////////////////////////////////////////////////*/
 
     using RebaseLibrary for Rebase;
-    using SafeCastUpgradeable for uint256;
-    using IntMath for uint256;
+    using SafeCastLib for uint256;
+    using Math for uint256;
 
     /*///////////////////////////////////////////////////////////////
                                   STRUCTS
@@ -266,10 +265,9 @@ abstract contract DineroMarket is
         }
 
         // Amount of tokens every borrower together owes the protocol
-        // By using {bmul} at the end we get a higher precision
-        uint256 debt = (uint256(_totalLoan.elastic) * _loan.INTEREST_RATE).bmul(
-            elapsedTime
-        );
+        // By using {wadMul} at the end we get a higher precision
+        uint256 debt = (uint256(_totalLoan.elastic) * _loan.INTEREST_RATE)
+            .wadMul(elapsedTime);
 
         unchecked {
             // Should not overflow.
@@ -417,12 +415,12 @@ abstract contract DineroMarket is
         Rebase memory _totalLoan = totalLoan;
 
         // Convert the collateral to USD. USD has 18 decimals so we need to remove them.
-        uint256 collateralInUSD = collateralAmount.bmul(_exchangeRate);
+        uint256 collateralInUSD = collateralAmount.wadMul(_exchangeRate);
 
         // All Loans are emitted in `DINERO` which is based on USD price
         // Collateral in USD * {maxLTVRatio} has to be greater than principal + interest rate accrued in DINERO which is pegged to USD
         return
-            collateralInUSD.bmul(maxLTVRatio) >
+            collateralInUSD.wadMul(maxLTVRatio) >
             _totalLoan.toElastic(principal, true);
     }
 

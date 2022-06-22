@@ -5,11 +5,13 @@ interface IVToken {
     // VTokenInterface
     function transfer(address dst, uint256 amount) external returns (bool);
 
-    function interestRateModel() external returns (address);
+    function interestRateModel() external view returns (address);
 
-    function totalReserves() external returns (uint256);
+    function totalReserves() external view returns (uint256);
 
-    function reserveFactorMantissa() external returns (uint256);
+    function reserveFactorMantissa() external view returns (uint256);
+
+    function borrowIndex() external view returns (uint256);
 
     function transferFrom(
         address src,
@@ -37,6 +39,10 @@ interface IVToken {
             uint256,
             uint256
         );
+
+    function accrualBlockNumber() external view returns (uint256);
+
+    function totalBorrows() external view returns (uint256);
 
     function borrowRatePerBlock() external view returns (uint256);
 
@@ -66,7 +72,7 @@ interface IVToken {
     ) external returns (uint256);
 
     // VBep20 Storage
-    function underlying() external returns (address);
+    function underlying() external view returns (address);
 
     // VBep20 Interface
     function mint(uint256 mintAmount) external returns (uint256);
