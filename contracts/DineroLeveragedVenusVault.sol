@@ -21,7 +21,6 @@ import "./lib/SafeCastLib.sol";
 import "./tokens/Dinero.sol";
 
 import "./SafeVenus.sol";
-import "hardhat/console.sol";
 
 /**
  * @dev This is a Vault to mint Dinero. The idea is to always keep the vault assets 1:1 to Dinero minted.
@@ -881,14 +880,13 @@ contract DineroLeveragedVenusVault is
         assert(totalFreeVTokens != 0);
 
         uint256 minted = _mintVToken(vToken, amounts[2]) * PRECISION;
-        console.log(minted, "minted");
+
         // Assume sall current underlying are from the XVS swap.
         // This contract should never have underlyings as they should always be converted to VTokens, unless it is paused and the owner calls {emergencyRecovery}.
         rewardsOf[vToken] += minted.mulDiv(
             10**address(vToken).safeDecimals(),
             totalFreeVTokens
         );
-        console.log(totalFreeVTokens, "totalFreeVTokens");
     }
 
     /**
