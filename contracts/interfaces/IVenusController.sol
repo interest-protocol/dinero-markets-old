@@ -30,5 +30,5 @@ interface IVenusController {
 
     function claimVenus(address holder, address[] memory vTokens) external;
 
-    function venusSpeeds(address vToken) external returns (uint256);
+    function venusSpeeds(address vToken) external view returns (uint256);
 }

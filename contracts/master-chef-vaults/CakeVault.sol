@@ -18,7 +18,7 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
-import "../lib/IntMath.sol";
+import "../lib/Math.sol";
 
 import "./MasterChefVault.sol";
 
@@ -42,7 +42,7 @@ contract CakeVault is
     //////////////////////////////////////////////////////////////*/
 
     using SafeERC20Upgradeable for IERC20Upgradeable;
-    using IntMath for uint256;
+    using Math for uint256;
 
     /*///////////////////////////////////////////////////////////////
                                  CONSTRUCTOR
@@ -107,10 +107,10 @@ contract CakeVault is
         cakeRewards += _unStakeCake(0);
 
         // Calculate the compounding fee to sent to the `msg.sender`.
-        uint256 fee = cakeRewards.bmul(0.02e18);
+        uint256 fee = cakeRewards.wadMul(0.02e18);
 
         // update the {_totalRewardsPerAmount} without the fee
-        _totalRewardsPerAmount += (cakeRewards - fee).bdiv(_totalAmount);
+        _totalRewardsPerAmount += (cakeRewards - fee).wadDiv(_totalAmount);
 
         // Pay the `msg.sender`
         _safeCakeTransfer(_msgSender(), fee);
@@ -154,14 +154,14 @@ contract CakeVault is
         // If there are no tokens deposited in the vault, We do not need to update the {_totalRewardsPerAmount}. As there are no rewards to be updated.
         if (_totalAmount > 0) {
             // Reinvest all cake into the CAKE pool and get the current rewards.
-            _totalRewardsPerAmount += _stakeCake().bdiv(_totalAmount);
+            _totalRewardsPerAmount += _stakeCake().wadDiv(_totalAmount);
         }
 
         // If the user has no deposited tokens, we do not need to update his rewards.
         if (user.amount > 0) {
             // Update how many rewards the user has accrued up to this point.
             user.rewards +=
-                _totalRewardsPerAmount.bmul(user.amount) -
+                _totalRewardsPerAmount.wadMul(user.amount) -
                 user.rewardDebt;
         }
 
@@ -177,7 +177,7 @@ contract CakeVault is
         CAKE_MASTER_CHEF.enterStaking(_getCakeBalance());
 
         // Update State to tell us that the `account` has been completed "paid" up to this point.
-        user.rewardDebt = _totalRewardsPerAmount.bmul(user.amount);
+        user.rewardDebt = _totalRewardsPerAmount.wadMul(user.amount);
 
         // Update Global state
         userInfo[to] = user;
@@ -222,10 +222,10 @@ contract CakeVault is
         // And withdraw the requested amount of {CAKE} from the pool.
         // The {Vault} contract ensures that the `amount` is greater than 0.
         // It also ensured that the {totalAmount} is greater than 0.
-        _totalRewardsPerAmount += _unStakeCake(amount).bdiv(_totalAmount);
+        _totalRewardsPerAmount += _unStakeCake(amount).wadDiv(_totalAmount);
 
         // Calculate how many rewards the `account` has acrrued up to this block.
-        uint256 rewards = _totalRewardsPerAmount.bmul(user.amount) -
+        uint256 rewards = _totalRewardsPerAmount.wadMul(user.amount) -
             user.rewardDebt;
 
         // Update the state.
@@ -266,7 +266,7 @@ contract CakeVault is
         if (_totalAmount > 0) {
             // If the Vault still has assets update the state as usual
             totalRewardsPerAmount = _totalRewardsPerAmount;
-            user.rewardDebt = _totalRewardsPerAmount.bmul(user.amount);
+            user.rewardDebt = _totalRewardsPerAmount.wadMul(user.amount);
             totalAmount = _totalAmount;
         } else {
             // If the Vault does not have any {CAKE}, reset the whole state.

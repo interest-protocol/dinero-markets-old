@@ -18,7 +18,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import "./lib/IntMath.sol";
+import "./lib/Math.sol";
 
 import "./tokens/InterestToken.sol";
 
@@ -41,7 +41,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     //////////////////////////////////////////////////////////////*/
 
     using SafeERC20Upgradeable for IERC20Upgradeable;
-    using IntMath for uint256;
+    using Math for uint256;
 
     /*///////////////////////////////////////////////////////////////
                                 EVENTS
@@ -212,7 +212,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // There is no point to mint 0 tokens.
         if (intReward > 0) {
             // We mint an additional 10% to the devAccount.
-            INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
+            INTEREST_TOKEN.mint(devAccount, intReward.wadMul(0.1e18));
         }
     }
 
@@ -257,7 +257,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         if (user.amount > 0) {
             // Calculate the user pending rewards by checking his % of the acruedIntPerShare minus what he got paid already.
             _pendingRewards =
-                user.amount.bmul(pool.accruedIntPerShare) -
+                user.amount.wadMul(pool.accruedIntPerShare) -
                 user.rewardsPaid;
         }
 
@@ -277,7 +277,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
 
         // He has been paid all rewards up to this point.
-        user.rewardsPaid = user.amount.bmul(pool.accruedIntPerShare);
+        user.rewardsPaid = user.amount.wadMul(pool.accruedIntPerShare);
 
         // Update global state
         pools[poolId] = pool;
@@ -292,7 +292,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // There is no point to mint 0 tokens.
         if (intReward > 0) {
             // We mint an additional 10% to the devAccount.
-            INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
+            INTEREST_TOKEN.mint(devAccount, intReward.wadMul(0.1e18));
         }
 
         emit Deposit(_msgSender(), poolId, amount);
@@ -326,7 +326,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // User always has rewards if he has staked tokens. Unless he deposits and withdraws in the same block.
         // Save user rewards before any state manipulation.
-        uint256 _pendingRewards = user.amount.bmul(pool.accruedIntPerShare) -
+        uint256 _pendingRewards = user.amount.wadMul(pool.accruedIntPerShare) -
             user.rewardsPaid;
 
         // User can wish to simply get his pending rewards.
@@ -337,7 +337,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
 
         // Update the amount of reward paid to the user.
-        user.rewardsPaid = user.amount.bmul(pool.accruedIntPerShare);
+        user.rewardsPaid = user.amount.wadMul(pool.accruedIntPerShare);
 
         // Update global state
         pools[poolId] = pool;
@@ -355,7 +355,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // There is no point to mint 0 tokens.
         if (intReward > 0) {
             // We mint an additional 10% to the devAccount.
-            INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
+            INTEREST_TOKEN.mint(devAccount, intReward.wadMul(0.1e18));
         }
 
         emit Withdraw(_msgSender(), _msgSender(), poolId, amount);
@@ -384,7 +384,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         if (user.amount > 0) {
             // Note the base unit of {pool.accruedIntPerShare}.
             _pendingRewards =
-                user.amount.bmul(pool.accruedIntPerShare) -
+                user.amount.wadMul(pool.accruedIntPerShare) -
                 user.rewardsPaid;
         }
 
@@ -402,7 +402,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
 
         // Update the state to indicate that the user has been paid all the rewards up to this block.
-        user.rewardsPaid = user.amount.bmul(pool.accruedIntPerShare);
+        user.rewardsPaid = user.amount.wadMul(pool.accruedIntPerShare);
 
         // Update the global state.
         pools[0] = pool;
@@ -419,7 +419,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // There is no point to mint 0 tokens.
         if (intReward > 0) {
             // We mint an additional 10% to the devAccount.
-            INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
+            INTEREST_TOKEN.mint(devAccount, intReward.wadMul(0.1e18));
         }
 
         emit Deposit(_msgSender(), 0, amount);
@@ -513,9 +513,9 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             );
             accruedIntPerShare =
                 accruedIntPerShare +
-                intReward.bdiv(totalSupply);
+                intReward.wadDiv(totalSupply);
         }
-        return user.amount.bmul(accruedIntPerShare) - user.rewardsPaid;
+        return user.amount.wadMul(accruedIntPerShare) - user.rewardsPaid;
     }
 
     /**************************** PRIVATE FUNCTIONS ****************************/
@@ -552,7 +552,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // This value stores all rewards the pool ever got.
         // Note: this variable i already per share as we divide by the `amountOfStakedTokens`.
-        pool.accruedIntPerShare += intReward.bdiv(amountOfStakedTokens);
+        pool.accruedIntPerShare += intReward.wadDiv(amountOfStakedTokens);
 
         pool.lastRewardBlock = block.number;
 
@@ -613,7 +613,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         User memory user = userInfo[0][account];
 
         // Calculate the pending rewards.
-        uint256 _pendingRewards = user.amount.bmul(pool.accruedIntPerShare) -
+        uint256 _pendingRewards = user.amount.wadMul(pool.accruedIntPerShare) -
             user.rewardsPaid;
 
         // The user can opt to simply get the rewards, if he passes an `amount` of 0.
@@ -625,7 +625,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         }
 
         // Update `account` rewardsPaid. `Account` has been  paid in full amount up to this block.
-        user.rewardsPaid = user.amount.bmul(pool.accruedIntPerShare);
+        user.rewardsPaid = user.amount.wadMul(pool.accruedIntPerShare);
         // Update the global state.
         pools[0] = pool;
         userInfo[0][account] = user;
@@ -645,7 +645,7 @@ contract CasaDePapel is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         // There is no point to mint 0 tokens.
         if (intReward > 0) {
             // We mint an additional 10% to the devAccount.
-            INTEREST_TOKEN.mint(devAccount, intReward.bmul(0.1e18));
+            INTEREST_TOKEN.mint(devAccount, intReward.wadMul(0.1e18));
         }
     }
 

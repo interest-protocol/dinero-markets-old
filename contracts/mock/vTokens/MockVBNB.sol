@@ -3,13 +3,13 @@ pragma solidity 0.8.13;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-import "../../lib/IntMath.sol";
+import "../../lib/Math.sol";
 
 import "../ERC20/MockERC20.sol";
 
 //solhint-disable
 contract MockVBNB is ERC20 {
-    using IntMath for uint256;
+    using Math for uint256;
 
     event RedeemUnderlying(uint256 amount);
     event RepayBorrow(uint256 amount);
@@ -114,7 +114,7 @@ contract MockVBNB is ERC20 {
 
         balanceOfUnderlying[msg.sender] += msg.value;
 
-        _mint(_msgSender(), msg.value.bdiv(exchangeRateCurrent));
+        _mint(_msgSender(), msg.value.wadDiv(exchangeRateCurrent));
 
         return 0;
     }
@@ -128,10 +128,10 @@ contract MockVBNB is ERC20 {
 
         if (value > 0) return value;
 
-        uint256 underlyingAmount = amount.bmul(exchangeRateCurrent);
+        uint256 underlyingAmount = amount.wadMul(exchangeRateCurrent);
 
         if (
-            (balanceOfUnderlying[msg.sender] - underlyingAmount).bdiv(
+            (balanceOfUnderlying[msg.sender] - underlyingAmount).wadDiv(
                 _collateralFactor
             ) >= borrowBalanceCurrent[msg.sender]
         ) {
@@ -150,13 +150,13 @@ contract MockVBNB is ERC20 {
         if (value > 0) return value;
 
         if (
-            (balanceOfUnderlying[msg.sender] - amount).bmul(
+            (balanceOfUnderlying[msg.sender] - amount).wadMul(
                 _collateralFactor
             ) >= borrowBalanceCurrent[msg.sender]
         ) {
             balanceOfUnderlying[msg.sender] -= amount;
             payable(msg.sender).transfer(amount);
-            _burn(msg.sender, amount.bdiv(exchangeRateCurrent));
+            _burn(msg.sender, amount.wadDiv(exchangeRateCurrent));
             emit RedeemUnderlying(amount);
             return 0;
         }
@@ -170,7 +170,7 @@ contract MockVBNB is ERC20 {
         if (value > 0) return value;
 
         if (
-            (balanceOfUnderlying[msg.sender]).bmul(_collateralFactor) >=
+            (balanceOfUnderlying[msg.sender]).wadMul(_collateralFactor) >=
             borrowBalanceCurrent[msg.sender] + amount
         ) {
             borrowBalanceCurrent[msg.sender] += amount;

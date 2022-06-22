@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.13;
 
-import "@openzeppelin/contracts/utils/math/SafeCast.sol";
-
-import "./IntMath.sol";
+import "./SafeCastLib.sol";
+import "./Math.sol";
 
 struct Rebase {
     uint128 elastic;
@@ -23,8 +22,8 @@ struct Rebase {
  *
  */
 library RebaseLibrary {
-    using SafeCast for uint256;
-    using IntMath for uint256;
+    using SafeCastLib for uint256;
+    using Math for uint256;
 
     /**
      * @dev Calculates a base value from an elastic value using the ratio of a {Rebase} struct.
