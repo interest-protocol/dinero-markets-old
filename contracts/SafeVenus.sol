@@ -13,7 +13,6 @@ import "./interfaces/IVenusInterestRateModel.sol";
 import "./interfaces/IOracle.sol";
 
 import "./lib/Math.sol";
-import "hardhat/console.sol";
 
 /**
  * @dev This is a helper contract, similarly to a library, to calculate "safe" values. Safe in the essence that they give enough room to avoid liquidation.
