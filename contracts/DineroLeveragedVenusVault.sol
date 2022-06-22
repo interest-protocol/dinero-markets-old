@@ -779,7 +779,7 @@ contract DineroLeveragedVenusVault is
         // Get current recorded total non-debt underlying.
         uint256 currentFreeUnderlying = supplyBalance +
             vToken.underlying().contractBalanceOf() -
-            vToken.borrowBalanceCurrent(address(this));
+            safeVenus.viewCurrentBorrow(vToken, address(this));
 
         // Get previous recorded total loss per vToken
         uint256 totalLoss = totalLossOf[vToken];
@@ -933,7 +933,10 @@ contract DineroLeveragedVenusVault is
             "DV: failed to redeem"
         );
 
-        uint256 borrowAmount = vToken.borrowBalanceCurrent(address(this));
+        uint256 borrowAmount = SAFE_VENUS.viewCurrentBorrow(
+            vToken,
+            address(this)
+        );
 
         // Repay a portion, the `amount`, of the loan. It will revert on failure.
         // We need to consider dust in here. We cannot repay more than what we owe.

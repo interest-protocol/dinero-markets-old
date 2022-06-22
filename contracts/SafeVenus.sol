@@ -13,8 +13,7 @@ import "./interfaces/IVenusInterestRateModel.sol";
 import "./interfaces/IOracle.sol";
 
 import "./lib/Math.sol";
-
-// Oracle internal ORACLE;
+import "hardhat/console.sol";
 
 /**
  * @dev This is a helper contract, similarly to a library, to calculate "safe" values. Safe in the essence that they give enough room to avoid liquidation.
@@ -70,6 +69,32 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     //////////////////////////////////////////////////////////////*/
 
     /**
+     * @dev It returns the current borrow the `account` has in the `vToken` market. This uses the stored values
+     *
+     * @param vToken A Venus vToken contract
+     * @param account The address that will have its borrow and supply returned
+     * @return uint256 The current borrow amount
+     */
+    function viewCurrentBorrow(IVToken vToken, address account)
+        public
+        view
+        returns (uint256)
+    {
+        uint256 priorBorrow = vToken.totalBorrows();
+        uint256 updatedBorrow = viewTotalBorrowsCurrent(vToken);
+        uint256 borrow = vToken.borrowBalanceStored(account);
+        uint256 accrualBlock = vToken.accrualBlockNumber();
+
+        // If there was a new borrow, deposit, repay since the last {totalBorrows}, the accrual block will match the block.number.
+        if (priorBorrow == updatedBorrow || accrualBlock == block.number)
+            return borrow;
+
+        uint256 factor = borrow.wadDiv(priorBorrow);
+
+        return factor.wadMul(updatedBorrow);
+    }
+
+    /**
      * @dev It returns a conservative collateral ratio required to back a loan.
      *
      * @param vToken A Venus vToken contract
@@ -98,29 +123,6 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
         // To make sure we stay within the protocol limit we take the minimum between the optimal and enforced limit.
         return enforcedLimit.min(optimalLimit);
-    }
-
-    /**
-     * @dev It returns the current borrow the `account` has in the `vToken` market. This uses the stored values
-     *
-     * @param vToken A Venus vToken contract
-     * @param account The address that will have its borrow and supply returned
-     * @return uint256 The current borrow amount
-     */
-    function viewCurrentBorrow(IVToken vToken, address account)
-        public
-        view
-        returns (uint256)
-    {
-        uint256 priorBorrow = vToken.totalBorrows();
-        uint256 updatedBorrow = viewTotalBorrowsCurrent(vToken);
-        uint256 borrow = vToken.borrowBalanceStored(account);
-
-        if (priorBorrow == updatedBorrow) return borrow;
-
-        uint256 factor = borrow.wadDiv(priorBorrow);
-
-        return factor.wadMul(updatedBorrow);
     }
 
     /**
@@ -309,14 +311,15 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             .totalSupply()
             .wadMul(viewExchangeRate(vToken));
 
+        // And should not happen, but we need to address it because we use it as a denominator.
+        // function above {viewExchangeRate} will throw if the supply is 0
+        assert(totalSupplyAmount > 0);
+
         // Current amount of underlying the `vault` is supplying in the `vToken` market.
         uint256 vaultUnderlyingBalance = viewUnderlyingBalanceOf(
             IVToken(vToken),
             account
         );
-
-        // This is super edge case. And should not happen, but we need to address it because we use it as a denominator.
-        if (totalSupplyAmount == 0) return 0;
 
         IOracle oracle = ORACLE;
 
@@ -537,7 +540,10 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             vToken.interestRateModel()
         ).getBorrowRate(totalCash, borrowsPrior, reservesPrior);
 
-        require(borrowRateMantissa <= 0.0005e16, "RATE_TOO_HIGH"); // Same as borrowRateMaxMantissa in vTokenInterfaces.sol
+        require(
+            borrowRateMantissa <= 0.0005e16,
+            "borrow rate is absurdly high"
+        ); // Same as borrowRateMaxMantissa in vTokenInterfaces.sol
 
         uint256 interestAccumulated = (borrowRateMantissa *
             (block.number - accrualBlockNumberPrior)).wadMul(borrowsPrior);
@@ -548,7 +554,7 @@ contract SafeVenus is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 totalBorrows = interestAccumulated + borrowsPrior;
         uint256 totalSupply = IERC20Upgradeable(address(vToken)).totalSupply();
 
-        require(totalSupply > 0, "SV: wrong rate");
+        require(totalSupply > 0, "SV: no supply");
 
         return (totalCash + totalBorrows - totalReserves).wadDiv(totalSupply);
     }

@@ -924,7 +924,8 @@ describe('Dinero Leverage Venus Vault', () => {
         .to.emit(vUSDCContract, 'RepayBorrow');
     });
     it('does not deleverage if the borrow amount is too low', async () => {
-      await dineroVenusVault.setSafeVenus(safeVenus.address);
+      await dineroVenusVault.removeVToken(vUSDC);
+      await dineroVenusVault.addVToken(mockVUSDC.address);
 
       await dineroVenusVault
         .connect(usdcWhale)
@@ -2124,8 +2125,6 @@ describe('Dinero Leverage Venus Vault', () => {
         ethers.BigNumber.from(0),
         parseEther('0.1')
       );
-
-      console.log(usdcBalance.toString(), 'usdcBalance');
 
       // Reserves
       // 1 dollar = 1e18
