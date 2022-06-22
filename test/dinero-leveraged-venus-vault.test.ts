@@ -1294,6 +1294,15 @@ describe('Dinero Leverage Venus Vault', () => {
           )
       ).to.be.closeTo(vaultVUSDCBalance2, ONE_V_TOKEN);
 
+      console.log(
+        vaultVUSDCBalance2
+          .sub(vaultVUSDCBalance.add(usdcWhale2VTokensMinted))
+          .toString(),
+        'minted test'
+      );
+
+      console.log(totalFreeVUSDC.toString(), 'totalFreeVUSDC test');
+
       expect(vUSDCRewards2).to.be.equal(
         vaultVUSDCBalance2
           .sub(vaultVUSDCBalance.add(usdcWhale2VTokensMinted))
